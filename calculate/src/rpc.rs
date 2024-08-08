@@ -83,36 +83,6 @@ pub trait RPC: Clone + Send + Sync {
 }
 
 #[derive(Clone)]
-pub struct FakeRpcClient {}
-
-impl RPC for FakeRpcClient {
-    fn get_live_cell(&self, _out_point: &OutPoint, _with_data: bool) -> Rpc<CellWithStatus> {
-        unimplemented!()
-    }
-    fn get_cells(
-        &self,
-        _search_key: SearchKey,
-        _limit: u32,
-        _cursor: Option<JsonBytes>,
-    ) -> Rpc<Pagination<Cell>> {
-        unimplemented!()
-    }
-    fn get_block_by_number(&self, _number: BlockNumber) -> Rpc<Option<BlockView>> {
-        unimplemented!()
-    }
-    fn tx_pool_info(&self) -> Rpc<TxPoolInfo> {
-        unimplemented!()
-    }
-    fn send_transaction(
-        &self,
-        _tx: Transaction,
-        _outputs_validator: Option<OutputsValidator>,
-    ) -> Rpc<H256> {
-        unimplemented!()
-    }
-}
-
-#[derive(Clone)]
 pub struct RpcClient {
     raw: Client,
     ckb_uri: Url,
