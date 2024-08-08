@@ -6,25 +6,35 @@ use crate::{
     skeleton::TransactionSkeleton,
 };
 
+pub type DefaultInstruction = Instruction<RpcClient>;
+
 /// Instruction is a collection of operations that can be executed in sequence, to assemble transaction skeleton
-pub struct Instruction<T: Operation> {
-    operations: Vec<T>,
+pub struct Instruction<T: RPC> {
+    operations: Vec<Box<dyn Operation<T>>>,
 }
 
-impl<T: Operation> Instruction<T> {
-    pub fn new(operations: Vec<T>) -> Self {
+impl<T: RPC> Default for Instruction<T> {
+    fn default() -> Self {
+        Instruction {
+            operations: Vec::new(),
+        }
+    }
+}
+
+impl<T: RPC> Instruction<T> {
+    pub fn new(operations: Vec<Box<dyn Operation<T>>>) -> Self {
         Instruction { operations }
     }
 
-    pub fn push_operation(&mut self, operation: T) {
+    pub fn push_operation(&mut self, operation: Box<dyn Operation<T>>) {
         self.operations.push(operation);
     }
 
-    pub fn pop_operation(&mut self) -> Option<T> {
+    pub fn pop_operation(&mut self) -> Option<Box<dyn Operation<T>>> {
         self.operations.pop()
     }
 
-    pub async fn run<R: RPC>(self, rpc: &R, skeleton: &mut TransactionSkeleton) -> Result<()> {
+    pub async fn run(self, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
         for operation in self.operations {
             operation.run(rpc, skeleton).await?;
         }
@@ -33,14 +43,14 @@ impl<T: Operation> Instruction<T> {
 }
 
 /// Taking responsibility for executing instructions and then assembling transaction skeleton
-pub struct TransactionCalculator<T: Operation, R: RPC> {
-    rpc: R,
+pub struct TransactionCalculator<T: RPC> {
+    rpc: T,
     instructions: Vec<Instruction<T>>,
     skeleton: TransactionSkeleton,
 }
 
-impl<T: Operation, R: RPC> TransactionCalculator<T, R> {
-    pub fn new(rpc: R, instructions: Vec<Instruction<T>>) -> Self {
+impl<T: RPC> TransactionCalculator<T> {
+    pub fn new(rpc: T, instructions: Vec<Instruction<T>>) -> Self {
         TransactionCalculator {
             rpc,
             instructions,
@@ -48,20 +58,20 @@ impl<T: Operation, R: RPC> TransactionCalculator<T, R> {
         }
     }
 
-    pub fn new_mainnet(instructions: Vec<Instruction<T>>) -> TransactionCalculator<T, RpcClient> {
+    pub fn new_mainnet(instructions: Vec<DefaultInstruction>) -> TransactionCalculator<RpcClient> {
         let rpc = RpcClient::new_mainnet();
         TransactionCalculator::new(rpc, instructions)
     }
 
-    pub fn new_testnet(instructions: Vec<Instruction<T>>) -> TransactionCalculator<T, RpcClient> {
+    pub fn new_testnet(instructions: Vec<DefaultInstruction>) -> TransactionCalculator<RpcClient> {
         let rpc = RpcClient::new_testnet();
         TransactionCalculator::new(rpc, instructions)
     }
 
     pub fn new_devnet(
         rpc_url: &str,
-        instructions: Vec<Instruction<T>>,
-    ) -> TransactionCalculator<T, RpcClient> {
+        instructions: Vec<DefaultInstruction>,
+    ) -> TransactionCalculator<RpcClient> {
         let rpc = RpcClient::new(rpc_url, None);
         TransactionCalculator::new(rpc, instructions)
     }

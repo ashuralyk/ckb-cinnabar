@@ -24,11 +24,11 @@ use crate::{
 };
 
 #[async_trait]
-pub trait Operation {
+pub trait Operation<T: RPC> {
     fn search_key(&self) -> SearchKey {
         unimplemented!("search_key not implemented");
     }
-    async fn run<T: RPC>(self, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()>;
+    async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()>;
 }
 
 /// Operation that add cell dep to transaction skeleton by tx hash with index
@@ -40,8 +40,8 @@ pub struct AddCellDep {
 }
 
 #[async_trait]
-impl Operation for AddCellDep {
-    async fn run<T: RPC>(self, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+impl<T: RPC> Operation<T> for AddCellDep {
+    async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
         let cell_dep = CellDepEx::new_from_outpoint(
             rpc,
             self.tx_hash,
@@ -63,7 +63,7 @@ pub struct AddCellDepByType {
 }
 
 #[async_trait]
-impl Operation for AddCellDepByType {
+impl<T: RPC> Operation<T> for AddCellDepByType {
     fn search_key(&self) -> SearchKey {
         let mut query = CellQueryOptions::new_type(self.type_script.clone());
         query.script_search_mode = Some(SearchMode::Exact);
@@ -73,9 +73,10 @@ impl Operation for AddCellDepByType {
         query.into()
     }
 
-    async fn run<T: RPC>(self, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+    async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
         let mut find_avaliable = false;
-        let mut iter = GetCellsIter::new(rpc, self.search_key());
+        let mut iter =
+            GetCellsIter::new(rpc, <AddCellDepByType as Operation<T>>::search_key(&self));
         if let Some(cell) = iter.next().await? {
             let cell_dep = CellDepEx::new_from_indexer_cell(cell, self.dep_type);
             find_avaliable = true;
@@ -92,8 +93,8 @@ impl Operation for AddCellDepByType {
 pub struct AddSecp256k1SighashCellDep {}
 
 #[async_trait]
-impl Operation for AddSecp256k1SighashCellDep {
-    async fn run<T: RPC>(self, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+impl<T: RPC> Operation<T> for AddSecp256k1SighashCellDep {
+    async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
         let genesis = rpc.get_block_by_number(0.into()).await?.unwrap();
         let resolver = DefaultCellDepResolver::from_genesis(&genesis.into()).expect("genesis");
         let (sighash_celldep, _) = resolver.sighash_dep().expect("sighash dep");
@@ -118,7 +119,7 @@ pub struct AddInputCell {
 }
 
 #[async_trait]
-impl Operation for AddInputCell {
+impl<T: RPC> Operation<T> for AddInputCell {
     fn search_key(&self) -> SearchKey {
         let mut query = CellQueryOptions::new_lock(self.lock_script.clone());
         if let Some(type_script) = &self.type_script {
@@ -129,8 +130,8 @@ impl Operation for AddInputCell {
         query.into()
     }
 
-    async fn run<T: RPC>(self, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
-        let mut iter = GetCellsIter::new(rpc, self.search_key());
+    async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+        let mut iter = GetCellsIter::new(rpc, <AddInputCell as Operation<T>>::search_key(&self));
         let mut find_avaliable = false;
         while let Some(cells) = iter.next_batch(self.count).await? {
             cells.into_iter().try_for_each(|cell| {
@@ -157,8 +158,8 @@ pub struct AddInputCellByAddress {
 }
 
 #[async_trait]
-impl Operation for AddInputCellByAddress {
-    async fn run<T: RPC>(self, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+impl<T: RPC> Operation<T> for AddInputCellByAddress {
+    async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
         skeleton
             .input_from_address(rpc, self.address.clone())
             .await?;
@@ -175,7 +176,7 @@ pub struct AddCellInputByType {
 }
 
 #[async_trait]
-impl Operation for AddCellInputByType {
+impl<T: RPC> Operation<T> for AddCellInputByType {
     fn search_key(&self) -> SearchKey {
         let mut query = CellQueryOptions::new_type(self.type_script.clone());
         query.script_search_mode = Some(self.search_mode.clone());
@@ -183,8 +184,9 @@ impl Operation for AddCellInputByType {
         query.into()
     }
 
-    async fn run<T: RPC>(self, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
-        let mut iter = GetCellsIter::new(rpc, self.search_key());
+    async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+        let mut iter =
+            GetCellsIter::new(rpc, <AddCellInputByType as Operation<T>>::search_key(&self));
         let mut find_avaliable = false;
         while let Some(cells) = iter.next_batch(self.count).await? {
             cells.into_iter().try_for_each(|cell| {
@@ -220,8 +222,8 @@ pub struct AddCellOutput {
 }
 
 #[async_trait]
-impl Operation for AddCellOutput {
-    async fn run<T: RPC>(self, _: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+impl<T: RPC> Operation<T> for AddCellOutput {
+    async fn run(self: Box<Self>, _: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
         let type_script = if self.use_type_id {
             let type_id = skeleton.calc_type_id(skeleton.outputs.len())?;
             let type_script = self
@@ -266,8 +268,8 @@ pub struct AddOutputCellByAddress {
 }
 
 #[async_trait]
-impl Operation for AddOutputCellByAddress {
-    async fn run<T: RPC>(self, _: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+impl<T: RPC> Operation<T> for AddOutputCellByAddress {
+    async fn run(self: Box<Self>, _: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
         skeleton.output_from_address(self.address.clone());
         Ok(())
     }
@@ -276,6 +278,7 @@ impl Operation for AddOutputCellByAddress {
 /// Operation that add output cell to transaction skeleton by copying input cell from target position
 ///
 /// `input_index`: usize, the index of input cell in inputs, if it is usize::MAX, copy the last one
+/// `adjust_capacity`: bool, if true, adjust the capacity if `data` provided
 #[derive(Default)]
 pub struct AddOutputCellByInputIndex {
     pub input_index: usize,
@@ -284,8 +287,8 @@ pub struct AddOutputCellByInputIndex {
 }
 
 #[async_trait]
-impl Operation for AddOutputCellByInputIndex {
-    async fn run<T: RPC>(self, _: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+impl<T: RPC> Operation<T> for AddOutputCellByInputIndex {
+    async fn run(self: Box<Self>, _: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
         let cell_input = if self.input_index != usize::MAX {
             skeleton
                 .inputs
@@ -317,8 +320,8 @@ pub struct AddWitnessArgs {
 }
 
 #[async_trait]
-impl Operation for AddWitnessArgs {
-    async fn run<T: RPC>(self, _: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+impl<T: RPC> Operation<T> for AddWitnessArgs {
+    async fn run(self: Box<Self>, _: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
         let witness = WitnessArgsEx::new(self.lock, self.input_type, self.output_type);
         skeleton.witness(witness);
         Ok(())
@@ -332,8 +335,8 @@ pub struct AddSecp256k1SighashSignatures {
 }
 
 #[async_trait]
-impl Operation for AddSecp256k1SighashSignatures {
-    async fn run<T: RPC>(self, _: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+impl<T: RPC> Operation<T> for AddSecp256k1SighashSignatures {
+    async fn run(self: Box<Self>, _: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
         let tx = skeleton.clone().into_transaction_view();
         let mut tx_groups_builder = TransactionWithScriptGroupsBuilder::default().set_tx_view(tx);
         for lock_script in self.user_lock_scripts {
@@ -363,8 +366,8 @@ pub struct BalanceTransaction {
 }
 
 #[async_trait]
-impl Operation for BalanceTransaction {
-    async fn run<T: RPC>(self, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+impl<T: RPC> Operation<T> for BalanceTransaction {
+    async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
         let fee = skeleton.fee(rpc, self.additinal_fee_rate).await?;
         skeleton
             .balance(rpc, fee, self.balancer, self.change_receiver)

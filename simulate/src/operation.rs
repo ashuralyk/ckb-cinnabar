@@ -1,3 +1,5 @@
+use std::{fs, path::PathBuf};
+
 use ckb_always_success_script::ALWAYS_SUCCESS;
 use ckb_cinnabar_calculator::{
     operation::Operation,
@@ -30,8 +32,8 @@ pub struct AddCustomContractCelldep {
 }
 
 #[async_trait]
-impl Operation for AddCustomContractCelldep {
-    async fn run<T: RPC>(self, _: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+impl<T: RPC> Operation<T> for AddCustomContractCelldep {
+    async fn run(self: Box<Self>, _: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
         let celldep_out_point = OutPoint::new(random_hash().pack(), 0);
         let celldep = CellDep::new_builder()
             .out_point(celldep_out_point)
@@ -52,12 +54,33 @@ impl Operation for AddCustomContractCelldep {
     }
 }
 
+pub struct AddCustomContractCelldepByPath {
+    pub contract: &'static str,
+    pub with_type_id: bool,
+}
+
+#[async_trait]
+impl<T: RPC> Operation<T> for AddCustomContractCelldepByPath {
+    async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+        let mut contract_path = PathBuf::new();
+        contract_path.push("../build/release");
+        contract_path.push(self.contract);
+        let contract_data = fs::read(contract_path)?;
+        Box::new(AddCustomContractCelldep {
+            contract_data,
+            with_type_id: self.with_type_id,
+        })
+        .run(rpc, skeleton)
+        .await
+    }
+}
+
 /// Add always success celldep to the transaction skeleton
 pub struct AddAlwaysSuccessCelldep {}
 
 #[async_trait]
-impl Operation for AddAlwaysSuccessCelldep {
-    async fn run<T: RPC>(self, _: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+impl<T: RPC> Operation<T> for AddAlwaysSuccessCelldep {
+    async fn run(self: Box<Self>, _: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
         let always_success_out_point = OutPoint::new(random_hash().pack(), 0);
         let celldep = CellDep::new_builder()
             .out_point(always_success_out_point)
@@ -75,6 +98,15 @@ impl Operation for AddAlwaysSuccessCelldep {
 pub struct ReferenceScript {
     pub celldep_index: usize,
     pub args: Vec<u8>,
+}
+
+impl From<(usize, Vec<u8>)> for ReferenceScript {
+    fn from((celldep_index, args): (usize, Vec<u8>)) -> Self {
+        ReferenceScript {
+            celldep_index,
+            args,
+        }
+    }
 }
 
 /// Add a custom cell input to the transaction skeleton, which has primary and second scripts
@@ -110,8 +142,8 @@ impl AddCustomCellInput {
 }
 
 #[async_trait]
-impl Operation for AddCustomCellInput {
-    async fn run<T: RPC>(self, _: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+impl<T: RPC> Operation<T> for AddCustomCellInput {
+    async fn run(self: Box<Self>, _: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
         let primary_script = self.build_script_from_celldep(&self.lock_script, skeleton)?;
         let second_script = if let Some(ref second) = self.type_script {
             Some(self.build_script_from_celldep(second, skeleton)?)

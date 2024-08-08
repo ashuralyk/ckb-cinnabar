@@ -271,6 +271,7 @@ dependencies = [
  "ckb-script",
  "ckb-traits",
  "rand 0.8.5",
+ "tokio",
 ]
 
 [[package]]

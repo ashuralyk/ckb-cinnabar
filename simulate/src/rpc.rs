@@ -18,7 +18,7 @@ type FnGetBlockByNumber = Box<dyn Fn(BlockNumber) -> Option<BlockView> + Send + 
 type FnTxPoolInfo = Box<dyn Fn() -> TxPoolInfo + Send + Sync>;
 type FnSendTransaction = Box<dyn Fn(Transaction, Option<OutputsValidator>) -> H256 + Send + Sync>;
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct FakeRpcClient {
     pub method_get_live_cell: Option<Arc<FnGetLiveCell>>,
     pub method_get_cells: Option<Arc<FnGetCells>>,

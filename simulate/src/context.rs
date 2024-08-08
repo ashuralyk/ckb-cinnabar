@@ -1,21 +1,28 @@
 use std::sync::Arc;
 
 use ckb_chain_spec::consensus::{Consensus, ConsensusBuilder};
-use ckb_cinnabar_calculator::re_exports::{
-    ckb_types::{
-        bytes::Bytes,
-        core::{
-            cell::ResolvedTransaction,
-            hardfork::{HardForks, CKB2021, CKB2023},
-            Cycle, HeaderBuilder, HeaderView,
+use ckb_cinnabar_calculator::{
+    instruction::Instruction,
+    re_exports::{
+        ckb_types::{
+            bytes::Bytes,
+            core::{
+                cell::ResolvedTransaction,
+                hardfork::{HardForks, CKB2021, CKB2023},
+                Cycle, HeaderBuilder, HeaderView,
+            },
+            packed::{self, Byte32, OutPoint},
+            prelude::Pack,
         },
-        packed::{self, Byte32, OutPoint},
-        prelude::Pack,
+        eyre::Result,
     },
-    eyre::Result,
+    rpc::RPC,
+    skeleton::TransactionSkeleton,
 };
 use ckb_script::{TransactionScriptsVerifier, TxVerifyEnv};
 use ckb_traits::{CellDataProvider, ExtensionProvider, HeaderProvider};
+
+use crate::rpc::FakeRpcClient;
 
 pub const DEFUALT_MAX_CYCLES: u64 = 10_000_000;
 
@@ -94,8 +101,28 @@ impl Default for TransactionSimulator {
 }
 
 impl TransactionSimulator {
-    pub fn verify(&self, resolved_tx: ResolvedTransaction, max_cycles: u64) -> Result<Cycle> {
-        let resolved_tx = Arc::new(resolved_tx);
+    pub fn verify(
+        &self,
+        instructions: Vec<Instruction<FakeRpcClient>>,
+        max_cycles: u64,
+    ) -> Result<Cycle> {
+        let rt = tokio::runtime::Runtime::new()?;
+        let fake_rpc = FakeRpcClient::default();
+        let await_result = self.async_verify(&fake_rpc, instructions, max_cycles);
+        rt.block_on(await_result)
+    }
+
+    pub async fn async_verify<T: RPC>(
+        &self,
+        rpc: &T,
+        instructions: Vec<Instruction<T>>,
+        max_cycles: u64,
+    ) -> Result<Cycle> {
+        let mut skeleton = TransactionSkeleton::default();
+        for instruction in instructions {
+            instruction.run(rpc, &mut skeleton).await?;
+        }
+        let resolved_tx = Arc::new(skeleton.into_resolved_transaction(rpc).await?);
         let context = Context::new(resolved_tx.clone());
         let consensus = Arc::new(self.consensus.clone());
         let env = Arc::new(self.env.clone());

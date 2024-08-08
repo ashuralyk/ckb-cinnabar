@@ -1,4 +1,4 @@
-use alloc::collections::BTreeMap;
+use alloc::{boxed::Box, collections::BTreeMap};
 use ckb_std::debug;
 
 use crate::error::{Error, Result};
@@ -16,20 +16,16 @@ pub trait Verification {
 
 /// Construct a batch of transaction verifiers in form of tree
 #[derive(Default)]
-pub struct TransactionVerifier<T, V>
-where
-    T: Context,
-    V: Verification<CTX = T>,
-{
-    verification_tree: BTreeMap<&'static str, V>,
+pub struct TransactionVerifier<T: Context> {
+    verification_tree: BTreeMap<&'static str, Box<dyn Verification<CTX = T>>>,
 }
 
-impl<T, V> TransactionVerifier<T, V>
-where
-    T: Context,
-    V: Verification<CTX = T>,
-{
-    pub fn add_verifier(&mut self, name: &'static str, verifier: V) -> &mut Self {
+impl<T: Context> TransactionVerifier<T> {
+    pub fn add_verifier(
+        &mut self,
+        name: &'static str,
+        verifier: Box<dyn Verification<CTX = T>>,
+    ) -> &mut Self {
         self.verification_tree.insert(name, verifier);
         self
     }
@@ -61,7 +57,7 @@ macro_rules! cinnabar_main {
             let mut ctx = <$ctx>::default();
             let mut verifier = TransactionVerifier::default();
             $(
-                verifier.add_verifier($name, <$verifier>::default());
+                verifier.add_verifier($name, alloc::boxed::Box::new(<$verifier>::default()));
             )+
             match verifier.run(&mut ctx) {
                 Ok(_) => 0,
