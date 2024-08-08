@@ -7,8 +7,11 @@ use ckb_sdk::{
     Address,
 };
 use ckb_types::{
-    core::{Capacity, DepType, TransactionView},
-    packed::{Bytes, CellDep, CellInput, CellOutput, OutPoint, Script, WitnessArgs},
+    core::{
+        cell::{CellMetaBuilder, ResolvedTransaction},
+        Capacity, DepType, TransactionView,
+    },
+    packed::{Bytes, CellDep, CellInput, CellOutput, OutPoint, OutPointVec, Script, WitnessArgs},
     prelude::{Builder, Entity, Pack, Unpack},
     H256,
 };
@@ -655,18 +658,76 @@ impl TransactionSkeleton {
         Ok(self)
     }
 
+    /// Turn into ResolvedTransaction for contracts native debugging
+    pub async fn into_resolved_transaction<T: RPC>(self, rpc: &T) -> Result<ResolvedTransaction> {
+        let tx = self.clone().into_transaction_view();
+        let mut resolved_inputs = vec![];
+        for v in self.inputs {
+            let out_point = v.input.previous_output();
+            let meta = CellMetaBuilder::from_cell_output(v.output.output, v.output.data.into())
+                .out_point(out_point)
+                .build();
+            resolved_inputs.push(meta);
+        }
+        let mut resolved_cell_deps = vec![];
+        let mut resolved_dep_groups = vec![];
+        for mut v in self.celldeps {
+            let output = if let Some(output) = v.output {
+                output
+            } else {
+                v.refresh_cell_output(rpc).await?;
+                v.output.unwrap()
+            };
+            if v.cell_dep.dep_type() == DepType::DepGroup.into() {
+                // dep group data is a list of out points
+                let sub_out_points = OutPointVec::from_slice(&output.data)
+                    .map_err(|_| eyre!("invalid dep group"))?;
+                for sub_out_point in sub_out_points {
+                    let tx_hash = sub_out_point.tx_hash().unpack();
+                    let index = sub_out_point.index().unpack();
+                    let sub_celldep =
+                        CellDepEx::new_from_outpoint(rpc, tx_hash, index, DepType::Code, true)
+                            .await?;
+                    let sub_output = sub_celldep.output.unwrap();
+                    let meta = CellMetaBuilder::from_cell_output(
+                        sub_output.output,
+                        sub_output.data.into(),
+                    )
+                    .out_point(sub_out_point)
+                    .build();
+                    resolved_cell_deps.push(meta);
+                }
+                let meta = CellMetaBuilder::from_cell_output(output.output, output.data.into())
+                    .out_point(v.cell_dep.out_point())
+                    .build();
+                resolved_dep_groups.push(meta);
+            } else {
+                let meta = CellMetaBuilder::from_cell_output(output.output, output.data.into())
+                    .out_point(v.cell_dep.out_point())
+                    .build();
+                resolved_cell_deps.push(meta);
+            }
+        }
+        Ok(ResolvedTransaction {
+            transaction: tx,
+            resolved_cell_deps,
+            resolved_inputs,
+            resolved_dep_groups,
+        })
+    }
+
     /// Turn into packed TransactionView
     pub fn into_transaction_view(self) -> TransactionView {
         let inputs = self.inputs.into_iter().map(|v| v.input).collect::<Vec<_>>();
-        let outputs = self
-            .outputs
-            .into_iter()
-            .map(|v| v.output)
-            .collect::<Vec<_>>();
         let celldeps = self
             .celldeps
             .into_iter()
             .map(|v| v.cell_dep)
+            .collect::<Vec<_>>();
+        let outputs = self
+            .outputs
+            .into_iter()
+            .map(|v| v.output)
             .collect::<Vec<_>>();
         let witnesses = self
             .witnesses

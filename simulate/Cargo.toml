@@ -1,0 +1,13 @@
+[package]
+name = "ckb-cinnabar-simulator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ckb-always-success-script = "0.0.1"
+ckb-chain-spec = "0.117.0"
+ckb-traits = "0.117.0"
+ckb-script = "0.117.0"
+rand = "0.8.5"
+
+ckb-cinnabar-calculator = { path = "../calculate" }

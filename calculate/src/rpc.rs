@@ -4,9 +4,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use ckb_jsonrpc_types::{
-    BlockNumber, BlockView, CellWithStatus, JsonBytes, OutPoint, TxPoolInfo, Uint32,
+    BlockNumber, BlockView, CellWithStatus, JsonBytes, OutPoint, OutputsValidator, Transaction,
+    TxPoolInfo, Uint32,
 };
 use ckb_sdk::rpc::ckb_indexer::{Cell, Order, Pagination, SearchKey};
+use ckb_types::H256;
 use eyre::{eyre, Error};
 use jsonrpc_core::futures::FutureExt;
 use jsonrpc_core::response::Output;
@@ -73,6 +75,41 @@ pub trait RPC: Clone + Send + Sync {
     ) -> Rpc<Pagination<Cell>>;
     fn get_block_by_number(&self, number: BlockNumber) -> Rpc<Option<BlockView>>;
     fn tx_pool_info(&self) -> Rpc<TxPoolInfo>;
+    fn send_transaction(
+        &self,
+        tx: Transaction,
+        outputs_validator: Option<OutputsValidator>,
+    ) -> Rpc<H256>;
+}
+
+#[derive(Clone)]
+pub struct FakeRpcClient {}
+
+impl RPC for FakeRpcClient {
+    fn get_live_cell(&self, _out_point: &OutPoint, _with_data: bool) -> Rpc<CellWithStatus> {
+        unimplemented!()
+    }
+    fn get_cells(
+        &self,
+        _search_key: SearchKey,
+        _limit: u32,
+        _cursor: Option<JsonBytes>,
+    ) -> Rpc<Pagination<Cell>> {
+        unimplemented!()
+    }
+    fn get_block_by_number(&self, _number: BlockNumber) -> Rpc<Option<BlockView>> {
+        unimplemented!()
+    }
+    fn tx_pool_info(&self) -> Rpc<TxPoolInfo> {
+        unimplemented!()
+    }
+    fn send_transaction(
+        &self,
+        _tx: Transaction,
+        _outputs_validator: Option<OutputsValidator>,
+    ) -> Rpc<H256> {
+        unimplemented!()
+    }
 }
 
 #[derive(Clone)]
@@ -82,9 +119,6 @@ pub struct RpcClient {
     indexer_uri: Url,
     id: Arc<AtomicU64>,
 }
-
-unsafe impl Send for RpcClient {}
-unsafe impl Sync for RpcClient {}
 
 impl RpcClient {
     pub fn new(ckb_uri: &str, indexer_uri: Option<&str>) -> Self {
@@ -157,6 +191,22 @@ impl RPC for RpcClient {
 
     fn tx_pool_info(&self) -> Rpc<TxPoolInfo> {
         jsonrpc!("tx_pool_info", Target::CKB, self, TxPoolInfo).boxed()
+    }
+
+    fn send_transaction(
+        &self,
+        tx: Transaction,
+        outputs_validator: Option<OutputsValidator>,
+    ) -> Rpc<H256> {
+        jsonrpc!(
+            "send_transaction",
+            Target::CKB,
+            self,
+            H256,
+            tx,
+            outputs_validator
+        )
+        .boxed()
     }
 }
 
