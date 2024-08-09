@@ -31,6 +31,10 @@ unsafe impl Send for FakeRpcClient {}
 unsafe impl Sync for FakeRpcClient {}
 
 impl RPC for FakeRpcClient {
+    fn url(&self) -> (String, String) {
+        unimplemented!("fake url method")
+    }
+
     fn get_live_cell(&self, out_point: &OutPoint, with_data: bool) -> Rpc<CellWithStatus> {
         let Some(get_live_cell) = self.method_get_live_cell.clone() else {
             unimplemented!("fake get_live_cell method")

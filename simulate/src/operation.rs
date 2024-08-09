@@ -54,13 +54,13 @@ impl<T: RPC> Operation<T> for AddCustomContractCelldep {
     }
 }
 
-pub struct AddCustomContractCelldepByPath {
+pub struct AddCustomContractCelldepByName {
     pub contract: &'static str,
     pub with_type_id: bool,
 }
 
 #[async_trait]
-impl<T: RPC> Operation<T> for AddCustomContractCelldepByPath {
+impl<T: RPC> Operation<T> for AddCustomContractCelldepByName {
     async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
         let mut contract_path = PathBuf::new();
         contract_path.push("../build/release");

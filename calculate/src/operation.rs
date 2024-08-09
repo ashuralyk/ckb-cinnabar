@@ -1,4 +1,15 @@
+#![allow(clippy::mutable_key_type)]
+
+use std::{
+    collections::HashMap,
+    fs,
+    io::Write,
+    path::PathBuf,
+    process::{Command, Stdio},
+};
+
 use async_trait::async_trait;
+use ckb_jsonrpc_types::{JsonBytes, Transaction};
 use ckb_sdk::{
     constants::TYPE_ID_CODE_HASH,
     rpc::ckb_indexer::{SearchKey, SearchMode},
@@ -11,10 +22,11 @@ use ckb_types::{
     core::{Capacity, DepType, ScriptHashType},
     packed::{CellOutput, Script},
     prelude::{Builder, Entity, Pack, Unpack},
-    H256,
+    H160, H256,
 };
 use eyre::{eyre, Result};
 use secp256k1::SecretKey;
+use serde_json::Value;
 
 use crate::{
     rpc::{GetCellsIter, RPC},
@@ -142,12 +154,30 @@ impl<T: RPC> Operation<T> for AddInputCell {
                         return Err(err);
                     }
                 }
+                skeleton.witness(Default::default());
                 Result::<()>::Ok(())
             })?;
         }
         if !find_avaliable {
             return Err(eyre!("input cell not found"));
         }
+        Ok(())
+    }
+}
+
+/// Operation that add input cell to transaction skeleton by out point directly
+pub struct AddInputCellByOutPoint {
+    pub tx_hash: H256,
+    pub index: usize,
+    pub since: Option<u64>,
+}
+
+#[async_trait]
+impl<T: RPC> Operation<T> for AddInputCellByOutPoint {
+    async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+        let cell_input =
+            CellInputEx::new_from_outpoint(rpc, self.tx_hash, self.index, self.since).await?;
+        skeleton.input(cell_input)?.witness(Default::default());
         Ok(())
     }
 }
@@ -162,7 +192,8 @@ impl<T: RPC> Operation<T> for AddInputCellByAddress {
     async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
         skeleton
             .input_from_address(rpc, self.address.clone())
-            .await?;
+            .await?
+            .witness(Default::default());
         Ok(())
     }
 }
@@ -197,6 +228,7 @@ impl<T: RPC> Operation<T> for AddCellInputByType {
                         return Err(err);
                     }
                 }
+                skeleton.witness(Default::default());
                 Result::<()>::Ok(())
             })?;
         }
@@ -209,7 +241,7 @@ impl<T: RPC> Operation<T> for AddCellInputByType {
 
 /// Operation that add output cell to transaction skeleton
 ///
-/// `mark_capacity_extra`: bool, if true, the capacity of output cell will be minimal capacity plus `capacity`
+/// `use_additional_capacity`: bool, if true, the capacity of output cell will be minimal capacity plus `capacity`
 /// `user_type_id`: bool, if true, calculate type id and override into type script if provided
 #[derive(Default)]
 pub struct AddCellOutput {
@@ -217,7 +249,7 @@ pub struct AddCellOutput {
     pub type_script: Option<Script>,
     pub capacity: u64,
     pub data: Vec<u8>,
-    pub mark_capacity_extra: bool,
+    pub use_additional_capacity: bool,
     pub use_type_id: bool,
 }
 
@@ -248,7 +280,7 @@ impl<T: RPC> Operation<T> for AddCellOutput {
             .as_builder()
             .build_exact_capacity(Capacity::bytes(self.data.len())?)?;
         let minimal_capacity: u64 = output.capacity().unpack();
-        if self.mark_capacity_extra {
+        if self.use_additional_capacity {
             let capacity = minimal_capacity + self.capacity;
             output = output.as_builder().capacity(capacity.pack()).build();
         } else if self.capacity > minimal_capacity {
@@ -265,13 +297,23 @@ impl<T: RPC> Operation<T> for AddCellOutput {
 /// Operation that add output cell to transaction skeleton by address
 pub struct AddOutputCellByAddress {
     pub address: Address,
+    pub data: Vec<u8>,
+    pub add_type_id: bool,
 }
 
 #[async_trait]
 impl<T: RPC> Operation<T> for AddOutputCellByAddress {
-    async fn run(self: Box<Self>, _: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
-        skeleton.output_from_address(self.address.clone());
-        Ok(())
+    async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+        Box::new(AddCellOutput {
+            lock_script: self.address.payload().into(),
+            type_script: None,
+            capacity: 0,
+            data: self.data,
+            use_additional_capacity: true,
+            use_type_id: self.add_type_id,
+        })
+        .run(rpc, skeleton)
+        .await
     }
 }
 
@@ -283,6 +325,8 @@ impl<T: RPC> Operation<T> for AddOutputCellByAddress {
 pub struct AddOutputCellByInputIndex {
     pub input_index: usize,
     pub data: Option<Vec<u8>>,
+    pub lock_script: Option<Script>,
+    pub type_script: Option<Option<Script>>,
     pub adjust_capacity: bool,
 }
 
@@ -298,22 +342,31 @@ impl<T: RPC> Operation<T> for AddOutputCellByInputIndex {
             skeleton.inputs.last().ok_or(eyre!("input not found"))?
         };
         let mut cell_output = cell_input.output.clone();
+        let mut output_builder = cell_output.output.as_builder();
         if let Some(data) = self.data {
-            if self.adjust_capacity {
-                cell_output.output = cell_output
-                    .output
-                    .as_builder()
-                    .build_exact_capacity(Capacity::bytes(data.len())?)?;
-            }
             cell_output.data = data;
         }
+        if let Some(lock_script) = self.lock_script {
+            output_builder = output_builder.lock(lock_script);
+        }
+        if let Some(type_script) = self.type_script {
+            output_builder = output_builder.type_(type_script.pack());
+        }
+        cell_output.output = if self.adjust_capacity {
+            output_builder.build_exact_capacity(Capacity::bytes(cell_output.data.len())?)?
+        } else {
+            output_builder.build()
+        };
         skeleton.output(cell_output);
         Ok(())
     }
 }
 
 /// Operation that add wintess in form of WitnessArgs to transaction skeleton
+///
+/// `witness_index`: Option<usize>, the index of witness to update, if None, add a new witness
 pub struct AddWitnessArgs {
+    pub witness_index: Option<usize>,
     pub lock: Vec<u8>,
     pub input_type: Vec<u8>,
     pub output_type: Vec<u8>,
@@ -322,8 +375,18 @@ pub struct AddWitnessArgs {
 #[async_trait]
 impl<T: RPC> Operation<T> for AddWitnessArgs {
     async fn run(self: Box<Self>, _: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
-        let witness = WitnessArgsEx::new(self.lock, self.input_type, self.output_type);
-        skeleton.witness(witness);
+        if let Some(witness_index) = self.witness_index {
+            if witness_index >= skeleton.witnesses.len() {
+                return Err(eyre!("witness index out of range"));
+            }
+            let witness = &mut skeleton.witnesses[witness_index];
+            witness.lock = self.lock;
+            witness.input_type = self.input_type;
+            witness.output_type = self.output_type;
+        } else {
+            let witness = WitnessArgsEx::new(self.lock, self.input_type, self.output_type);
+            skeleton.witness(witness);
+        }
         Ok(())
     }
 }
@@ -358,6 +421,102 @@ impl<T: RPC> Operation<T> for AddSecp256k1SighashSignatures {
     }
 }
 
+/// Copy from https://github.com/nervosnetwork/ckb-cli/blob/develop/src/subcommands/tx.rs#L783
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct ReprMultisigConfig {
+    pub sighash_addresses: Vec<String>,
+    pub require_first_n: u8,
+    pub threshold: u8,
+}
+
+/// Copy from https://github.com/nervosnetwork/ckb-cli/blob/develop/src/subcommands/tx.rs#L710
+#[derive(serde::Serialize, serde::Deserialize, Default)]
+pub struct ReprTxHelper {
+    pub transaction: Transaction,
+    pub multisig_configs: HashMap<H160, ReprMultisigConfig>,
+    pub signatures: HashMap<JsonBytes, Vec<JsonBytes>>,
+}
+
+/// Operation that sign and add secp256k1_sighash_all signatures to transaction skeleton with ckb-cli
+///
+/// note: this operation requires `ckb-cli` installed and available in PATH, refer to https://github.com/nervosnetwork/ckb-cli
+pub struct AddSecp256k1SighashSignaturesWithCkbCli {
+    pub signer_address: Address,
+    pub tx_cache_path: String,
+    pub keep_tx_file: bool,
+}
+
+#[async_trait]
+impl<T: RPC> Operation<T> for AddSecp256k1SighashSignaturesWithCkbCli {
+    async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+        // complete witness if not enough
+        let (signer_groups, _) = skeleton.lock_script_groups(&self.signer_address.payload().into());
+        let witness_index = signer_groups
+            .first()
+            .cloned()
+            .ok_or(eyre!("no signer address found"))?;
+        if skeleton.witnesses.len() <= witness_index {
+            return Err(eyre!("witnesses count not match all of inputs"));
+        }
+        // generate persisted tx file in cahce directory for ckb-cli
+        let tx = skeleton.clone().into_transaction_view();
+        let tx_hash = hex::encode(tx.hash().raw_data());
+        let cache_dir = PathBuf::new().join(self.tx_cache_path);
+        if !cache_dir.exists() {
+            fs::create_dir_all(&cache_dir)?;
+        }
+        let ckb_cli_tx = ReprTxHelper {
+            transaction: tx.data().into(),
+            ..Default::default()
+        };
+        let tx_content = serde_json::to_string_pretty(&ckb_cli_tx)?;
+        let tx_file = cache_dir.join(format!("tx-{}.json", tx_hash));
+        fs::write(&tx_file, tx_content)?;
+        // read password for unlocking ckb-cli
+        let password = rpassword::prompt_password("Enter password to unlock ckb-cli: ")?;
+        // run ckb-cli to sign the tx
+        let (url, _) = rpc.url();
+        let mut ckb_cli = Command::new("ckb-cli")
+            .stdin(Stdio::piped())
+            .stderr(Stdio::piped())
+            .stdout(Stdio::piped())
+            .args(["--url", &url])
+            .args(["tx", "sign-inputs"])
+            .args(["--tx-file", tx_file.to_str().unwrap()])
+            .args(["--from-account", &self.signer_address.to_string()])
+            .args(["--output-format", "json"])
+            .arg("--add-signatures")
+            .spawn()?;
+        ckb_cli
+            .stdin
+            .as_mut()
+            .ok_or(eyre!("stdin not available"))?
+            .write_all(password.as_bytes())?;
+        let output = ckb_cli.wait_with_output()?;
+        if !output.status.success() {
+            let error = String::from_utf8(output.stderr)?;
+            return Err(eyre!("ckb-cli error: {error}"));
+        }
+        if !self.keep_tx_file {
+            fs::remove_file(&tx_file)?;
+        }
+        // fill in signature
+        let ckb_cli_result = String::from_utf8(output.stdout)?;
+        let signature_json: Vec<Value> =
+            serde_json::from_str(ckb_cli_result.trim_start_matches("Password:").trim())?;
+        let signature = signature_json
+            .first()
+            .ok_or(eyre!("signature not generated"))?
+            .get("signature")
+            .ok_or(eyre!("signature not found"))?
+            .as_str()
+            .ok_or(eyre!("signature not string format"))?;
+        let signature_bytes = hex::decode(signature.trim_start_matches("0x"))?;
+        skeleton.witnesses[witness_index].lock = signature_bytes;
+        Ok(())
+    }
+}
+
 /// Operation that balance transaction skeleton
 pub struct BalanceTransaction {
     pub balancer: Script,
@@ -372,6 +531,9 @@ impl<T: RPC> Operation<T> for BalanceTransaction {
         skeleton
             .balance(rpc, fee, self.balancer, self.change_receiver)
             .await?;
+        (skeleton.witnesses.len()..skeleton.inputs.len()).for_each(|_| {
+            skeleton.witness(Default::default());
+        });
         Ok(())
     }
 }

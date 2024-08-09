@@ -223,15 +223,28 @@ impl CellDepEx {
 /// splited for better composability
 #[derive(Debug, Clone)]
 pub struct WitnessArgsEx {
+    pub empty: bool,
     pub lock: Vec<u8>,
     pub input_type: Vec<u8>,
     pub output_type: Vec<u8>,
+}
+
+impl Default for WitnessArgsEx {
+    fn default() -> Self {
+        WitnessArgsEx {
+            empty: true,
+            lock: Vec::new(),
+            input_type: Vec::new(),
+            output_type: Vec::new(),
+        }
+    }
 }
 
 impl WitnessArgsEx {
     /// Directly initialize a TsWitnessArgs
     pub fn new(lock: Vec<u8>, input_type: Vec<u8>, output_type: Vec<u8>) -> Self {
         WitnessArgsEx {
+            empty: false,
             lock,
             input_type,
             output_type,
@@ -259,8 +272,15 @@ impl WitnessArgsEx {
     }
 
     /// Turn into packed bytes of WitnessArgs
-    pub fn into_packed_bytes(self) -> Bytes {
-        self.into_witness_args().as_bytes().pack()
+    pub fn into_packed_bytes(mut self) -> Bytes {
+        if !self.lock.is_empty() || !self.input_type.is_empty() || !self.output_type.is_empty() {
+            self.empty = false;
+        }
+        if self.empty {
+            Bytes::default()
+        } else {
+            self.into_witness_args().as_bytes().pack()
+        }
     }
 }
 
@@ -355,11 +375,11 @@ impl TransactionSkeleton {
                 let lock = witness_args.lock().to_opt().unwrap_or_default();
                 let input_type = witness_args.input_type().to_opt().unwrap_or_default();
                 let output_type = witness_args.output_type().to_opt().unwrap_or_default();
-                Ok(WitnessArgsEx {
-                    lock: lock.raw_data().to_vec(),
-                    input_type: input_type.raw_data().to_vec(),
-                    output_type: output_type.raw_data().to_vec(),
-                })
+                Ok(WitnessArgsEx::new(
+                    lock.raw_data().to_vec(),
+                    input_type.raw_data().to_vec(),
+                    output_type.raw_data().to_vec(),
+                ))
             })
             .collect::<Result<_>>()?;
         Ok(self)
@@ -448,17 +468,17 @@ impl TransactionSkeleton {
     }
 
     /// Push a output cell from ckb address, which is majorly used to receive capacity change
-    pub fn output_from_address(&mut self, address: Address) -> &mut Self {
-        self.output_from_script(address.payload().into())
+    pub fn output_from_address(&mut self, address: Address, data: Vec<u8>) -> &mut Self {
+        self.output_from_script(address.payload().into(), data)
     }
 
     /// Push a output cell from lock script
-    pub fn output_from_script(&mut self, lock_script: Script) -> &mut Self {
+    pub fn output_from_script(&mut self, lock_script: Script, data: Vec<u8>) -> &mut Self {
         let output = CellOutput::new_builder()
             .lock(lock_script)
             .build_exact_capacity(Capacity::zero())
             .expect("build exact capacity");
-        self.output(CellOutputEx::new(output, Vec::new()))
+        self.output(CellOutputEx::new(output, data))
     }
 
     /// Push a batch of output cells
@@ -626,11 +646,11 @@ impl TransactionSkeleton {
     ) -> Result<&mut Self> {
         let change_cell_index = match change_receiver {
             ChangeReceiver::Address(changer) => {
-                self.output_from_address(changer);
+                self.output_from_address(changer, Default::default());
                 self.outputs.len() - 1
             }
             ChangeReceiver::Script(changer) => {
-                self.output_from_script(changer);
+                self.output_from_script(changer, Default::default());
                 self.outputs.len() - 1
             }
             ChangeReceiver::Output(index) => {
@@ -724,11 +744,12 @@ impl TransactionSkeleton {
             .into_iter()
             .map(|v| v.cell_dep)
             .collect::<Vec<_>>();
-        let outputs = self
-            .outputs
-            .into_iter()
-            .map(|v| v.output)
-            .collect::<Vec<_>>();
+        let mut outputs = vec![];
+        let mut outputs_data = vec![];
+        self.outputs.into_iter().for_each(|v| {
+            outputs.push(v.output);
+            outputs_data.push(v.data.pack());
+        });
         let witnesses = self
             .witnesses
             .into_iter()
@@ -737,6 +758,7 @@ impl TransactionSkeleton {
         TransactionView::new_advanced_builder()
             .inputs(inputs)
             .outputs(outputs)
+            .outputs_data(outputs_data)
             .cell_deps(celldeps)
             .witnesses(witnesses)
             .build()

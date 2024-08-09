@@ -46,18 +46,18 @@ macro_rules! jsonrpc {
             let resp = c
                 .send()
                 .await
-                .map_err::<Error, _>(|_| eyre!("bad ckb request url"))?;
+                .map_err::<Error, _>(|e| eyre!("bad ckb request url: {}", e))?;
             let output = resp
                 .json::<Output>()
                 .await
-                .map_err::<Error, _>(|_| eyre!("failed to parse json response"))?;
+                .map_err::<Error, _>(|e| eyre!("failed to parse json response: {}", e))?;
 
             match output {
                 Output::Success(success) => {
                     Ok(serde_json::from_value::<$return>(success.result).unwrap())
                 }
-                Output::Failure(_) => {
-                    Err(eyre!("failed to get response from ckb rpc"))
+                Output::Failure(e) => {
+                    Err(eyre!("failed to get response from ckb rpc: {:?}", e))
                 }
             }
         }
@@ -66,6 +66,7 @@ macro_rules! jsonrpc {
 
 #[allow(clippy::upper_case_acronyms)]
 pub trait RPC: Clone + Send + Sync {
+    fn url(&self) -> (String, String);
     fn get_live_cell(&self, out_point: &OutPoint, with_data: bool) -> Rpc<CellWithStatus>;
     fn get_cells(
         &self,
@@ -114,6 +115,10 @@ impl RpcClient {
 }
 
 impl RPC for RpcClient {
+    fn url(&self) -> (String, String) {
+        (self.ckb_uri.to_string(), self.indexer_uri.to_string())
+    }
+
     fn get_live_cell(&self, out_point: &OutPoint, with_data: bool) -> Rpc<CellWithStatus> {
         jsonrpc!(
             "get_live_cell",

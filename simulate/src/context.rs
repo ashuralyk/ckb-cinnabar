@@ -84,6 +84,7 @@ impl ExtensionProvider for Context {
 pub struct TransactionSimulator {
     consensus: Consensus,
     env: TxVerifyEnv,
+    print_tx: bool,
 }
 
 impl Default for TransactionSimulator {
@@ -96,11 +97,20 @@ impl Default for TransactionSimulator {
             .build();
         let tip = HeaderBuilder::default().number(0.pack()).build();
         let env = TxVerifyEnv::new_submit(&tip);
-        Self { consensus, env }
+        Self {
+            consensus,
+            env,
+            print_tx: false,
+        }
     }
 }
 
 impl TransactionSimulator {
+    pub fn print_tx(&mut self, print_tx: bool) -> &mut Self {
+        self.print_tx = print_tx;
+        self
+    }
+
     pub fn verify(
         &self,
         instructions: Vec<Instruction<FakeRpcClient>>,
@@ -121,6 +131,9 @@ impl TransactionSimulator {
         let mut skeleton = TransactionSkeleton::default();
         for instruction in instructions {
             instruction.run(rpc, &mut skeleton).await?;
+        }
+        if self.print_tx {
+            println!("transaction skeleton: {}", skeleton);
         }
         let resolved_tx = Arc::new(skeleton.into_resolved_transaction(rpc).await?);
         let context = Context::new(resolved_tx.clone());

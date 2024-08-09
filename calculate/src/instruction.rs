@@ -26,12 +26,16 @@ impl<T: RPC> Instruction<T> {
         Instruction { operations }
     }
 
-    pub fn push_operation(&mut self, operation: Box<dyn Operation<T>>) {
+    pub fn push(&mut self, operation: Box<dyn Operation<T>>) {
         self.operations.push(operation);
     }
 
-    pub fn pop_operation(&mut self) -> Option<Box<dyn Operation<T>>> {
+    pub fn pop(&mut self) -> Option<Box<dyn Operation<T>>> {
         self.operations.pop()
+    }
+
+    pub fn append(&mut self, operations: Vec<Box<dyn Operation<T>>>) {
+        self.operations.extend(operations);
     }
 
     pub async fn run(self, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
