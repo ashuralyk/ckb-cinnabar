@@ -46,7 +46,7 @@ impl CellInputEx {
     pub async fn new_from_outpoint<T: RPC>(
         rpc: &T,
         tx_hash: H256,
-        index: usize,
+        index: u32,
         since: Option<u64>,
     ) -> Result<Self> {
         let out_point = OutPoint::new_builder()
@@ -321,7 +321,7 @@ impl TransactionSkeleton {
                 let tx_hash: H256 = out_point.tx_hash().unpack();
                 let index: u32 = out_point.index().unpack();
                 let since: u64 = input.since().unpack();
-                CellInputEx::new_from_outpoint(rpc, tx_hash, index as usize, Some(since))
+                CellInputEx::new_from_outpoint(rpc, tx_hash, index, Some(since))
             })
             .collect::<Vec<_>>();
         self.inputs = join_all(inputs).await.into_iter().collect::<Result<_>>()?;

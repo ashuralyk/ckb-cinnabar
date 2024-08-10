@@ -127,7 +127,6 @@ pub struct AddInputCell {
     pub type_script: Option<Script>,
     pub count: u32,
     pub search_mode: SearchMode,
-    pub skip_exist: bool,
 }
 
 #[async_trait]
@@ -149,12 +148,7 @@ impl<T: RPC> Operation<T> for AddInputCell {
             cells.into_iter().try_for_each(|cell| {
                 let cell_input = CellInputEx::new_from_indexer_cell(cell);
                 find_avaliable = true;
-                if let Err(err) = skeleton.input(cell_input) {
-                    if !self.skip_exist {
-                        return Err(err);
-                    }
-                }
-                skeleton.witness(Default::default());
+                skeleton.input(cell_input)?.witness(Default::default());
                 Result::<()>::Ok(())
             })?;
         }
@@ -168,7 +162,7 @@ impl<T: RPC> Operation<T> for AddInputCell {
 /// Operation that add input cell to transaction skeleton by out point directly
 pub struct AddInputCellByOutPoint {
     pub tx_hash: H256,
-    pub index: usize,
+    pub index: u32,
     pub since: Option<u64>,
 }
 
