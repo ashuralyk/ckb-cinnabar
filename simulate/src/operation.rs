@@ -54,6 +54,7 @@ impl<T: RPC> Operation<T> for AddCustomContractCelldep {
     }
 }
 
+/// Add a custom contract celldep to the transaction skeleton by loading compiled native contract
 pub struct AddCustomContractCelldepByName {
     pub contract: &'static str,
     pub with_type_id: bool,
@@ -95,6 +96,7 @@ impl<T: RPC> Operation<T> for AddAlwaysSuccessCelldep {
     }
 }
 
+/// Point to a existed celldep to generate a script that refers to it, this scenario only works for testing purpose
 pub struct ReferenceScript {
     pub celldep_index: usize,
     pub args: Vec<u8>,

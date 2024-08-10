@@ -244,7 +244,7 @@ impl<T: RPC> Operation<T> for AddCellInputByType {
 /// `use_additional_capacity`: bool, if true, the capacity of output cell will be minimal capacity plus `capacity`
 /// `user_type_id`: bool, if true, calculate type id and override into type script if provided
 #[derive(Default)]
-pub struct AddCellOutput {
+pub struct AddOutputCell {
     pub lock_script: Script,
     pub type_script: Option<Script>,
     pub capacity: u64,
@@ -254,7 +254,7 @@ pub struct AddCellOutput {
 }
 
 #[async_trait]
-impl<T: RPC> Operation<T> for AddCellOutput {
+impl<T: RPC> Operation<T> for AddOutputCell {
     async fn run(self: Box<Self>, _: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
         let type_script = if self.use_type_id {
             let type_id = skeleton.calc_type_id(skeleton.outputs.len())?;
@@ -304,7 +304,7 @@ pub struct AddOutputCellByAddress {
 #[async_trait]
 impl<T: RPC> Operation<T> for AddOutputCellByAddress {
     async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
-        Box::new(AddCellOutput {
+        Box::new(AddOutputCell {
             lock_script: self.address.payload().into(),
             type_script: None,
             capacity: 0,
@@ -521,13 +521,13 @@ impl<T: RPC> Operation<T> for AddSecp256k1SighashSignaturesWithCkbCli {
 pub struct BalanceTransaction {
     pub balancer: Script,
     pub change_receiver: ChangeReceiver,
-    pub additinal_fee_rate: u64,
+    pub additional_fee_rate: u64,
 }
 
 #[async_trait]
 impl<T: RPC> Operation<T> for BalanceTransaction {
     async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
-        let fee = skeleton.fee(rpc, self.additinal_fee_rate).await?;
+        let fee = skeleton.fee(rpc, self.additional_fee_rate).await?;
         skeleton
             .balance(rpc, fee, self.balancer, self.change_receiver)
             .await?;

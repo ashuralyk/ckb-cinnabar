@@ -6,6 +6,8 @@ use crate::{
     skeleton::TransactionSkeleton,
 };
 
+pub mod predefined;
+
 pub type DefaultInstruction = Instruction<RpcClient>;
 
 /// Instruction is a collection of operations that can be executed in sequence, to assemble transaction skeleton
@@ -36,6 +38,10 @@ impl<T: RPC> Instruction<T> {
 
     pub fn append(&mut self, operations: Vec<Box<dyn Operation<T>>>) {
         self.operations.extend(operations);
+    }
+
+    pub fn merge(&mut self, instruction: Instruction<T>) {
+        self.operations.extend(instruction.operations);
     }
 
     pub async fn run(self, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {

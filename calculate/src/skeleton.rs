@@ -241,7 +241,7 @@ impl Default for WitnessArgsEx {
 }
 
 impl WitnessArgsEx {
-    /// Directly initialize a TsWitnessArgs
+    /// Directly initialize a WitnessArgsEx
     pub fn new(lock: Vec<u8>, input_type: Vec<u8>, output_type: Vec<u8>) -> Self {
         WitnessArgsEx {
             empty: false,
@@ -776,6 +776,12 @@ impl Display for TransactionSkeleton {
     }
 }
 
+impl From<TransactionSkeleton> for TransactionView {
+    fn from(value: TransactionSkeleton) -> Self {
+        value.into_transaction_view()
+    }
+}
+
 /// Indicate how to receive the change capacity while balancing transaction
 pub enum ChangeReceiver {
     /// Balance by adding an extra change cell from ckb address
@@ -786,8 +792,20 @@ pub enum ChangeReceiver {
     Output(usize),
 }
 
-impl From<TransactionSkeleton> for TransactionView {
-    fn from(value: TransactionSkeleton) -> Self {
-        value.into_transaction_view()
+impl From<Address> for ChangeReceiver {
+    fn from(value: Address) -> Self {
+        ChangeReceiver::Address(value)
+    }
+}
+
+impl From<Script> for ChangeReceiver {
+    fn from(value: Script) -> Self {
+        ChangeReceiver::Script(value)
+    }
+}
+
+impl From<usize> for ChangeReceiver {
+    fn from(value: usize) -> Self {
+        ChangeReceiver::Output(value)
     }
 }
