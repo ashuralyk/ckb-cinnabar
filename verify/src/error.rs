@@ -1,9 +1,18 @@
 use ckb_std::error::SysError;
 
 #[macro_export]
-macro_rules! custom_error {
-    ($err:expr) => {
-        Error::Custom($err as i8)
+macro_rules! define_errors {
+    ($name:ident, {$($err:ident $(= $val:ident)? ,)+}) => {
+        #[repr(i8)]
+        enum $name {
+            $($err $(= $val)? ,)+
+        }
+
+        impl From<$name> for ckb_cinnabar_verifier::error::Error {
+            fn from(value: $name) -> Self {
+                ckb_cinnabar_verifier::error::Error::Custom(value as i8)
+            }
+        }
     };
 }
 

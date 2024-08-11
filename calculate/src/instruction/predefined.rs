@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use ckb_sdk::{Address, HumanCapacity};
 use secp256k1::SecretKey;
 
@@ -5,7 +7,7 @@ use crate::{
     instruction::DefaultInstruction,
     operation::{
         AddInputCellByAddress, AddOutputCell, AddSecp256k1SighashCellDep,
-        AddSecp256k1SighashSignatures, BalanceTransaction,
+        AddSecp256k1SighashSignatures, AddSecp256k1SighashSignaturesWithCkbCli, BalanceTransaction,
     },
 };
 
@@ -64,6 +66,31 @@ pub fn balance_and_sign(
         Box::new(AddSecp256k1SighashSignatures {
             user_lock_scripts: vec![signer.payload().into()],
             user_private_keys: vec![privkey],
+        }),
+    ])
+}
+
+/// Balance transaction with capacity and then sign it with native CKB-CLI
+///
+/// # Parameters
+/// - `signer`: The address who is supposed to provide capacity to balance, in the meantime, receive the change
+/// - `additional_fee_rate`: The additional fee rate to add
+/// - `cache_path`: The path to store the transaction cache file
+pub fn balance_and_sign_with_ckb_cli(
+    signer: &Address,
+    additional_fee_rate: u64,
+    cache_path: Option<PathBuf>,
+) -> DefaultInstruction {
+    DefaultInstruction::new(vec![
+        Box::new(BalanceTransaction {
+            balancer: signer.payload().into(),
+            change_receiver: signer.clone().into(),
+            additional_fee_rate,
+        }),
+        Box::new(AddSecp256k1SighashSignaturesWithCkbCli {
+            signer_address: signer.clone(),
+            tx_cache_path: cache_path.unwrap_or_else(|| PathBuf::from("/tmp")),
+            keep_tx_file: false,
         }),
     ])
 }

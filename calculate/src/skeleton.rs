@@ -4,12 +4,12 @@ use ckb_hash::{blake2b_256, Blake2bBuilder};
 use ckb_sdk::{
     rpc::ckb_indexer::{Cell, SearchMode},
     traits::{CellQueryOptions, ValueRangeOption},
-    Address,
+    Address, AddressPayload, NetworkType,
 };
 use ckb_types::{
     core::{
         cell::{CellMetaBuilder, ResolvedTransaction},
-        Capacity, DepType, TransactionView,
+        Capacity, DepType, ScriptHashType, TransactionView,
     },
     packed::{Bytes, CellDep, CellInput, CellOutput, OutPoint, OutPointVec, Script, WitnessArgs},
     prelude::{Builder, Entity, Pack, Unpack},
@@ -19,6 +19,85 @@ use eyre::{eyre, Result};
 use futures::future::join_all;
 
 use crate::rpc::{GetCellsIter, RPC};
+
+/// A simple wrapper of packed Script
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct ScriptEx {
+    pub code_hash: H256,
+    pub hash_type: ScriptHashType,
+    pub args: Vec<u8>,
+}
+
+impl PartialEq<Script> for ScriptEx {
+    fn eq(&self, other: &Script) -> bool {
+        self.code_hash == other.code_hash().unpack()
+            && self.hash_type == other.hash_type().try_into().expect("hash type")
+            && self.args == other.args().raw_data().to_vec()
+    }
+}
+
+impl ScriptEx {
+    /// Initialize a ScriptEx of `Data2`
+    pub fn new_code(code_hash: H256, args: Vec<u8>) -> Self {
+        ScriptEx {
+            code_hash,
+            hash_type: ScriptHashType::Data2,
+            args,
+        }
+    }
+
+    /// Initialize a ScriptEx of `Type`
+    pub fn new_type(type_hash: H256, args: Vec<u8>) -> Self {
+        ScriptEx {
+            code_hash: type_hash,
+            hash_type: ScriptHashType::Type,
+            args,
+        }
+    }
+
+    /// Calculate blake2b hash of the script
+    pub fn script_hash(&self) -> H256 {
+        Script::from(self.clone()).calc_script_hash().unpack()
+    }
+
+    /// Turn into CKB address
+    pub fn to_address(&self, network: NetworkType) -> Address {
+        let payload = Script::from(self.clone()).into();
+        Address::new(network, payload, true)
+    }
+}
+
+impl From<ScriptEx> for Script {
+    fn from(value: ScriptEx) -> Self {
+        Script::new_builder()
+            .code_hash(value.code_hash.pack())
+            .hash_type(value.hash_type.into())
+            .args(value.args.pack())
+            .build()
+    }
+}
+
+impl From<Script> for ScriptEx {
+    fn from(value: Script) -> Self {
+        ScriptEx {
+            code_hash: value.code_hash().unpack(),
+            hash_type: value.hash_type().try_into().expect("hash type"),
+            args: value.args().raw_data().to_vec(),
+        }
+    }
+}
+
+impl From<Address> for ScriptEx {
+    fn from(value: Address) -> Self {
+        value.payload().into()
+    }
+}
+
+impl From<&AddressPayload> for ScriptEx {
+    fn from(value: &AddressPayload) -> Self {
+        Script::from(value).into()
+    }
+}
 
 /// CellInput for transaction skeleton, which contains output cell and data
 #[derive(Debug, Clone)]
@@ -95,6 +174,24 @@ impl CellOutputEx {
     /// Directly initialize a CellOutputEx
     pub fn new(output: CellOutput, data: Vec<u8>) -> Self {
         CellOutputEx { output, data }
+    }
+
+    /// Initialize a CellOutputEx from inner types
+    pub fn new_from_scripts(
+        lock_script: Script,
+        type_script: Option<Script>,
+        data: Vec<u8>,
+        capacity: Option<Capacity>,
+    ) -> Result<Self> {
+        let builder = CellOutput::new_builder()
+            .lock(lock_script)
+            .type_(type_script.pack());
+        let output = if let Some(capacity) = capacity {
+            builder.capacity(capacity.pack()).build()
+        } else {
+            builder.build_exact_capacity(Capacity::bytes(data.len())?)?
+        };
+        Ok(CellOutputEx::new(output, data))
     }
 
     /// Exactly occupied capacity of the cell
@@ -398,9 +495,9 @@ impl TransactionSkeleton {
     pub async fn input_from_script<T: RPC>(
         &mut self,
         rpc: &T,
-        lock_script: Script,
+        lock_script: ScriptEx,
     ) -> Result<&mut Self> {
-        let mut search_key = CellQueryOptions::new_lock(lock_script);
+        let mut search_key = CellQueryOptions::new_lock(lock_script.into());
         search_key.secondary_script_len_range = Some(ValueRangeOption::new(0, 1));
         search_key.data_len_range = Some(ValueRangeOption::new(0, 1));
         search_key.script_search_mode = Some(SearchMode::Exact);
@@ -447,18 +544,16 @@ impl TransactionSkeleton {
     }
 
     /// Remove input cell by index, which may fail if index out of range
-    pub fn remove_input(&mut self, index: usize) -> Result<&mut Self> {
+    pub fn remove_input(&mut self, index: usize) -> Result<CellInputEx> {
         if self.inputs.len() <= index {
             return Err(eyre!("input index out of range"));
         }
-        self.inputs.remove(index);
-        Ok(self)
+        Ok(self.inputs.remove(index))
     }
 
     /// Pop the last input cell, which may fail if no input cell
-    pub fn pop_input(&mut self) -> Result<&mut Self> {
-        self.inputs.pop().ok_or(eyre!("no input to pop"))?;
-        Ok(self)
+    pub fn pop_input(&mut self) -> Result<CellInputEx> {
+        self.inputs.pop().ok_or(eyre!("no input to pop"))
     }
 
     /// Push a single output cell
@@ -488,18 +583,16 @@ impl TransactionSkeleton {
     }
 
     /// Remove output cell by index, which may fail if index out of range
-    pub fn remove_output(&mut self, index: usize) -> Result<&mut Self> {
+    pub fn remove_output(&mut self, index: usize) -> Result<CellOutputEx> {
         if self.outputs.len() <= index {
             return Err(eyre!("output index out of range"));
         }
-        self.outputs.remove(index);
-        Ok(self)
+        Ok(self.outputs.remove(index))
     }
 
     /// Pop the last output cell, which may fail if no output cell
-    pub fn pop_output(&mut self) -> Result<&mut Self> {
-        self.outputs.pop().ok_or(eyre!("no output to pop"))?;
-        Ok(self)
+    pub fn pop_output(&mut self) -> Result<CellOutputEx> {
+        self.outputs.pop().ok_or(eyre!("no output to pop"))
     }
 
     /// Push a single cell dep
@@ -576,33 +669,16 @@ impl TransactionSkeleton {
     }
 
     /// Lock script groups of input and output cells
-    pub fn lock_script_groups(&self, lock_script: &Script) -> (Vec<usize>, Vec<usize>) {
+    pub fn lock_script_groups(&self, lock_script: &ScriptEx) -> (Vec<usize>, Vec<usize>) {
         let mut input_groups = Vec::new();
         let mut output_groups = Vec::new();
         for (i, input) in self.inputs.iter().enumerate() {
-            if &input.output.lock_script() == lock_script {
+            if lock_script == &input.output.lock_script() {
                 input_groups.push(i);
             }
         }
         for (i, output) in self.outputs.iter().enumerate() {
-            if &output.lock_script() == lock_script {
-                output_groups.push(i);
-            }
-        }
-        (input_groups, output_groups)
-    }
-
-    /// Type script groups of input and output cells
-    pub fn type_script_groups(&self, type_script: &Script) -> (Vec<usize>, Vec<usize>) {
-        let mut input_groups = Vec::new();
-        let mut output_groups = Vec::new();
-        for (i, input) in self.inputs.iter().enumerate() {
-            if input.output.type_script() == Some(type_script.clone()) {
-                input_groups.push(i);
-            }
-        }
-        for (i, output) in self.outputs.iter().enumerate() {
-            if output.type_script() == Some(type_script.clone()) {
+            if lock_script == &output.lock_script() {
                 output_groups.push(i);
             }
         }
@@ -624,6 +700,33 @@ impl TransactionSkeleton {
         Ok(type_id.into())
     }
 
+    /// Find CelldepEx by script, support both type and data hash
+    pub fn find_celldep_by_script(&self, script: &ScriptEx) -> Option<(usize, &CellDepEx)> {
+        let index = self
+            .celldeps
+            .iter()
+            .enumerate()
+            .find_map(|(index, celldep)| {
+                let expected_code_hash = match (script.hash_type, &celldep.output) {
+                    (ScriptHashType::Type, Some(output)) => {
+                        if let Some(type_hash) = output.calc_type_hash() {
+                            type_hash
+                        } else {
+                            H256::default()
+                        }
+                    }
+                    (_, Some(output)) => blake2b_256(&output.data).into(),
+                    _ => H256::default(),
+                };
+                if script.code_hash == expected_code_hash {
+                    Some(index)
+                } else {
+                    None
+                }
+            });
+        index.map(|index| (index, &self.celldeps[index]))
+    }
+
     /// Calculate transaction fee based on current minimal fee rate and additional fee rate
     pub async fn fee<T: RPC>(&self, rpc: &T, additinal_fee_rate: u64) -> Result<Capacity> {
         let fee_rate = u64::from(rpc.tx_pool_info().await?.min_fee_rate) + additinal_fee_rate;
@@ -641,7 +744,7 @@ impl TransactionSkeleton {
         &mut self,
         rpc: &T,
         fee: Capacity,
-        balancer: Script,
+        balancer: ScriptEx,
         change_receiver: ChangeReceiver,
     ) -> Result<&mut Self> {
         let change_cell_index = match change_receiver {

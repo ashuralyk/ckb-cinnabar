@@ -1,31 +1,25 @@
 use std::sync::Arc;
 
 use ckb_chain_spec::consensus::{Consensus, ConsensusBuilder};
-use ckb_cinnabar_calculator::{
-    instruction::Instruction,
-    re_exports::{
-        ckb_types::{
-            bytes::Bytes,
-            core::{
-                cell::ResolvedTransaction,
-                hardfork::{HardForks, CKB2021, CKB2023},
-                Cycle, HeaderBuilder, HeaderView,
-            },
-            packed::{self, Byte32, OutPoint},
-            prelude::Pack,
-        },
-        eyre::Result,
-    },
-    rpc::RPC,
-    skeleton::TransactionSkeleton,
-};
 use ckb_script::{TransactionScriptsVerifier, TxVerifyEnv};
 use ckb_traits::{CellDataProvider, ExtensionProvider, HeaderProvider};
+use ckb_types::{
+    bytes::Bytes,
+    core::{
+        cell::ResolvedTransaction,
+        hardfork::{HardForks, CKB2021, CKB2023},
+        Cycle, HeaderBuilder, HeaderView,
+    },
+    packed::{self, Byte32, OutPoint},
+    prelude::Pack,
+};
+use eyre::Result;
 
-use crate::rpc::FakeRpcClient;
+use crate::{instruction::Instruction, rpc::RPC, skeleton::TransactionSkeleton};
 
 pub const DEFUALT_MAX_CYCLES: u64 = 10_000_000;
 
+/// Context for a self-custody resolved transaction
 #[derive(Clone)]
 struct Context {
     resolved_tx: Arc<ResolvedTransaction>,
@@ -81,6 +75,7 @@ impl ExtensionProvider for Context {
     }
 }
 
+/// Onwn a native CKB-VM runner to verify a self-custody resolved transaction
 pub struct TransactionSimulator {
     consensus: Consensus,
     env: TxVerifyEnv,
@@ -111,13 +106,13 @@ impl TransactionSimulator {
         self
     }
 
-    pub fn verify(
+    pub fn verify<T: RPC + Default>(
         &self,
-        instructions: Vec<Instruction<FakeRpcClient>>,
+        instructions: Vec<Instruction<T>>,
         max_cycles: u64,
     ) -> Result<Cycle> {
         let rt = tokio::runtime::Runtime::new()?;
-        let fake_rpc = FakeRpcClient::default();
+        let fake_rpc = T::default();
         let await_result = self.async_verify(&fake_rpc, instructions, max_cycles);
         rt.block_on(await_result)
     }

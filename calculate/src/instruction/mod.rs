@@ -36,6 +36,10 @@ impl<T: RPC> Instruction<T> {
         self.operations.pop()
     }
 
+    pub fn remove(&mut self, index: usize) -> Box<dyn Operation<T>> {
+        self.operations.remove(index)
+    }
+
     pub fn append(&mut self, operations: Vec<Box<dyn Operation<T>>>) {
         self.operations.extend(operations);
     }
@@ -44,6 +48,7 @@ impl<T: RPC> Instruction<T> {
         self.operations.extend(instruction.operations);
     }
 
+    /// Execute all operations in sequence to assemble transaction skeleton
     pub async fn run(self, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
         for operation in self.operations {
             operation.run(rpc, skeleton).await?;
@@ -52,7 +57,7 @@ impl<T: RPC> Instruction<T> {
     }
 }
 
-/// Taking responsibility for executing instructions and then assembling transaction skeleton
+/// Take responsibility for executing instructions and then assemble transaction skeleton
 pub struct TransactionCalculator<T: RPC> {
     rpc: T,
     instructions: Vec<Instruction<T>>,
