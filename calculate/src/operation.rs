@@ -9,7 +9,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use ckb_jsonrpc_types::{JsonBytes, OutPoint, Transaction};
+use ckb_jsonrpc_types::{JsonBytes, Transaction};
 use ckb_sdk::{
     constants::TYPE_ID_CODE_HASH,
     rpc::ckb_indexer::{SearchKey, SearchMode},
@@ -43,6 +43,7 @@ pub trait Operation<T: RPC> {
 
 /// Operation that add cell dep to transaction skeleton by tx hash with index
 pub struct AddCellDep {
+    pub name: String,
     pub tx_hash: H256,
     pub index: u32,
     pub dep_type: DepType,
@@ -54,6 +55,7 @@ impl<T: RPC> Operation<T> for AddCellDep {
     async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
         let cell_dep = CellDepEx::new_from_outpoint(
             rpc,
+            self.name,
             self.tx_hash,
             self.index,
             self.dep_type,
@@ -67,6 +69,7 @@ impl<T: RPC> Operation<T> for AddCellDep {
 
 /// Operation that add cell dep to transaction skeleton by type script, which is type id for specific
 pub struct AddCellDepByType {
+    pub name: String,
     pub type_script: ScriptEx,
     pub dep_type: DepType,
     pub with_data: bool,
@@ -89,7 +92,7 @@ impl<T: RPC> Operation<T> for AddCellDepByType {
         let mut find_avaliable = false;
         let mut iter = GetCellsIter::new(rpc, self.search_key(skeleton)?);
         if let Some(cell) = iter.next().await? {
-            let cell_dep = CellDepEx::new_from_indexer_cell(cell, self.dep_type);
+            let cell_dep = CellDepEx::new_from_indexer_cell(self.name, cell, self.dep_type);
             find_avaliable = true;
             skeleton.celldep(cell_dep);
         }
@@ -110,6 +113,7 @@ impl<T: RPC> Operation<T> for AddSecp256k1SighashCellDep {
         let resolver = DefaultCellDepResolver::from_genesis(&genesis.into()).expect("genesis");
         let (sighash_celldep, _) = resolver.sighash_dep().expect("sighash dep");
         skeleton.celldep(CellDepEx {
+            name: "secp256k1_sighash_all".to_string(),
             cell_dep: sighash_celldep.clone(),
             output: None,
         });
@@ -117,7 +121,7 @@ impl<T: RPC> Operation<T> for AddSecp256k1SighashCellDep {
     }
 }
 
-/// Operation that add input cell to transaction skeleton by lock script (fake support)
+/// Operation that add input cell to transaction skeleton by lock script
 ///
 /// `count`: u32, the count of input cells to add that searching coming out of ckb-indexer
 /// `skip_exist`: bool, if true, skip the input cell if it already exists in skeleton, rather than return error
@@ -143,43 +147,20 @@ impl AddInputCell {
 #[async_trait]
 impl<T: RPC> Operation<T> for AddInputCell {
     async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
-        if rpc.fake() {
-            // A tricky way to get fake cell data through rpc, because there's no way to add cell data field
-            // to the real CellInput object
-            let fake_cell = rpc
-                .get_live_cell(
-                    &OutPoint {
-                        tx_hash: self.lock_script.script_hash()?,
-                        index: self.count.into(),
-                    },
-                    true,
-                )
-                .await?;
-            let fake_data = fake_cell
-                .cell
-                .map(|v| v.data.expect("fake cell data").content);
-            let faker = fake::AddFakeCellInput {
-                lock_script: self.lock_script,
-                type_script: self.type_script,
-                data: fake_data.unwrap_or_default().as_bytes().to_vec(),
-            };
-            Box::new(faker).run(rpc, skeleton).await
-        } else {
-            let mut iter = GetCellsIter::new(rpc, self.search_key(skeleton)?);
-            let mut find_avaliable = false;
-            while let Some(cells) = iter.next_batch(self.count).await? {
-                cells.into_iter().try_for_each(|cell| {
-                    let cell_input = CellInputEx::new_from_indexer_cell(cell);
-                    find_avaliable = true;
-                    skeleton.input(cell_input)?.witness(Default::default());
-                    Result::<()>::Ok(())
-                })?;
-            }
-            if !find_avaliable {
-                return Err(eyre!("input cell not found"));
-            }
-            Ok(())
+        let mut iter = GetCellsIter::new(rpc, self.search_key(skeleton)?);
+        let mut find_avaliable = false;
+        while let Some(cells) = iter.next_batch(self.count).await? {
+            cells.into_iter().try_for_each(|cell| {
+                let cell_input = CellInputEx::new_from_indexer_cell(cell);
+                find_avaliable = true;
+                skeleton.input(cell_input)?.witness(Default::default());
+                Result::<()>::Ok(())
+            })?;
         }
+        if !find_avaliable {
+            return Err(eyre!("input cell not found"));
+        }
+        Ok(())
     }
 }
 
@@ -558,22 +539,33 @@ impl<T: RPC> Operation<T> for BalanceTransaction {
 /// Fake operations for test purpose
 pub mod fake {
     use super::*;
-    use ckb_always_success_script::ALWAYS_SUCCESS;
+    pub use ckb_always_success_script::ALWAYS_SUCCESS;
     use ckb_types::{
         core::ScriptHashType,
         packed::{CellDep, CellInput, OutPoint, Script},
     };
     use rand::Rng;
 
-    fn random_hash() -> [u8; 32] {
+    pub fn random_hash() -> [u8; 32] {
         let mut rng = rand::thread_rng();
         let mut buf = [0u8; 32];
         rng.fill(&mut buf);
         buf
     }
 
+    pub fn fake_outpoint() -> OutPoint {
+        OutPoint::new(random_hash().pack(), 0)
+    }
+
+    pub fn fake_input() -> CellInput {
+        CellInput::new(fake_outpoint(), 0)
+    }
+
+    pub const ALWAYS_SUCCESS_NAME: &str = "always_success";
+
     /// Add a custom contract celldep to the transaction skeleton
     pub struct AddFakeContractCelldep {
+        pub name: String,
         pub contract_data: Vec<u8>,
         pub with_type_id: bool,
     }
@@ -581,7 +573,7 @@ pub mod fake {
     #[async_trait]
     impl<T: RPC> Operation<T> for AddFakeContractCelldep {
         async fn run(self: Box<Self>, _: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
-            let celldep_out_point = OutPoint::new(random_hash().pack(), 0);
+            let celldep_out_point = fake_outpoint();
             let celldep = CellDep::new_builder()
                 .out_point(celldep_out_point)
                 .dep_type(DepType::Code.into())
@@ -596,7 +588,12 @@ pub mod fake {
                     .build();
                 output = output.type_(Some(type_script).pack());
             }
-            skeleton.celldep(CellDepEx::new(celldep, output.build(), self.contract_data));
+            skeleton.celldep(CellDepEx::new(
+                self.name,
+                celldep,
+                output.build(),
+                self.contract_data,
+            ));
             Ok(())
         }
     }
@@ -614,9 +611,10 @@ pub mod fake {
             let contract_path = self
                 .contract_binary_path
                 .unwrap_or(PathBuf::new().join("../build/release"))
-                .join(self.contract);
+                .join(&self.contract);
             let contract_data = fs::read(contract_path)?;
             Box::new(AddFakeContractCelldep {
+                name: self.contract,
                 contract_data,
                 with_type_id: self.with_type_id,
             })
@@ -631,12 +629,13 @@ pub mod fake {
     #[async_trait]
     impl<T: RPC> Operation<T> for AddAlwaysSuccessCelldep {
         async fn run(self: Box<Self>, _: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
-            let always_success_out_point = OutPoint::new(random_hash().pack(), 0);
+            let always_success_out_point = fake_outpoint();
             let celldep = CellDep::new_builder()
                 .out_point(always_success_out_point)
                 .dep_type(DepType::Code.into())
                 .build();
             skeleton.celldep(CellDepEx::new(
+                ALWAYS_SUCCESS_NAME.to_string(),
                 celldep,
                 CellOutput::default(),
                 ALWAYS_SUCCESS.to_vec(),
@@ -665,7 +664,7 @@ pub mod fake {
                 .lock(primary_script)
                 .type_(second_script.pack())
                 .build_exact_capacity(Capacity::bytes(self.data.len())?)?;
-            let custom_out_point = OutPoint::new(random_hash().pack(), 0);
+            let custom_out_point = fake_outpoint();
             let input = CellInput::new_builder()
                 .previous_output(custom_out_point)
                 .build();

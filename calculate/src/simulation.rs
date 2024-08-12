@@ -106,14 +106,14 @@ impl TransactionSimulator {
         self
     }
 
-    pub fn verify<T: RPC + Default>(
+    pub fn verify<T: RPC>(
         &self,
+        rpc: &T,
         instructions: Vec<Instruction<T>>,
         max_cycles: u64,
     ) -> Result<Cycle> {
         let rt = tokio::runtime::Runtime::new()?;
-        let fake_rpc = T::default();
-        let await_result = self.async_verify(&fake_rpc, instructions, max_cycles);
+        let await_result = self.async_verify(rpc, instructions, max_cycles);
         rt.block_on(await_result)
     }
 

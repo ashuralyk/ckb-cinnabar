@@ -256,12 +256,7 @@ pub mod fake {
 
         fn get_live_cell(&self, out_point: &OutPoint, with_data: bool) -> Rpc<CellWithStatus> {
             let Some(get_live_cell) = self.method_get_live_cell.clone() else {
-                return Box::pin(async move {
-                    Ok(CellWithStatus {
-                        cell: None,
-                        status: "unknown".to_string(),
-                    })
-                });
+                unimplemented!("fake get_live_cell method")
             };
             let out_point = out_point.clone();
             Box::pin(async move { Ok(get_live_cell(out_point, with_data)) })

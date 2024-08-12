@@ -26,7 +26,7 @@ use crate::rpc::{GetCellsIter, RPC};
 #[derive(Clone, PartialEq, Eq)]
 pub enum ScriptEx {
     Script(H256, ScriptHashType, Vec<u8>),
-    Reference(usize, Vec<u8>),
+    Reference(String, Vec<u8>),
 }
 
 impl Default for ScriptEx {
@@ -59,7 +59,7 @@ impl ScriptEx {
     pub fn code_hash(&self) -> eyre::Result<H256> {
         match self {
             ScriptEx::Script(code_hash, _, _) => Ok(code_hash.clone()),
-            ScriptEx::Reference(_, _) => Err(eyre!("reference script")),
+            _ => Err(eyre!("reference script")),
         }
     }
 
@@ -67,7 +67,7 @@ impl ScriptEx {
     pub fn hash_type(&self) -> eyre::Result<ScriptHashType> {
         match self {
             ScriptEx::Script(_, hash_type, _) => Ok(*hash_type),
-            ScriptEx::Reference(_, _) => Err(eyre!("reference script")),
+            _ => Err(eyre!("reference script")),
         }
     }
 
@@ -85,7 +85,7 @@ impl ScriptEx {
             ScriptEx::Script(code_hash, hash_type, _) => {
                 ScriptEx::Script(code_hash, hash_type, args)
             }
-            ScriptEx::Reference(index, _) => ScriptEx::Reference(index, args),
+            ScriptEx::Reference(name, _) => ScriptEx::Reference(name, args),
         }
     }
 
@@ -164,9 +164,9 @@ impl From<&AddressPayload> for ScriptEx {
     }
 }
 
-impl From<(usize, Vec<u8>)> for ScriptEx {
-    fn from((celldep_index, args): (usize, Vec<u8>)) -> Self {
-        ScriptEx::Reference(celldep_index, args)
+impl From<(String, Vec<u8>)> for ScriptEx {
+    fn from((celldep_name, args): (String, Vec<u8>)) -> Self {
+        ScriptEx::Reference(celldep_name, args)
     }
 }
 
@@ -307,6 +307,7 @@ impl CellOutputEx {
 /// CellDep for transaction skeleton, which contains output cell and data
 #[derive(Debug, Clone)]
 pub struct CellDepEx {
+    pub name: String,
     pub cell_dep: CellDep,
     pub output: Option<CellOutputEx>,
 }
@@ -319,8 +320,9 @@ impl PartialEq for CellDepEx {
 
 impl CellDepEx {
     /// Directly initialize a CellDepEx
-    pub fn new(cell_dep: CellDep, output: CellOutput, data: Vec<u8>) -> Self {
+    pub fn new(name: String, cell_dep: CellDep, output: CellOutput, data: Vec<u8>) -> Self {
         CellDepEx {
+            name,
             cell_dep,
             output: Some(CellOutputEx::new(output, data)),
         }
@@ -329,6 +331,7 @@ impl CellDepEx {
     /// Initialize a CellDepEx from out point via CKB RPC
     pub async fn new_from_outpoint<T: RPC>(
         rpc: &T,
+        name: String,
         tx_hash: H256,
         index: u32,
         dep_type: DepType,
@@ -352,11 +355,11 @@ impl CellDepEx {
             .build();
         let output = live_cell.output.into();
         let data = live_cell.data.unwrap().content.into_bytes().to_vec();
-        Ok(Self::new(cell_dep, output, data))
+        Ok(Self::new(name, cell_dep, output, data))
     }
 
     /// Initialize a CellDepEx from the ckb-indexer specific cell
-    pub fn new_from_indexer_cell(indexer_cell: Cell, dep_type: DepType) -> Self {
+    pub fn new_from_indexer_cell(name: String, indexer_cell: Cell, dep_type: DepType) -> Self {
         let out_point = indexer_cell.out_point.into();
         let cell_dep = CellDep::new_builder()
             .out_point(out_point)
@@ -368,7 +371,7 @@ impl CellDepEx {
             .unwrap_or_default()
             .into_bytes()
             .to_vec();
-        Self::new(cell_dep, output, data)
+        Self::new(name, cell_dep, output, data)
     }
 
     /// Retrive cell dep's on-chain output if there's None output field
@@ -376,6 +379,7 @@ impl CellDepEx {
         let out_point = self.cell_dep.out_point().to_owned();
         let new_cell_dep = Self::new_from_outpoint(
             rpc,
+            self.name.clone(),
             out_point.tx_hash().unpack(),
             out_point.index().unpack(),
             self.cell_dep.dep_type().try_into().unwrap(),
@@ -505,12 +509,14 @@ impl TransactionSkeleton {
         let celldeps = tx
             .cell_deps()
             .into_iter()
-            .map(|cell_dep| {
+            .enumerate()
+            .map(|(i, cell_dep)| {
+                let name = format!("unknown-{i}");
                 let out_point = cell_dep.out_point();
                 let tx_hash: H256 = out_point.tx_hash().unpack();
                 let index: u32 = out_point.index().unpack();
                 let dep_type = cell_dep.dep_type().try_into().expect("dep type");
-                CellDepEx::new_from_outpoint(rpc, tx_hash, index, dep_type, false)
+                CellDepEx::new_from_outpoint(rpc, name, tx_hash, index, dep_type, false)
             })
             .collect::<Vec<_>>();
         self.celldeps = join_all(celldeps)
@@ -773,12 +779,18 @@ impl TransactionSkeleton {
 
     /// Find CelldepEx by script, support both type and data hash
     pub fn find_celldep_by_script(&self, script: &ScriptEx) -> Option<(usize, &CellDepEx)> {
-        if let ScriptEx::Reference(index, _) = script {
-            if index == &usize::MAX {
-                return self.celldeps.last().map(|v| (*index, v));
-            } else {
-                return self.celldeps.get(*index).map(|v| (*index, v));
-            }
+        if let ScriptEx::Reference(name, _) = script {
+            return self
+                .celldeps
+                .iter()
+                .enumerate()
+                .find_map(|(index, celldep)| {
+                    if &celldep.name == name {
+                        Some((index, celldep))
+                    } else {
+                        None
+                    }
+                });
         }
         let index = self
             .celldeps
@@ -886,9 +898,15 @@ impl TransactionSkeleton {
                 for sub_out_point in sub_out_points {
                     let tx_hash = sub_out_point.tx_hash().unpack();
                     let index = sub_out_point.index().unpack();
-                    let sub_celldep =
-                        CellDepEx::new_from_outpoint(rpc, tx_hash, index, DepType::Code, true)
-                            .await?;
+                    let sub_celldep = CellDepEx::new_from_outpoint(
+                        rpc,
+                        "".to_string(),
+                        tx_hash,
+                        index,
+                        DepType::Code,
+                        true,
+                    )
+                    .await?;
                     let sub_output = sub_celldep.output.unwrap();
                     let meta = CellMetaBuilder::from_cell_output(
                         sub_output.output,
