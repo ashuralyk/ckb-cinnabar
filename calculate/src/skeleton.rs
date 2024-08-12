@@ -20,70 +20,135 @@ use futures::future::join_all;
 
 use crate::rpc::{GetCellsIter, RPC};
 
-/// A simple wrapper of packed Script
-#[derive(Clone, Default, PartialEq, Eq)]
-pub struct ScriptEx {
-    pub code_hash: H256,
-    pub hash_type: ScriptHashType,
-    pub args: Vec<u8>,
+/// A wrapper of packed Script
+///
+/// `Reference` branch: point to a celldep in the transaction, if `usize` is MAX, point to the last one
+#[derive(Clone, PartialEq, Eq)]
+pub enum ScriptEx {
+    Script(H256, ScriptHashType, Vec<u8>),
+    Reference(usize, Vec<u8>),
+}
+
+impl Default for ScriptEx {
+    fn default() -> Self {
+        ScriptEx::Script(H256::default(), ScriptHashType::Data, Vec::new())
+    }
 }
 
 impl PartialEq<Script> for ScriptEx {
     fn eq(&self, other: &Script) -> bool {
-        self.code_hash == other.code_hash().unpack()
-            && self.hash_type == other.hash_type().try_into().expect("hash type")
-            && self.args == other.args().raw_data().to_vec()
+        let Ok(script) = Script::try_from(self.clone()) else {
+            return false;
+        };
+        &script == other
     }
 }
 
 impl ScriptEx {
     /// Initialize a ScriptEx of `Data2`
     pub fn new_code(code_hash: H256, args: Vec<u8>) -> Self {
-        ScriptEx {
-            code_hash,
-            hash_type: ScriptHashType::Data2,
-            args,
-        }
+        ScriptEx::Script(code_hash, ScriptHashType::Data2, args)
     }
 
     /// Initialize a ScriptEx of `Type`
     pub fn new_type(type_hash: H256, args: Vec<u8>) -> Self {
-        ScriptEx {
-            code_hash: type_hash,
-            hash_type: ScriptHashType::Type,
-            args,
+        ScriptEx::Script(type_hash, ScriptHashType::Type, args)
+    }
+
+    /// Get `code_hash` of ScriptEx
+    pub fn code_hash(&self) -> eyre::Result<H256> {
+        match self {
+            ScriptEx::Script(code_hash, _, _) => Ok(code_hash.clone()),
+            ScriptEx::Reference(_, _) => Err(eyre!("reference script")),
+        }
+    }
+
+    /// Get `hash_type` of ScriptEx
+    pub fn hash_type(&self) -> eyre::Result<ScriptHashType> {
+        match self {
+            ScriptEx::Script(_, hash_type, _) => Ok(*hash_type),
+            ScriptEx::Reference(_, _) => Err(eyre!("reference script")),
+        }
+    }
+
+    /// Get `args` of ScriptEx
+    pub fn args(&self) -> Vec<u8> {
+        match self {
+            ScriptEx::Script(_, _, args) => args.clone(),
+            ScriptEx::Reference(_, args) => args.clone(),
+        }
+    }
+
+    /// Change `args` of ScriptEx
+    pub fn set_args(self, args: Vec<u8>) -> Self {
+        match self {
+            ScriptEx::Script(code_hash, hash_type, _) => {
+                ScriptEx::Script(code_hash, hash_type, args)
+            }
+            ScriptEx::Reference(index, _) => ScriptEx::Reference(index, args),
         }
     }
 
     /// Calculate blake2b hash of the script
-    pub fn script_hash(&self) -> H256 {
-        Script::from(self.clone()).calc_script_hash().unpack()
+    pub fn script_hash(&self) -> Result<H256> {
+        Script::try_from(self.clone()).map(|v| v.calc_script_hash().unpack())
     }
 
     /// Turn into CKB address
-    pub fn to_address(&self, network: NetworkType) -> Address {
-        let payload = Script::from(self.clone()).into();
-        Address::new(network, payload, true)
+    pub fn to_address(self, network: NetworkType) -> Result<Address> {
+        let payload = Script::try_from(self)?.into();
+        Ok(Address::new(network, payload, true))
+    }
+
+    /// Build packed Script from ScriptEx and TransactionSkeleton
+    pub fn to_script(self, skeleton: &TransactionSkeleton) -> Result<Script> {
+        if let ScriptEx::Reference(_, _) = &self {
+            let (_, value) = skeleton
+                .find_celldep_by_script(&self)
+                .ok_or(eyre!("celldep not found"))?;
+            if value.cell_dep.dep_type() == DepType::DepGroup.into() {
+                return Err(eyre!("no support for group celldep"));
+            }
+            let output = value.output.clone().expect("binary celldep");
+            let mut script = Script::new_builder().args(self.args().pack());
+            if let Some(celldep_type_hash) = output.calc_type_hash() {
+                script = script
+                    .code_hash(celldep_type_hash.pack())
+                    .hash_type(ScriptHashType::Type.into());
+            } else {
+                script = script
+                    .code_hash(output.data_hash().pack())
+                    .hash_type(ScriptHashType::Data2.into());
+            }
+            Ok(script.build())
+        } else {
+            self.try_into()
+        }
     }
 }
 
-impl From<ScriptEx> for Script {
-    fn from(value: ScriptEx) -> Self {
-        Script::new_builder()
-            .code_hash(value.code_hash.pack())
-            .hash_type(value.hash_type.into())
-            .args(value.args.pack())
-            .build()
+impl TryFrom<ScriptEx> for Script {
+    type Error = eyre::Error;
+
+    fn try_from(value: ScriptEx) -> Result<Self> {
+        match value {
+            ScriptEx::Script(code_hash, hash_type, args) => Ok(Script::new_builder()
+                .code_hash(code_hash.pack())
+                .hash_type(hash_type.into())
+                .args(args.pack())
+                .build()),
+            ScriptEx::Reference(_, _) => Err(eyre!("reference script")),
+        }
     }
 }
 
 impl From<Script> for ScriptEx {
     fn from(value: Script) -> Self {
-        ScriptEx {
-            code_hash: value.code_hash().unpack(),
-            hash_type: value.hash_type().try_into().expect("hash type"),
-            args: value.args().raw_data().to_vec(),
-        }
+        ScriptEx::Script(
+            value.code_hash().unpack(),
+            value.hash_type().try_into().expect("hash type"),
+            value.args().raw_data().to_vec(),
+        )
     }
 }
 
@@ -96,6 +161,12 @@ impl From<Address> for ScriptEx {
 impl From<&AddressPayload> for ScriptEx {
     fn from(value: &AddressPayload) -> Self {
         Script::from(value).into()
+    }
+}
+
+impl From<(usize, Vec<u8>)> for ScriptEx {
+    fn from((celldep_index, args): (usize, Vec<u8>)) -> Self {
+        ScriptEx::Reference(celldep_index, args)
     }
 }
 
@@ -497,7 +568,7 @@ impl TransactionSkeleton {
         rpc: &T,
         lock_script: ScriptEx,
     ) -> Result<&mut Self> {
-        let mut search_key = CellQueryOptions::new_lock(lock_script.into());
+        let mut search_key = CellQueryOptions::new_lock(lock_script.to_script(self)?);
         search_key.secondary_script_len_range = Some(ValueRangeOption::new(0, 1));
         search_key.data_len_range = Some(ValueRangeOption::new(0, 1));
         search_key.script_search_mode = Some(SearchMode::Exact);
@@ -702,23 +773,30 @@ impl TransactionSkeleton {
 
     /// Find CelldepEx by script, support both type and data hash
     pub fn find_celldep_by_script(&self, script: &ScriptEx) -> Option<(usize, &CellDepEx)> {
+        if let ScriptEx::Reference(index, _) = script {
+            if index == &usize::MAX {
+                return self.celldeps.last().map(|v| (*index, v));
+            } else {
+                return self.celldeps.get(*index).map(|v| (*index, v));
+            }
+        }
         let index = self
             .celldeps
             .iter()
             .enumerate()
             .find_map(|(index, celldep)| {
-                let expected_code_hash = match (script.hash_type, &celldep.output) {
-                    (ScriptHashType::Type, Some(output)) => {
+                let expected_code_hash = match (script.hash_type(), &celldep.output) {
+                    (Ok(ScriptHashType::Type), Some(output)) => {
                         if let Some(type_hash) = output.calc_type_hash() {
                             type_hash
                         } else {
                             H256::default()
                         }
                     }
-                    (_, Some(output)) => blake2b_256(&output.data).into(),
+                    (Ok(_), Some(output)) => blake2b_256(&output.data).into(),
                     _ => H256::default(),
                 };
-                if script.code_hash == expected_code_hash {
+                if script.code_hash().unwrap_or_default() == expected_code_hash {
                     Some(index)
                 } else {
                     None

@@ -4,6 +4,7 @@ mod command;
 mod handle;
 mod object;
 
+pub use ckb_cinnabar_calculator as calculator;
 pub use handle::load_latest_contract_deployment;
 pub use object::{DeploymentRecord, Network};
 

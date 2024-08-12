@@ -4,7 +4,7 @@ use ckb_std::debug;
 use crate::error::{Error, Result};
 
 /// Where the verification tree starts
-pub const TREE_ROOT: &str = "ROOT";
+pub const TREE_ROOT: &str = "root";
 
 pub trait Verification<T: Default> {
     fn verify(&mut self, verifier_name: &str, ctx: &mut T) -> Result<Option<&str>>;

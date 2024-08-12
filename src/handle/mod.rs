@@ -20,11 +20,11 @@ pub fn load_latest_contract_deployment(
     network: Network,
     contract_name: &str,
     migration_path: Option<&str>,
-) -> ckb_cinnabar_calculator::re_exports::eyre::Result<DeploymentRecord> {
+) -> eyre::Result<DeploymentRecord> {
     let path = generate_deployment_record_path(
         &network.to_string(),
         contract_name,
-        migration_path.unwrap_or("migration"),
+        migration_path.unwrap_or("../migration"),
     )?;
     load_deployment_record(&path)
 }

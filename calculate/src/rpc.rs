@@ -256,11 +256,10 @@ pub mod fake {
 
         fn get_live_cell(&self, out_point: &OutPoint, with_data: bool) -> Rpc<CellWithStatus> {
             let Some(get_live_cell) = self.method_get_live_cell.clone() else {
-                // There's a tricky way needed to return a fake live cell
                 return Box::pin(async move {
                     Ok(CellWithStatus {
                         cell: None,
-                        status: "live".to_string(),
+                        status: "unknown".to_string(),
                     })
                 });
             };
@@ -289,7 +288,11 @@ pub mod fake {
 
         fn tx_pool_info(&self) -> Rpc<TxPoolInfo> {
             let Some(tx_pool_info) = self.method_tx_pool_info.clone() else {
-                unimplemented!("fake tx_pool_info method")
+                let pool = TxPoolInfo {
+                    min_fee_rate: 1000.into(),
+                    ..Default::default()
+                };
+                return Box::pin(async move { Ok(pool) });
             };
             Box::pin(async move { Ok(tx_pool_info()) })
         }

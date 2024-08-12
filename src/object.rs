@@ -3,7 +3,12 @@ use std::{fmt::Display, str::FromStr};
 use ckb_cinnabar_calculator::{
     re_exports::{
         ckb_sdk,
-        ckb_types::{core, packed, prelude::*, H256},
+        ckb_types::{
+            core,
+            packed::{self, Script},
+            prelude::*,
+            H256,
+        },
         eyre,
     },
     skeleton::ScriptEx,
@@ -80,7 +85,7 @@ impl TryFrom<String> for ListMode {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Hash256(H256);
 
 impl From<Hash256> for H256 {
@@ -142,6 +147,17 @@ impl Serialize for Hash256 {
 #[derive(Clone)]
 pub struct CkbAddress(ckb_sdk::Address);
 
+impl Default for CkbAddress {
+    fn default() -> Self {
+        let script: Script = ScriptEx::default().try_into().unwrap();
+        CkbAddress(ckb_sdk::Address::new(
+            ckb_sdk::NetworkType::Dev,
+            script.into(),
+            true,
+        ))
+    }
+}
+
 impl From<CkbAddress> for ckb_sdk::Address {
     fn from(value: CkbAddress) -> Self {
         value.0
@@ -190,7 +206,7 @@ impl Serialize for CkbAddress {
     }
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Default)]
 pub struct DeploymentRecord {
     pub name: String,
     pub date: String,
