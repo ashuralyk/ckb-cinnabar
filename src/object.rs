@@ -189,7 +189,7 @@ impl<'de> Deserialize<'de> for CkbAddress {
     {
         let value = String::deserialize(deserializer)?;
         if value.is_empty() {
-            return Ok(CkbAddress(None));
+            Ok(CkbAddress(None))
         } else {
             value.parse().map_err(serde::de::Error::custom)
         }
@@ -224,7 +224,6 @@ pub struct DeploymentRecord {
 }
 
 impl DeploymentRecord {
-    #[allow(dead_code)]
     pub fn generate_script(&self, args: Vec<u8>) -> eyre::Result<ScriptEx> {
         let mut script = packed::Script::new_builder().args(args.pack());
         if let Some(type_id) = self.type_id.clone() {
