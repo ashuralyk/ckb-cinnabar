@@ -95,7 +95,7 @@ Each flowchart node on diagram can be treated as a tree node from verification t
 
 ```rust
 use ckb_cinnabar_verifier::{
-    cinnabar_main, Result, Verification, CUSTOM_ERROR_START, TREE_ROOT
+    cinnabar_main, define_errors, Result, Verification, CUSTOM_ERROR_START, TREE_ROOT
 };
 use ckb_std::debug;
 
