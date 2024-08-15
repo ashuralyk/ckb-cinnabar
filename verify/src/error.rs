@@ -2,15 +2,15 @@ use ckb_std::error::SysError;
 
 #[macro_export]
 macro_rules! define_errors {
-    ($name:ident, $error:ty, {$($err:ident $(= $val:ident)? ,)+}) => {
+    ($name:ident, {$($err:ident $(= $val:ident)? ,)+}) => {
         #[repr(i8)]
         enum $name {
             $($err $(= $val)? ,)+
         }
 
-        impl From<$name> for $error {
+        impl From<$name> for ckb_cinnabar_verifier::Error {
             fn from(value: $name) -> Self {
-                <$error>::Custom(value as i8)
+                ckb_cinnabar_verifier::Error::Custom(value as i8)
             }
         }
     };

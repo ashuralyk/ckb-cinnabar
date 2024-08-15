@@ -71,8 +71,8 @@ pub async fn send_and_record_transaction<T: RPC>(
     payer_address: Address,
     owner_address: Option<Address>,
 ) -> eyre::Result<()> {
-    let skeleton = TransactionCalculator::new(rpc.clone(), instructions)
-        .run()
+    let skeleton = TransactionCalculator::new(instructions)
+        .new_skeleton(&rpc)
         .await?;
     let occupied_capacity = skeleton.outputs[0].occupied_capacity().as_u64();
     let type_id = skeleton.outputs[0].calc_type_hash();

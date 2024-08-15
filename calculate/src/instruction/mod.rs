@@ -59,46 +59,37 @@ impl<T: RPC> Instruction<T> {
 
 /// Take responsibility for executing instructions and then assemble transaction skeleton
 pub struct TransactionCalculator<T: RPC> {
-    rpc: T,
     instructions: Vec<Instruction<T>>,
-    skeleton: TransactionSkeleton,
+}
+
+impl<T: RPC> Default for TransactionCalculator<T> {
+    fn default() -> Self {
+        TransactionCalculator {
+            instructions: Vec::new(),
+        }
+    }
 }
 
 impl<T: RPC> TransactionCalculator<T> {
-    pub fn new(rpc: T, instructions: Vec<Instruction<T>>) -> Self {
-        TransactionCalculator {
-            rpc,
-            instructions,
-            skeleton: TransactionSkeleton::default(),
-        }
+    pub fn new(instructions: Vec<Instruction<T>>) -> Self {
+        TransactionCalculator { instructions }
     }
 
-    pub fn new_mainnet(instructions: Vec<DefaultInstruction>) -> TransactionCalculator<RpcClient> {
-        let rpc = RpcClient::new_mainnet();
-        TransactionCalculator::new(rpc, instructions)
-    }
-
-    pub fn new_testnet(instructions: Vec<DefaultInstruction>) -> TransactionCalculator<RpcClient> {
-        let rpc = RpcClient::new_testnet();
-        TransactionCalculator::new(rpc, instructions)
-    }
-
-    pub fn new_devnet(
-        rpc_url: &str,
-        instructions: Vec<DefaultInstruction>,
-    ) -> TransactionCalculator<RpcClient> {
-        let rpc = RpcClient::new(rpc_url, None);
-        TransactionCalculator::new(rpc, instructions)
-    }
-
-    pub fn instruction(&mut self, instruction: Instruction<T>) {
+    pub fn instruction(&mut self, instruction: Instruction<T>) -> &mut Self {
         self.instructions.push(instruction);
+        self
     }
 
-    pub async fn run(mut self) -> Result<TransactionSkeleton> {
+    pub async fn new_skeleton(self, rpc: &T) -> Result<TransactionSkeleton> {
+        let mut skeleton = TransactionSkeleton::default();
+        self.apply_skeleton(rpc, &mut skeleton).await?;
+        Ok(skeleton)
+    }
+
+    pub async fn apply_skeleton(self, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
         for instruction in self.instructions {
-            instruction.run(&self.rpc, &mut self.skeleton).await?;
+            instruction.run(rpc, skeleton).await?;
         }
-        Ok(self.skeleton)
+        Ok(())
     }
 }

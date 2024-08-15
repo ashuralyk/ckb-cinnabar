@@ -43,6 +43,49 @@ impl<T: Default> TransactionVerifier<T> {
     }
 }
 
+/// Examples:
+///
+/// ```
+/// use ckb_cinnabar_verifier::{cinnabar_main, TREE_ROOT, define_errors, CUSTOM_ERROR_START};
+///
+/// // define custom errors
+/// define_errors!(CustomError, {
+///     MyError1 = CUSTOM_ERROR_START,
+///     MyError2,
+///     // more errors
+/// });
+///
+/// // contains the global context data
+/// struct GlobalContext {
+///    // some fields
+/// }
+///
+/// // the entry verifier
+/// #[derive(Default)]
+/// struct RootVerifier;
+///
+/// // must implement Verification trait
+/// impl Verification<GlobalContext> for RootVerifier {
+///    fn verify(&mut self, verifier_name: &str, ctx: &mut GlobalContext) -> Result<Option<&str>> {
+///         // ...
+///         Ok(Some("branch")) // head to branch verifier
+///     }
+/// }
+///
+/// // the branch verifier
+/// #[derive(Default)]
+/// struct BranchVerifier;
+///
+/// // must implement Verification trait
+/// impl Verification<GlobalContext> for RootVerifier {
+///    fn verify(&mut self, verifier_name: &str, ctx: &mut GlobalContext) -> Result<Option<&str>> {
+///         // ...
+///         Ok(None) // end of the verification
+///     }
+/// }
+///
+/// cinnabar_main!(GlobalContext, (TREE_ROOT, RootVerifier), ("branch", BranchVerifier));
+/// ```
 #[macro_export]
 macro_rules! cinnabar_main {
     ($ctx:ty, $(($name:expr, $verifier:ty) $(,)?)+) => {
@@ -51,7 +94,7 @@ macro_rules! cinnabar_main {
 
         pub fn program_entry() -> i8 {
             let mut ctx = <$ctx>::default();
-            let mut verifier = TransactionVerifier::default();
+            let mut verifier = ckb_cinnabar_verifier::TransactionVerifier::default();
             $(
                 verifier.add_verifier($name, alloc::boxed::Box::new(<$verifier>::default()));
             )+

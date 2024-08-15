@@ -1,5 +1,8 @@
 #![no_std]
 extern crate alloc;
 
-pub mod error;
-pub mod verification;
+mod error;
+mod verification;
+
+pub use error::*;
+pub use verification::*;

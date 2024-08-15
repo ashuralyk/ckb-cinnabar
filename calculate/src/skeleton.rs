@@ -1,6 +1,7 @@
-use std::fmt::Display;
+use std::{fmt::Display, time::Duration};
 
 use ckb_hash::{blake2b_256, Blake2bBuilder};
+use ckb_jsonrpc_types::{OutputsValidator, Status};
 use ckb_sdk::{
     rpc::ckb_indexer::{Cell, SearchMode},
     traits::{CellQueryOptions, ValueRangeOption},
@@ -962,6 +963,58 @@ impl TransactionSkeleton {
             .witnesses(witnesses)
             .build()
     }
+
+    /// Consume and send this transaction, and then wait for confirmation
+    ///
+    /// `confirm_count`: wait how many blocks to firm confirmation, if 0, return immidiently after sending
+    /// `wait_timeout`: wait how much time until throwing timeout error, if None, no timeout
+    pub async fn send_and_wait<T: RPC>(
+        self,
+        rpc: &T,
+        confirm_count: u8,
+        wait_timeout: Option<Duration>,
+    ) -> Result<H256> {
+        let hash = rpc
+            .send_transaction(self.into(), Some(OutputsValidator::Passthrough))
+            .await?;
+        if confirm_count == 0 {
+            return Ok(hash);
+        }
+        let mut block_number = 0u64;
+        let mut time_used = Duration::from_secs(0);
+        let interval = Duration::from_secs(3);
+        loop {
+            if let Some(timeout) = wait_timeout {
+                if time_used > timeout {
+                    return Err(eyre!("timeout waiting tx: {hash:#x}"));
+                }
+                time_used += interval;
+            }
+            tokio::time::sleep(interval).await;
+            let tx = rpc
+                .get_transaction(&hash)
+                .await?
+                .ok_or(eyre!("no tx found: {hash:#x}"))?;
+            if tx.tx_status.status == Status::Rejected {
+                let reason = tx.tx_status.reason.unwrap_or_else(|| "unknown".to_string());
+                return Err(eyre!("tx {hash:#x} rejected, reason: {reason}"));
+            }
+            if tx.tx_status.status != Status::Committed {
+                continue;
+            }
+            if block_number == 0 {
+                if let Some(number) = tx.tx_status.block_number {
+                    block_number = number.into();
+                }
+            } else {
+                let tip_number = rpc.get_tip_header().await?.inner.number;
+                if u64::from(tip_number) >= block_number + confirm_count as u64 {
+                    break;
+                }
+            }
+        }
+        Ok(hash)
+    }
 }
 
 impl Display for TransactionSkeleton {
@@ -978,6 +1031,13 @@ impl Display for TransactionSkeleton {
 impl From<TransactionSkeleton> for TransactionView {
     fn from(value: TransactionSkeleton) -> Self {
         value.into_transaction_view()
+    }
+}
+
+impl From<TransactionSkeleton> for ckb_jsonrpc_types::Transaction {
+    fn from(value: TransactionSkeleton) -> Self {
+        let view: TransactionView = value.into();
+        view.data().into()
     }
 }
 

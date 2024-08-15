@@ -17,6 +17,15 @@ use eyre::Result;
 
 use crate::{instruction::Instruction, rpc::RPC, skeleton::TransactionSkeleton};
 
+mod operation;
+mod rpc;
+
+// re-exports fake objects
+pub mod fake {
+    pub use super::operation::*;
+    pub use super::rpc::*;
+}
+
 pub const DEFUALT_MAX_CYCLES: u64 = 10_000_000;
 
 /// Context for a self-custody resolved transaction

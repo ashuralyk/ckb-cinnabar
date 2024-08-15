@@ -12,4 +12,6 @@ pub mod re_exports {
     pub use ckb_sdk;
     pub use ckb_types;
     pub use eyre;
+    pub use secp256k1;
+    pub use tokio;
 }
