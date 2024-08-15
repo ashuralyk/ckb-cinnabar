@@ -89,8 +89,8 @@ pub fn balance_and_sign_with_ckb_cli(
         }),
         Box::new(AddSecp256k1SighashSignaturesWithCkbCli {
             signer_address: signer.clone(),
-            tx_cache_path: cache_path.unwrap_or_else(|| PathBuf::from("/tmp")),
-            keep_tx_file: false,
+            cache_path: cache_path.unwrap_or_else(|| PathBuf::from("/tmp")),
+            keep_cache_file: false,
         }),
     ])
 }

@@ -78,15 +78,14 @@ impl<T: RPC> Operation<T> for AddFakeContractCelldep {
 pub struct AddFakeContractCelldepByName {
     pub contract: String,
     pub with_type_id: bool,
-    pub contract_binary_path: Option<PathBuf>,
+    pub contract_binary_path: String,
 }
 
 #[async_trait]
 impl<T: RPC> Operation<T> for AddFakeContractCelldepByName {
     async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
-        let contract_path = self
-            .contract_binary_path
-            .unwrap_or(PathBuf::new().join("../build/release"))
+        let contract_path = PathBuf::new()
+            .join(self.contract_binary_path)
             .join(&self.contract);
         let contract_data = fs::read(contract_path)?;
         Box::new(AddFakeContractCelldep {

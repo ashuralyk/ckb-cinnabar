@@ -3,12 +3,7 @@ use std::{fmt::Display, str::FromStr};
 use ckb_cinnabar_calculator::{
     re_exports::{
         ckb_sdk,
-        ckb_types::{
-            core,
-            packed::{self, Script},
-            prelude::*,
-            H256,
-        },
+        ckb_types::{core, packed, prelude::*, H256},
         eyre,
     },
     skeleton::ScriptEx,
@@ -21,6 +16,7 @@ pub enum Network {
     Mainnet,
     Testnet,
     Custom(Url),
+    Unknown,
 }
 
 impl Display for Network {
@@ -28,6 +24,7 @@ impl Display for Network {
         match self {
             Network::Mainnet => write!(f, "mainnet"),
             Network::Testnet => write!(f, "testnet"),
+            Network::Unknown => write!(f, "unknown"),
             Network::Custom(url) => write!(f, "{}", url),
         }
     }
@@ -40,6 +37,7 @@ impl FromStr for Network {
         match value {
             "mainnet" => Ok(Network::Mainnet),
             "testnet" => Ok(Network::Testnet),
+            "unknown" => Ok(Network::Unknown),
             _ => Ok(Network::Custom(value.parse()?)),
         }
     }
@@ -144,28 +142,25 @@ impl Serialize for Hash256 {
     }
 }
 
-#[derive(Clone)]
-pub struct CkbAddress(ckb_sdk::Address);
+#[derive(Clone, Default)]
+pub struct CkbAddress(Option<ckb_sdk::Address>);
 
-impl Default for CkbAddress {
-    fn default() -> Self {
-        let script: Script = ScriptEx::default().try_into().unwrap();
-        CkbAddress(ckb_sdk::Address::new(
-            ckb_sdk::NetworkType::Dev,
-            script.into(),
-            true,
-        ))
-    }
-}
+impl TryFrom<CkbAddress> for ckb_sdk::Address {
+    type Error = eyre::Error;
 
-impl From<CkbAddress> for ckb_sdk::Address {
-    fn from(value: CkbAddress) -> Self {
-        value.0
+    fn try_from(value: CkbAddress) -> Result<Self, Self::Error> {
+        value.0.ok_or_else(|| eyre::eyre!("empty ckb address"))
     }
 }
 
 impl From<ckb_sdk::Address> for CkbAddress {
     fn from(value: ckb_sdk::Address) -> Self {
+        CkbAddress(Some(value))
+    }
+}
+
+impl From<Option<ckb_sdk::Address>> for CkbAddress {
+    fn from(value: Option<ckb_sdk::Address>) -> Self {
         CkbAddress(value)
     }
 }
@@ -175,14 +170,15 @@ impl FromStr for CkbAddress {
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         ckb_sdk::Address::from_str(value)
-            .map(CkbAddress)
+            .map(|v| CkbAddress(Some(v)))
             .map_err(|_| eyre::eyre!("invalid ckb address"))
     }
 }
 
 impl Display for CkbAddress {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        let inner = self.0.as_ref().map(|v| v.to_string()).unwrap_or_default();
+        write!(f, "{inner}",)
     }
 }
 
@@ -191,9 +187,12 @@ impl<'de> Deserialize<'de> for CkbAddress {
     where
         D: serde::Deserializer<'de>,
     {
-        String::deserialize(deserializer)?
-            .parse()
-            .map_err(serde::de::Error::custom)
+        let value = String::deserialize(deserializer)?;
+        if value.is_empty() {
+            return Ok(CkbAddress(None));
+        } else {
+            value.parse().map_err(serde::de::Error::custom)
+        }
     }
 }
 
@@ -217,21 +216,14 @@ pub struct DeploymentRecord {
     pub data_hash: Option<Hash256>,
     pub occupied_capacity: u64,
     pub payer_address: CkbAddress,
-    pub owner_address: Option<CkbAddress>,
+    pub contract_owner_address: CkbAddress,
     pub type_id: Option<Hash256>,
     // This field is not required, so you can edit in your <contract>.json file to add comment for cooperations
-    #[serde(default)]
+    #[serde(default, rename = "__comment")]
     pub comment: Option<String>,
 }
 
 impl DeploymentRecord {
-    pub fn contract_owner_address(&self) -> String {
-        self.owner_address
-            .clone()
-            .unwrap_or_else(|| self.payer_address.clone())
-            .to_string()
-    }
-
     #[allow(dead_code)]
     pub fn generate_script(&self, args: Vec<u8>) -> eyre::Result<ScriptEx> {
         let mut script = packed::Script::new_builder().args(args.pack());

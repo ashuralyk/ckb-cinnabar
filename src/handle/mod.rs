@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 use ckb_cinnabar_calculator::{
     instruction::DefaultInstruction,
     operation::{
@@ -12,109 +14,102 @@ use ckb_sdk::Address;
 
 use crate::object::*;
 
-mod util;
-use util::*;
+mod helper;
+pub use helper::*;
 
-/// Load the latest contract deployment record from the local migration directory
-pub fn load_latest_contract_deployment(
-    network: Network,
-    contract_name: &str,
-    migration_path: Option<&str>,
-) -> eyre::Result<DeploymentRecord> {
-    let path = generate_deployment_record_path(
-        &network.to_string(),
-        contract_name,
-        migration_path.unwrap_or("../migration"),
-    )?;
-    load_deployment_record(&path)
-}
-
-/// Deploy a new contract version to the chain
+/// Create a new contract version on-chain
 pub async fn deploy_contract(
     network: String,
     contract_name: String,
     version: String,
-    payer_address: Address,
-    owner_address: Option<Address>,
+    payer_address: String,
+    contract_owner_address: Option<String>,
     type_id: bool,
-    migration_path: String,
+    deployment_path: String,
+    binary_path: String,
 ) -> eyre::Result<()> {
+    let deployment =
+        load_contract_deployment(&network, &contract_name, &deployment_path, Some(&version))?;
+    if deployment.is_some() {
+        return Err(eyre::eyre!("version already exists"));
+    }
     let rpc = create_rpc_from_network(&network)?;
-    let (contract_binary, contract_hash) = load_contract_binary(&contract_name)?;
+    let (contract_binary, contract_hash) = load_contract_binary(&contract_name, &binary_path)?;
+    let payer_address: Address = payer_address
+        .parse()
+        .map_err(|_| eyre::eyre!("invalid payer address"))?;
+    let contract_owner_address = contract_owner_address
+        .clone()
+        .map(|s| s.parse().map_err(|_| eyre::eyre!("invalid owner address")))
+        .unwrap_or(Ok(payer_address.clone()))?;
     let deploy_contract = DefaultInstruction::new(vec![
         Box::new(AddSecp256k1SighashCellDep {}),
         Box::new(AddInputCellByAddress {
             address: payer_address.clone(),
         }),
         Box::new(AddOutputCellByAddress {
-            address: owner_address.clone().unwrap_or(payer_address.clone()),
+            address: contract_owner_address.clone(),
             data: contract_binary,
             add_type_id: type_id,
         }),
         Box::new(BalanceTransaction {
-            balancer: payer_address.payload().into(),
-            change_receiver: ChangeReceiver::Address(
-                owner_address.clone().unwrap_or(payer_address.clone()),
-            ),
+            balancer: payer_address.clone().into(),
+            change_receiver: ChangeReceiver::Address(payer_address.clone()),
             additional_fee_rate: 2000,
         }),
         Box::new(AddSecp256k1SighashSignaturesWithCkbCli {
             signer_address: payer_address.clone(),
-            tx_cache_path: "migration/txs".into(),
-            keep_tx_file: true,
+            cache_path: format!("{deployment_path}/txs").into(),
+            keep_cache_file: true,
         }),
     ]);
-    let tx_record_path =
-        generate_deployment_record_path(&network, &contract_name, &migration_path)?;
+    let tx_path = generate_contract_deployment_path(&network, &contract_name, &deployment_path)?;
     send_and_record_transaction(
         rpc,
         vec![deploy_contract],
-        tx_record_path,
+        tx_path,
         "deploy",
         contract_name,
         version,
         Some(contract_hash),
         payer_address,
-        owner_address,
+        Some(contract_owner_address),
     )
     .await
 }
 
 /// Migrate a contract to a new version
-#[allow(clippy::too_many_arguments)]
 pub async fn migrate_contract(
     network: String,
     contract_name: String,
     from_version: String,
     version: String,
-    payer_address: Address,
-    owner_address: Option<Address>,
+    contract_owner_address: Option<String>,
     type_id_mode: String,
-    migration_path: String,
+    deployment_path: String,
+    binary_path: String,
 ) -> eyre::Result<()> {
-    let tx_record_path =
-        generate_deployment_record_path(&network, &contract_name, &migration_path)?;
-    if !tx_record_path.exists() {
-        return Err(eyre::eyre!("record file not exists"));
-    }
-    let record = load_deployment_record(&tx_record_path)?;
-    if record.operation == "consume" {
+    let deployment = load_contract_deployment(
+        &network,
+        &contract_name,
+        &deployment_path,
+        Some(&from_version),
+    )?
+    .ok_or(eyre::eyre!("version not exists"))?;
+    if deployment.operation == "consume" {
         return Err(eyre::eyre!("version already consumed"));
     }
-    if record.contract_owner_address() != payer_address.to_string() {
-        return Err(eyre::eyre!("payer address not match the contract owner"));
-    }
-    if record.version != from_version {
-        return Err(eyre::eyre!("from_version not match"));
-    }
     let rpc = create_rpc_from_network(&network)?;
-    let (contract_binary, contract_hash) = load_contract_binary(&contract_name)?;
-    let contract_address = owner_address.clone().unwrap_or(payer_address.clone());
+    let (contract_binary, contract_hash) = load_contract_binary(&contract_name, &binary_path)?;
+    let payer_address: Address = deployment.contract_owner_address.clone().try_into()?;
+    let contract_owner_address: Address = contract_owner_address
+        .map(|s| s.parse().map_err(|_| eyre::eyre!("invalid owner address")))
+        .unwrap_or(Ok(payer_address.clone()))?;
     let mut migrate_contract = DefaultInstruction::new(vec![
         Box::new(AddSecp256k1SighashCellDep {}),
         Box::new(AddInputCellByOutPoint {
-            tx_hash: record.tx_hash.into(),
-            index: record.out_index,
+            tx_hash: deployment.tx_hash.into(),
+            index: deployment.out_index,
             since: None,
         }),
     ]);
@@ -123,7 +118,7 @@ pub async fn migrate_contract(
             migrate_contract.push(Box::new(AddOutputCellByInputIndex {
                 input_index: 0,
                 data: Some(contract_binary),
-                lock_script: Some(contract_address.payload().into()),
+                lock_script: Some(contract_owner_address.clone().into()),
                 type_script: None,
                 adjust_capacity: true,
             }));
@@ -132,14 +127,14 @@ pub async fn migrate_contract(
             migrate_contract.push(Box::new(AddOutputCellByInputIndex {
                 input_index: 0,
                 data: Some(contract_binary),
-                lock_script: Some(contract_address.payload().into()),
+                lock_script: Some(contract_owner_address.clone().into()),
                 type_script: Some(None),
                 adjust_capacity: true,
             }));
         }
         TypeIdMode::New => {
             migrate_contract.push(Box::new(AddOutputCellByAddress {
-                address: contract_address.clone(),
+                address: contract_owner_address.clone(),
                 data: contract_binary,
                 add_type_id: true,
             }));
@@ -147,26 +142,27 @@ pub async fn migrate_contract(
     }
     migrate_contract.append(vec![
         Box::new(BalanceTransaction {
-            balancer: payer_address.payload().into(),
-            change_receiver: ChangeReceiver::Address(contract_address.clone()),
+            balancer: payer_address.clone().into(),
+            change_receiver: ChangeReceiver::Address(payer_address.clone()),
             additional_fee_rate: 2000,
         }),
         Box::new(AddSecp256k1SighashSignaturesWithCkbCli {
             signer_address: payer_address.clone(),
-            tx_cache_path: "migration/txs".into(),
-            keep_tx_file: true,
+            cache_path: format!("{deployment_path}/txs").into(),
+            keep_cache_file: true,
         }),
     ]);
+    let tx_path = generate_contract_deployment_path(&network, &contract_name, &deployment_path)?;
     send_and_record_transaction(
         rpc,
         vec![migrate_contract],
-        tx_record_path,
+        tx_path,
         "migrate",
         contract_name,
         version,
         Some(contract_hash),
         payer_address,
-        owner_address,
+        Some(contract_owner_address),
     )
     .await
 }
@@ -176,56 +172,52 @@ pub async fn consume_contract(
     network: String,
     contract_name: String,
     version: String,
-    payer_address: Address,
-    receive_address: Option<Address>,
-    migration_path: String,
+    receiver_address: Option<String>,
+    deployment_path: String,
 ) -> eyre::Result<()> {
-    let tx_record_path =
-        generate_deployment_record_path(&network, &contract_name, &migration_path)?;
-    if !tx_record_path.exists() {
-        return Err(eyre::eyre!("version not exists"));
-    }
-    let record = load_deployment_record(&tx_record_path)?;
-    if record.operation == "consume" {
+    let deployment =
+        load_contract_deployment(&network, &contract_name, &deployment_path, Some(&version))?
+            .ok_or(eyre::eyre!("version not exists"))?;
+    if deployment.operation == "consume" {
         return Err(eyre::eyre!("version already consumed"));
     }
-    if record.contract_owner_address() != payer_address.to_string() {
-        return Err(eyre::eyre!("payer address not match the contract owner"));
-    }
-    if record.version != version {
-        return Err(eyre::eyre!("version not match"));
-    }
+    let payer_address: Address = deployment.contract_owner_address.clone().try_into()?;
+    let receiver_address: Address = receiver_address
+        .map(|s| {
+            s.parse()
+                .map_err(|_| eyre::eyre!("invalid receiver address"))
+        })
+        .unwrap_or(Ok(payer_address.clone()))?;
     let rpc = create_rpc_from_network(&network)?;
     let consume_contract = DefaultInstruction::new(vec![
         Box::new(AddSecp256k1SighashCellDep {}),
         Box::new(AddInputCellByOutPoint {
-            tx_hash: record.tx_hash.into(),
-            index: record.out_index,
+            tx_hash: deployment.tx_hash.into(),
+            index: deployment.out_index,
             since: None,
         }),
         Box::new(BalanceTransaction {
             balancer: payer_address.payload().into(),
-            change_receiver: ChangeReceiver::Address(
-                receive_address.clone().unwrap_or(payer_address.clone()),
-            ),
+            change_receiver: ChangeReceiver::Address(receiver_address),
             additional_fee_rate: 2000,
         }),
         Box::new(AddSecp256k1SighashSignaturesWithCkbCli {
             signer_address: payer_address.clone(),
-            tx_cache_path: format!("{migration_path}/txs").into(),
-            keep_tx_file: true,
+            cache_path: format!("{deployment_path}/txs").into(),
+            keep_cache_file: true,
         }),
     ]);
+    let tx_path = generate_contract_deployment_path(&network, &contract_name, &deployment_path)?;
     send_and_record_transaction(
         rpc,
         vec![consume_contract],
-        tx_record_path,
+        tx_path,
         "consume",
         contract_name,
         "".into(),
         None,
         payer_address,
-        None,
+        Default::default(),
     )
     .await
 }

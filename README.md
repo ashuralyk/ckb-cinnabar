@@ -94,6 +94,9 @@ For example, a simplified version of flowchart for verifying a Spore creation tr
 Each flowchart node on diagram can be treated as a tree node from verification tree:
 
 ```rust
+#![no_main]
+#![no_std]
+
 use ckb_cinnabar_verifier::{
     cinnabar_main, define_errors, Result, Verification, CUSTOM_ERROR_START, TREE_ROOT
 };
@@ -197,15 +200,22 @@ $ ckb-cinnabar
 Usage: ckb-cinnabar [OPTIONS] <COMMAND>
 
 Commands:
-  deploy   Deploy a new contract to the CKB blockchain
-  migrate  Migrate an existed contract to a new version
-  consume  Consume a contract cell to release the capacity
+  deploy   Upload contract to CKB
+  migrate  Update on-chain contract from old version to new version
+  consume  Consume on-chain contract to release the capacity
   help     Print this message or the help of the given subcommand(s)
 
 Options:
-  -n, --network <NETWORK>  The network connect to, options are `mainnet`, `testnet`, `http://localhost:8114` [default: testnet]
-  -h, --help               Print help
-  -V, --version            Print version
+  -n, --network <NETWORK>
+          CKB network, options are `mainnet`, `testnet` or URL (e.g. http://localhost:8114) [default: testnet]
+      --deployment-path <DEPLOYMENT_PATH>
+          Directory of the contract deployment information [default: deployment]
+      --contract-path <CONTRACT_PATH>
+          Directory of the compiled contract binary [default: build/release]
+  -h, --help
+          Print help
+  -V, --version
+          Print version
 ```
 
 Examples:
@@ -215,10 +225,10 @@ Examples:
 $ ckb-cinnabar deploy --contract-name my_contract --tag v0.1.1 --payer-address ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq28phxutezqvjgfv5q38gn5kwek4m9km3cmajeqs --type-id
 
 # upgrade an existing contract with type_id removed
-$ ckb-cinnabar migrate --contract-name my_contract --from-tag v0.1.1 --to-tag v0.1.2 --payer-address ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq28phxutezqvjgfv5q38gn5kwek4m9km3cmajeqs --type-id-mode remove
+$ ckb-cinnabar migrate --contract-name my_contract --from-tag v0.1.1 --to-tag v0.1.2 --type-id-mode remove
 
 # consume an existing contract
-$ ckb-cinnabar consume --contract-name my_contract --tag v0.1.2 --payer-address ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq28phxutezqvjgfv5q38gn5kwek4m9km3cmajeqs
+$ ckb-cinnabar consume --contract-name my_contract --tag v0.1.2
 ```
 
 > note: Comparing to Capsule, Cinnabar deployment module only uses `ckb-cli` to sign transaction without creating the `deployment.toml` file as prerequisites.

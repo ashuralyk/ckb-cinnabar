@@ -440,8 +440,8 @@ pub struct ReprTxHelper {
 /// note: this operation requires `ckb-cli` installed and available in PATH, refer to https://github.com/nervosnetwork/ckb-cli
 pub struct AddSecp256k1SighashSignaturesWithCkbCli {
     pub signer_address: Address,
-    pub tx_cache_path: PathBuf,
-    pub keep_tx_file: bool,
+    pub cache_path: PathBuf,
+    pub keep_cache_file: bool,
 }
 
 #[async_trait]
@@ -459,7 +459,7 @@ impl<T: RPC> Operation<T> for AddSecp256k1SighashSignaturesWithCkbCli {
         // generate persisted tx file in cahce directory for ckb-cli
         let tx = skeleton.clone().into_transaction_view();
         let tx_hash = hex::encode(tx.hash().raw_data());
-        let cache_dir = PathBuf::new().join(self.tx_cache_path);
+        let cache_dir = PathBuf::new().join(self.cache_path);
         if !cache_dir.exists() {
             fs::create_dir_all(&cache_dir)?;
         }
@@ -495,7 +495,7 @@ impl<T: RPC> Operation<T> for AddSecp256k1SighashSignaturesWithCkbCli {
             let error = String::from_utf8(output.stderr)?;
             return Err(eyre!("ckb-cli error: {error}"));
         }
-        if !self.keep_tx_file {
+        if !self.keep_cache_file {
             fs::remove_file(&tx_file)?;
         }
         // fill in signature

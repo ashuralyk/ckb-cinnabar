@@ -7,9 +7,17 @@ use crate::handle::{consume_contract, deploy_contract, migrate_contract};
 #[command(version, about, long_about = None)]
 #[command(propagate_version = true)]
 struct Cli {
-    /// The network connect to, options are `mainnet`, `testnet`, `http://localhost:8114`
+    /// CKB network, options are `mainnet`, `testnet` or URL (e.g. http://localhost:8114)
     #[arg(short, long, default_value_t = String::from("testnet"))]
     network: String,
+
+    /// Directory of the contract deployment information
+    #[arg(long, default_value_t = String::from("deployment"))]
+    deployment_path: String,
+
+    /// Directory of the compiled contract binary
+    #[arg(long, default_value_t = String::from("build/release"))]
+    contract_path: String,
 
     #[command(subcommand)]
     command: Commands,
@@ -17,71 +25,57 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Deploy a new contract to the CKB blockchain
+    /// Upload contract to CKB
     Deploy {
-        /// Contract name in `build/release` directory
+        /// Contract that will be deployed
         #[arg(long)]
         contract_name: String,
-        /// The version of the contract, which is used to distinguish different contract cells, e.g. `v0.1.8`
+        /// Version of the contract that used to distinguish different contracts, e.g. `v0.1.8`
         #[arg(long)]
         tag: String,
-        /// Who will pay the capacity and transaction fee
+        /// Who pays the capacity and transaction fee
         #[arg(long)]
         payer_address: String,
-        /// The owner that owns the contract cell, if None, payer will own instead
+        /// Who owns the contract cell, if None, <payer_address> will be in charge
         #[arg(long)]
-        owner_address: Option<String>,
-        /// Whether to deploy contract with `type_id` enabled, which brings the seemless upgradibility
+        contract_owner_address: Option<String>,
+        /// Whether to deploy contract with `type_id`
         #[arg(long, default_value_t = false)]
         type_id: bool,
-        /// The path to store the deployed contract cell information
-        #[arg(long, default_value_t = String::from("migration"))]
-        migration_path: String,
     },
-    /// Migrate an existed contract to a new version
+    /// Update on-chain contract from old version to new version
     Migrate {
-        /// The contract name that will be migrated
+        /// Contract that will be migrated
         #[arg(long)]
         contract_name: String,
-        /// The previous deployed version that will be consumed and migrated to the new one
+        /// Previous deployed contract version
         #[arg(long)]
         from_tag: String,
-        /// The version of the contract, which is used to distinguish different contract cells, e.g. `v0.1.8`
+        /// New contract version
         #[arg(long)]
         to_tag: String,
-        /// The payer address must be the same as the previous owner address
+        /// Who onws the new contract cell, if None, previous contract owner of <from_tag> will be in charge
         #[arg(long)]
-        payer_address: String,
-        /// The new owner address of that migrated contract cell
-        #[arg(long)]
-        owner_address: Option<String>,
-        /// The mode that how to handle the `type_id` of the contract cell, options are `keep`, `remove`, `new`
+        contract_owner_address: Option<String>,
+        /// How to process the `type_id` of migrated contract, operation is `keep`, `remove` or `new`
         #[arg(long, default_value_t = String::from("keep"))]
         type_id_mode: String,
-        /// The path to store the deployed contract cell information
-        #[arg(long, default_value_t = String::from("migration"))]
-        migration_path: String,
     },
-    /// Consume a contract cell to release the capacity
+    /// Consume on-chain contract to release the capacity
     Consume {
-        /// The contract name that will be consumed
+        /// Contract that will be consumed
         #[arg(long)]
         contract_name: String,
-        /// The version of the contract, which is used to distinguish different contract cells, e.g. `v0.1.8`
+        /// Version of the consuming contract
         #[arg(long)]
         tag: String,
-        /// The payer address that will pay the transaction fee
+        /// Who receives the released capacity, if None, previous contract owner of <tag> will be in charge
         #[arg(long)]
-        payer_address: String,
-        /// The receiver address that will receive the released capacity, if None, payer will receive instead
-        #[arg(long)]
-        receive_address: Option<String>,
-        /// The path to store the transaction cache file
-        #[arg(long, default_value_t = String::from("migration"))]
-        migration_path: String,
+        receiver_address: Option<String>,
     },
 }
 
+/// Parse and dispatch commands
 pub async fn dispatch_commands() -> eyre::Result<()> {
     let cli = Cli::parse();
     match cli.command {
@@ -89,18 +83,18 @@ pub async fn dispatch_commands() -> eyre::Result<()> {
             contract_name,
             tag,
             payer_address,
-            owner_address,
+            contract_owner_address,
             type_id,
-            migration_path,
         } => {
             deploy_contract(
                 cli.network,
                 contract_name,
                 tag,
-                payer_address.parse().expect("payer address"),
-                owner_address.map(|s| s.parse().expect("owner address")),
+                payer_address,
+                contract_owner_address,
                 type_id,
-                migration_path,
+                cli.deployment_path,
+                cli.contract_path,
             )
             .await
         }
@@ -108,37 +102,32 @@ pub async fn dispatch_commands() -> eyre::Result<()> {
             contract_name,
             from_tag,
             to_tag,
-            payer_address,
-            owner_address,
+            contract_owner_address,
             type_id_mode,
-            migration_path,
         } => {
             migrate_contract(
                 cli.network,
                 contract_name,
                 from_tag,
                 to_tag,
-                payer_address.parse().expect("payer address"),
-                owner_address.map(|s| s.parse().expect("owner address")),
+                contract_owner_address,
                 type_id_mode,
-                migration_path,
+                cli.deployment_path,
+                cli.contract_path,
             )
             .await
         }
         Commands::Consume {
             contract_name,
             tag,
-            payer_address,
-            receive_address,
-            migration_path,
+            receiver_address,
         } => {
             consume_contract(
                 cli.network,
                 contract_name,
                 tag,
-                payer_address.parse().expect("payer address"),
-                receive_address.map(|s| s.parse().expect("owner address")),
-                migration_path,
+                receiver_address,
+                cli.deployment_path,
             )
             .await
         }

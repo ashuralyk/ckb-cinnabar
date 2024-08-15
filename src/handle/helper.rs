@@ -12,39 +12,45 @@ use ckb_sdk::Address;
 
 use crate::object::*;
 
-pub fn generate_deployment_record_path(
+pub fn generate_contract_deployment_path(
     network: &str,
     contract_name: &str,
-    migration_path: &str,
+    deployment_path: &str,
 ) -> eyre::Result<PathBuf> {
-    let path = PathBuf::new().join(migration_path).join(network);
-    if !path.exists() {
-        fs::create_dir_all(&path)?;
-    }
-    Ok(path.join(format!("{contract_name}.json")))
+    let network: Network = network.parse()?;
+    Ok(PathBuf::new()
+        .join(deployment_path)
+        .join(network.to_string())
+        .join(format!("{contract_name}.json")))
 }
 
-pub fn load_deployment_record(path: &PathBuf) -> eyre::Result<DeploymentRecord> {
-    let file = fs::File::open(path)?;
-    let records: Vec<DeploymentRecord> = serde_json::from_reader(file)?;
-    records.last().cloned().ok_or(eyre::eyre!("empty record"))
-}
-
-pub fn save_deployment_record(path: PathBuf, record: DeploymentRecord) -> eyre::Result<()> {
-    let mut records: Vec<DeploymentRecord> = if path.exists() {
-        let content = fs::read(&path)?;
-        serde_json::from_slice(&content)?
+pub fn load_contract_deployment(
+    network: &str,
+    contract_name: &str,
+    deployment_path: &str,
+    version: Option<&str>,
+) -> eyre::Result<Option<DeploymentRecord>> {
+    let path = generate_contract_deployment_path(network, contract_name, deployment_path)?;
+    if path.exists() {
+        let file = fs::File::open(&path)?;
+        let deployments: Vec<DeploymentRecord> = serde_json::from_reader(file)?;
+        Ok(deployments.into_iter().find(|r| {
+            if let Some(v) = version {
+                r.version == v
+            } else {
+                true
+            }
+        }))
     } else {
-        Vec::new()
-    };
-    records.push(record);
-    let new_content = serde_json::to_string_pretty(&records)?;
-    fs::write(path, new_content)?;
-    Ok(())
+        Ok(None)
+    }
 }
 
-pub fn load_contract_binary(contract_name: &str) -> eyre::Result<(Vec<u8>, [u8; 32])> {
-    let contract_path = PathBuf::new().join("build/release").join(contract_name);
+pub fn load_contract_binary(
+    contract_name: &str,
+    binary_path: &str,
+) -> eyre::Result<(Vec<u8>, [u8; 32])> {
+    let contract_path = PathBuf::new().join(binary_path).join(contract_name);
     let contract_binary = fs::read(&contract_path)
         .map_err(|e| eyre::eyre!("{e}:{}", contract_path.to_string_lossy()))?;
     let contract_hash = blake2b_256(&contract_binary);
@@ -55,21 +61,21 @@ pub fn create_rpc_from_network(network: &str) -> eyre::Result<RpcClient> {
     match network.parse()? {
         Network::Mainnet => Ok(RpcClient::new_mainnet()),
         Network::Testnet => Ok(RpcClient::new_testnet()),
+        Network::Unknown => Err(eyre::eyre!("unknown network")),
         Network::Custom(url) => Ok(RpcClient::new(url.as_str(), None)),
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn send_and_record_transaction<T: RPC>(
     rpc: T,
     instructions: Vec<Instruction<T>>,
-    tx_record_path: PathBuf,
+    tx_path: PathBuf,
     operation: &str,
     contract_name: String,
     version: String,
     contract_hash: Option<[u8; 32]>,
     payer_address: Address,
-    owner_address: Option<Address>,
+    contract_owner_address: Option<Address>,
 ) -> eyre::Result<()> {
     let skeleton = TransactionCalculator::new(instructions)
         .new_skeleton(&rpc)
@@ -93,9 +99,23 @@ pub async fn send_and_record_transaction<T: RPC>(
         data_hash: contract_hash.map(|v| H256::from(v).into()),
         occupied_capacity,
         payer_address: payer_address.into(),
-        owner_address: owner_address.map(Into::into),
+        contract_owner_address: contract_owner_address.into(),
         type_id: type_id.map(Into::into),
         comment: None,
     };
-    save_deployment_record(tx_record_path, deployment_record)
+    save_contract_deployment(tx_path, deployment_record)
+}
+
+fn save_contract_deployment(path: PathBuf, record: DeploymentRecord) -> eyre::Result<()> {
+    let mut records: Vec<DeploymentRecord> = if path.exists() {
+        let content = fs::read(&path)?;
+        serde_json::from_slice(&content)?
+    } else {
+        fs::create_dir_all(path.parent().unwrap())?;
+        Vec::new()
+    };
+    records.push(record);
+    let new_content = serde_json::to_string_pretty(&records)?;
+    fs::write(path, new_content)?;
+    Ok(())
 }
