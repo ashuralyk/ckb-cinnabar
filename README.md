@@ -233,4 +233,4 @@ $ ckb-cinnabar consume --contract-name my_contract --tag v0.1.2
 
 > note: Comparing to Capsule, Cinnabar deployment module only uses `ckb-cli` to sign transaction without creating the `deployment.toml` file as prerequisites.
 
-For specific usage scenarios, please refer to [ckb-cinnabar-scripts-template](https://github.com/ashuralyk/ckb-cinnabar-scripts-template) project.
+For specific usage scenarios, please refer to [blind-box](https://github.com/ashuralyk/ckb-cinnabar-scripts-template/tree/demo/blind-box) demo.
