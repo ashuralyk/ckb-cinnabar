@@ -1,5 +1,7 @@
+use std::fmt::Display;
 use std::future::Future;
 use std::pin::Pin;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -64,10 +66,42 @@ macro_rules! jsonrpc {
     }}
 }
 
+#[derive(PartialEq, Eq, Clone)]
+pub enum Network {
+    Mainnet,
+    Testnet,
+    Custom(Url),
+    Fake,
+}
+
+impl Display for Network {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Network::Mainnet => write!(f, "mainnet"),
+            Network::Testnet => write!(f, "testnet"),
+            Network::Fake => write!(f, "fake"),
+            Network::Custom(url) => write!(f, "{}", url),
+        }
+    }
+}
+
+impl FromStr for Network {
+    type Err = eyre::Error;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "mainnet" => Ok(Network::Mainnet),
+            "testnet" => Ok(Network::Testnet),
+            "fake" => Ok(Network::Fake),
+            _ => Ok(Network::Custom(value.parse()?)),
+        }
+    }
+}
+
 #[allow(clippy::upper_case_acronyms)]
 pub trait RPC: Clone + Send + Sync {
-    fn fake(&self) -> bool {
-        false
+    fn network(&self) -> Network {
+        Network::Fake
     }
     fn url(&self) -> (String, String);
     fn get_live_cell(&self, out_point: &OutPoint, with_data: bool) -> Rpc<CellWithStatus>;
@@ -94,6 +128,7 @@ pub trait RPC: Clone + Send + Sync {
 
 #[derive(Clone)]
 pub struct RpcClient {
+    network: Network,
     raw: Client,
     ckb_uri: Url,
     indexer_uri: Url,
@@ -107,6 +142,7 @@ impl RpcClient {
         let ckb_uri = Url::parse(ckb_uri).expect("ckb uri, e.g. \"http://127.0.0.1:8114\"");
 
         RpcClient {
+            network: Network::Custom(ckb_uri.clone()),
             raw: Client::new(),
             ckb_uri,
             indexer_uri,
@@ -115,15 +151,23 @@ impl RpcClient {
     }
 
     pub fn new_mainnet() -> Self {
-        RpcClient::new(MAINNET_RPC_URL, None)
+        let mut rpc = RpcClient::new(MAINNET_RPC_URL, None);
+        rpc.network = Network::Mainnet;
+        rpc
     }
 
     pub fn new_testnet() -> Self {
-        RpcClient::new(TESTNET_RPC_URL, None)
+        let mut rpc = RpcClient::new(TESTNET_RPC_URL, None);
+        rpc.network = Network::Testnet;
+        rpc
     }
 }
 
 impl RPC for RpcClient {
+    fn network(&self) -> Network {
+        self.network.clone()
+    }
+
     fn url(&self) -> (String, String) {
         (self.ckb_uri.to_string(), self.indexer_uri.to_string())
     }

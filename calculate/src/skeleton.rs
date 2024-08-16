@@ -46,9 +46,9 @@ impl PartialEq<Script> for ScriptEx {
 }
 
 impl ScriptEx {
-    /// Initialize a ScriptEx of `Data2`
+    /// Initialize a ScriptEx of `Data1`
     pub fn new_code(code_hash: H256, args: Vec<u8>) -> Self {
-        ScriptEx::Script(code_hash, ScriptHashType::Data2, args)
+        ScriptEx::Script(code_hash, ScriptHashType::Data1, args)
     }
 
     /// Initialize a ScriptEx of `Type`
@@ -107,19 +107,22 @@ impl ScriptEx {
             let (_, value) = skeleton
                 .find_celldep_by_script(&self)
                 .ok_or(eyre!("celldep not found"))?;
-            if value.cell_dep.dep_type() == DepType::DepGroup.into() {
+            if value.celldep.dep_type() == DepType::DepGroup.into() {
                 return Err(eyre!("no support for group celldep"));
             }
-            let output = value.output.clone().expect("binary celldep");
+            let output = &value.output;
             let mut script = Script::new_builder().args(self.args().pack());
             if let Some(celldep_type_hash) = output.calc_type_hash() {
                 script = script
                     .code_hash(celldep_type_hash.pack())
                     .hash_type(ScriptHashType::Type.into());
             } else {
+                if !value.with_data {
+                    return Err(eyre!("celldep without data, cannot calculate data hash"));
+                }
                 script = script
                     .code_hash(output.data_hash().pack())
-                    .hash_type(ScriptHashType::Data2.into());
+                    .hash_type(ScriptHashType::Data1.into());
             }
             Ok(script.build())
         } else {
@@ -176,6 +179,7 @@ impl From<(String, Vec<u8>)> for ScriptEx {
 pub struct CellInputEx {
     pub input: CellInput,
     pub output: CellOutputEx,
+    pub with_data: bool,
 }
 
 impl PartialEq for CellInputEx {
@@ -186,10 +190,19 @@ impl PartialEq for CellInputEx {
 
 impl CellInputEx {
     /// Directly initialize a CellInputEx
-    pub fn new(input: CellInput, output: CellOutput, data: Vec<u8>) -> Self {
-        CellInputEx {
-            input,
-            output: CellOutputEx::new(output, data),
+    pub fn new(input: CellInput, output: CellOutput, data: Option<Vec<u8>>) -> Self {
+        if let Some(data) = data {
+            CellInputEx {
+                input,
+                output: CellOutputEx::new(output, data),
+                with_data: true,
+            }
+        } else {
+            CellInputEx {
+                input,
+                output: CellOutputEx::new(output, Vec::new()),
+                with_data: false,
+            }
         }
     }
 
@@ -199,13 +212,14 @@ impl CellInputEx {
         tx_hash: H256,
         index: u32,
         since: Option<u64>,
+        with_data: bool,
     ) -> Result<Self> {
         let out_point = OutPoint::new_builder()
             .tx_hash(tx_hash.pack())
             .index(index.pack())
             .build();
         let live_cell = rpc
-            .get_live_cell(&out_point.clone().into(), true)
+            .get_live_cell(&out_point.clone().into(), with_data)
             .await?
             .cell
             .ok_or(eyre!(
@@ -217,7 +231,7 @@ impl CellInputEx {
             .since(since.unwrap_or(0).pack())
             .build();
         let output = live_cell.output.into();
-        let data = live_cell.data.unwrap().content.into_bytes().to_vec();
+        let data = live_cell.data.map(|v| v.content.into_bytes().to_vec());
         Ok(Self::new(input, output, data))
     }
 
@@ -226,11 +240,7 @@ impl CellInputEx {
         let input = CellInput::new_builder()
             .previous_output(indexer_cell.out_point.into())
             .build();
-        let data = indexer_cell
-            .output_data
-            .unwrap_or_default()
-            .into_bytes()
-            .to_vec();
+        let data = indexer_cell.output_data.map(|v| v.into_bytes().to_vec());
         Self::new(input, indexer_cell.output.into(), data)
     }
 }
@@ -309,23 +319,34 @@ impl CellOutputEx {
 #[derive(Debug, Clone)]
 pub struct CellDepEx {
     pub name: String,
-    pub cell_dep: CellDep,
-    pub output: Option<CellOutputEx>,
+    pub celldep: CellDep,
+    pub output: CellOutputEx,
+    pub with_data: bool,
 }
 
 impl PartialEq for CellDepEx {
     fn eq(&self, other: &Self) -> bool {
-        self.cell_dep.as_bytes() == other.cell_dep.as_bytes()
+        self.celldep.as_bytes() == other.celldep.as_bytes()
     }
 }
 
 impl CellDepEx {
     /// Directly initialize a CellDepEx
-    pub fn new(name: String, cell_dep: CellDep, output: CellOutput, data: Vec<u8>) -> Self {
-        CellDepEx {
-            name,
-            cell_dep,
-            output: Some(CellOutputEx::new(output, data)),
+    pub fn new(name: String, cell_dep: CellDep, output: CellOutput, data: Option<Vec<u8>>) -> Self {
+        if let Some(data) = data {
+            CellDepEx {
+                name,
+                celldep: cell_dep,
+                output: CellOutputEx::new(output, data),
+                with_data: true,
+            }
+        } else {
+            CellDepEx {
+                name,
+                celldep: cell_dep,
+                output: CellOutputEx::new(output, Vec::new()),
+                with_data: false,
+            }
         }
     }
 
@@ -355,7 +376,7 @@ impl CellDepEx {
             .dep_type(dep_type.into())
             .build();
         let output = live_cell.output.into();
-        let data = live_cell.data.unwrap().content.into_bytes().to_vec();
+        let data = live_cell.data.map(|v| v.content.into_bytes().to_vec());
         Ok(Self::new(name, cell_dep, output, data))
     }
 
@@ -367,23 +388,19 @@ impl CellDepEx {
             .dep_type(dep_type.into())
             .build();
         let output = indexer_cell.output.into();
-        let data = indexer_cell
-            .output_data
-            .unwrap_or_default()
-            .into_bytes()
-            .to_vec();
+        let data = indexer_cell.output_data.map(|v| v.into_bytes().into());
         Self::new(name, cell_dep, output, data)
     }
 
     /// Retrive cell dep's on-chain output if there's None output field
     pub async fn refresh_cell_output<T: RPC>(&mut self, rpc: &T) -> Result<()> {
-        let out_point = self.cell_dep.out_point().to_owned();
+        let out_point = self.celldep.out_point().to_owned();
         let new_cell_dep = Self::new_from_outpoint(
             rpc,
             self.name.clone(),
             out_point.tx_hash().unpack(),
             out_point.index().unpack(),
-            self.cell_dep.dep_type().try_into().unwrap(),
+            self.celldep.dep_type().try_into().unwrap(),
             true,
         )
         .await?;
@@ -494,7 +511,7 @@ impl TransactionSkeleton {
                 let tx_hash: H256 = out_point.tx_hash().unpack();
                 let index: u32 = out_point.index().unpack();
                 let since: u64 = input.since().unpack();
-                CellInputEx::new_from_outpoint(rpc, tx_hash, index, Some(since))
+                CellInputEx::new_from_outpoint(rpc, tx_hash, index, Some(since), true)
             })
             .collect::<Vec<_>>();
         self.inputs = join_all(inputs).await.into_iter().collect::<Result<_>>()?;
@@ -798,17 +815,18 @@ impl TransactionSkeleton {
             .iter()
             .enumerate()
             .find_map(|(index, celldep)| {
-                let expected_code_hash = match (script.hash_type(), &celldep.output) {
-                    (Ok(ScriptHashType::Type), Some(output)) => {
-                        if let Some(type_hash) = output.calc_type_hash() {
-                            type_hash
-                        } else {
-                            H256::default()
+                let expected_code_hash =
+                    match (script.hash_type(), &celldep.output, celldep.with_data) {
+                        (Ok(ScriptHashType::Type), output, _) => {
+                            if let Some(type_hash) = output.calc_type_hash() {
+                                type_hash
+                            } else {
+                                H256::default()
+                            }
                         }
-                    }
-                    (Ok(_), Some(output)) => blake2b_256(&output.data).into(),
-                    _ => H256::default(),
-                };
+                        (Ok(_), output, true) => output.data_hash(),
+                        _ => H256::default(),
+                    };
                 if script.code_hash().unwrap_or_default() == expected_code_hash {
                     Some(index)
                 } else {
@@ -886,13 +904,11 @@ impl TransactionSkeleton {
         let mut resolved_cell_deps = vec![];
         let mut resolved_dep_groups = vec![];
         for mut v in self.celldeps {
-            let output = if let Some(output) = v.output {
-                output
-            } else {
+            if !v.with_data {
                 v.refresh_cell_output(rpc).await?;
-                v.output.unwrap()
-            };
-            if v.cell_dep.dep_type() == DepType::DepGroup.into() {
+            }
+            let output = v.output;
+            if v.celldep.dep_type() == DepType::DepGroup.into() {
                 // dep group data is a list of out points
                 let sub_out_points = OutPointVec::from_slice(&output.data)
                     .map_err(|_| eyre!("invalid dep group"))?;
@@ -908,7 +924,7 @@ impl TransactionSkeleton {
                         true,
                     )
                     .await?;
-                    let sub_output = sub_celldep.output.unwrap();
+                    let sub_output = sub_celldep.output;
                     let meta = CellMetaBuilder::from_cell_output(
                         sub_output.output,
                         sub_output.data.into(),
@@ -918,12 +934,12 @@ impl TransactionSkeleton {
                     resolved_cell_deps.push(meta);
                 }
                 let meta = CellMetaBuilder::from_cell_output(output.output, output.data.into())
-                    .out_point(v.cell_dep.out_point())
+                    .out_point(v.celldep.out_point())
                     .build();
                 resolved_dep_groups.push(meta);
             } else {
                 let meta = CellMetaBuilder::from_cell_output(output.output, output.data.into())
-                    .out_point(v.cell_dep.out_point())
+                    .out_point(v.celldep.out_point())
                     .build();
                 resolved_cell_deps.push(meta);
             }
@@ -942,7 +958,7 @@ impl TransactionSkeleton {
         let celldeps = self
             .celldeps
             .into_iter()
-            .map(|v| v.cell_dep)
+            .map(|v| v.celldep)
             .collect::<Vec<_>>();
         let mut outputs = vec![];
         let mut outputs_data = vec![];

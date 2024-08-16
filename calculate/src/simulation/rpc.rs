@@ -40,10 +40,6 @@ unsafe impl Send for FakeRpcClient {}
 unsafe impl Sync for FakeRpcClient {}
 
 impl RPC for FakeRpcClient {
-    fn fake(&self) -> bool {
-        true
-    }
-
     fn url(&self) -> (String, String) {
         unimplemented!("fake url method")
     }

@@ -28,8 +28,9 @@ impl<T: RPC> Instruction<T> {
         Instruction { operations }
     }
 
-    pub fn push(&mut self, operation: Box<dyn Operation<T>>) {
+    pub fn push(&mut self, operation: Box<dyn Operation<T>>) -> &mut Self {
         self.operations.push(operation);
+        self
     }
 
     pub fn pop(&mut self) -> Option<Box<dyn Operation<T>>> {
@@ -40,12 +41,14 @@ impl<T: RPC> Instruction<T> {
         self.operations.remove(index)
     }
 
-    pub fn append(&mut self, operations: Vec<Box<dyn Operation<T>>>) {
+    pub fn append(&mut self, operations: Vec<Box<dyn Operation<T>>>) -> &mut Self {
         self.operations.extend(operations);
+        self
     }
 
-    pub fn merge(&mut self, instruction: Instruction<T>) {
+    pub fn merge(&mut self, instruction: Instruction<T>) -> &mut Self {
         self.operations.extend(instruction.operations);
+        self
     }
 
     /// Execute all operations in sequence to assemble transaction skeleton

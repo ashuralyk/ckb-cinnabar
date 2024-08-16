@@ -68,7 +68,7 @@ impl<T: RPC> Operation<T> for AddFakeContractCelldep {
             self.name,
             celldep,
             output.build(),
-            self.contract_data,
+            Some(self.contract_data),
         ));
         Ok(())
     }
@@ -113,7 +113,7 @@ impl<T: RPC> Operation<T> for AddAlwaysSuccessCelldep {
             ALWAYS_SUCCESS_NAME.to_string(),
             celldep,
             CellOutput::default(),
-            ALWAYS_SUCCESS.to_vec(),
+            Some(ALWAYS_SUCCESS.to_vec()),
         ));
         Ok(())
     }
@@ -143,7 +143,7 @@ impl<T: RPC> Operation<T> for AddFakeCellInput {
         let input = CellInput::new_builder()
             .previous_output(custom_out_point)
             .build();
-        skeleton.input(CellInputEx::new(input, output, self.data))?;
+        skeleton.input(CellInputEx::new(input, output, Some(self.data)))?;
         Ok(())
     }
 }

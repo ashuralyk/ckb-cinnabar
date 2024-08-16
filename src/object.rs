@@ -8,40 +8,7 @@ use ckb_cinnabar_calculator::{
     },
     skeleton::ScriptEx,
 };
-use reqwest::Url;
 use serde::{Deserialize, Serialize};
-
-#[derive(PartialEq, Eq)]
-pub enum Network {
-    Mainnet,
-    Testnet,
-    Custom(Url),
-    Unknown,
-}
-
-impl Display for Network {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Network::Mainnet => write!(f, "mainnet"),
-            Network::Testnet => write!(f, "testnet"),
-            Network::Unknown => write!(f, "unknown"),
-            Network::Custom(url) => write!(f, "{}", url),
-        }
-    }
-}
-
-impl FromStr for Network {
-    type Err = eyre::Error;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value {
-            "mainnet" => Ok(Network::Mainnet),
-            "testnet" => Ok(Network::Testnet),
-            "unknown" => Ok(Network::Unknown),
-            _ => Ok(Network::Custom(value.parse()?)),
-        }
-    }
-}
 
 #[derive(PartialEq, Eq)]
 pub enum TypeIdMode {

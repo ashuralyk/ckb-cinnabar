@@ -6,7 +6,7 @@ use ckb_cinnabar_calculator::{
     re_exports::{
         ckb_hash::blake2b_256, ckb_jsonrpc_types::OutputsValidator, ckb_sdk, ckb_types::H256, eyre,
     },
-    rpc::{RpcClient, RPC},
+    rpc::{Network, RpcClient, RPC},
 };
 use ckb_sdk::Address;
 
@@ -34,13 +34,11 @@ pub fn load_contract_deployment(
     if path.exists() {
         let file = fs::File::open(&path)?;
         let deployments: Vec<DeploymentRecord> = serde_json::from_reader(file)?;
-        Ok(deployments.into_iter().find(|r| {
-            if let Some(v) = version {
-                r.version == v
-            } else {
-                true
-            }
-        }))
+        if let Some(version) = version {
+            Ok(deployments.into_iter().find(|r| r.version == version))
+        } else {
+            Ok(deployments.into_iter().last())
+        }
     } else {
         Ok(None)
     }
@@ -61,7 +59,7 @@ pub fn create_rpc_from_network(network: &str) -> eyre::Result<RpcClient> {
     match network.parse()? {
         Network::Mainnet => Ok(RpcClient::new_mainnet()),
         Network::Testnet => Ok(RpcClient::new_testnet()),
-        Network::Unknown => Err(eyre::eyre!("unknown network")),
+        Network::Fake => Err(eyre::eyre!("fake network")),
         Network::Custom(url) => Ok(RpcClient::new(url.as_str(), None)),
     }
 }

@@ -13,13 +13,14 @@ use ckb_jsonrpc_types::{JsonBytes, Transaction};
 use ckb_sdk::{
     constants::TYPE_ID_CODE_HASH,
     rpc::ckb_indexer::{SearchKey, SearchMode},
-    traits::{CellQueryOptions, DefaultCellDepResolver},
+    traits::{CellQueryOptions, DefaultCellDepResolver, ValueRangeOption},
     transaction::signer::{SignContexts, TransactionSigner},
     types::transaction_with_groups::TransactionWithScriptGroupsBuilder,
     Address, NetworkInfo,
 };
 use ckb_types::{
     core::{Capacity, DepType},
+    h256,
     packed::CellOutput,
     prelude::{Builder, Entity, Pack, Unpack},
     H160, H256,
@@ -29,7 +30,7 @@ use secp256k1::SecretKey;
 use serde_json::Value;
 
 use crate::{
-    rpc::{GetCellsIter, RPC},
+    rpc::{GetCellsIter, Network, RPC},
     skeleton::{
         CellDepEx, CellInputEx, CellOutputEx, ChangeReceiver, ScriptEx, TransactionSkeleton,
         WitnessArgsEx,
@@ -109,14 +110,54 @@ pub struct AddSecp256k1SighashCellDep {}
 #[async_trait]
 impl<T: RPC> Operation<T> for AddSecp256k1SighashCellDep {
     async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
-        let genesis = rpc.get_block_by_number(0.into()).await?.unwrap();
-        let resolver = DefaultCellDepResolver::from_genesis(&genesis.into()).expect("genesis");
-        let (sighash_celldep, _) = resolver.sighash_dep().expect("sighash dep");
-        skeleton.celldep(CellDepEx {
-            name: "secp256k1_sighash_all".to_string(),
-            cell_dep: sighash_celldep.clone(),
-            output: None,
-        });
+        let celldep = match rpc.network() {
+            Network::Custom(_) => {
+                let genesis = rpc.get_block_by_number(0.into()).await?.unwrap();
+                let resolver =
+                    DefaultCellDepResolver::from_genesis(&genesis.clone().into()).expect("genesis");
+                let (sighash_celldep, _) = resolver.sighash_dep().expect("sighash dep");
+                let output: CellOutput = {
+                    let tx_hash = sighash_celldep.out_point().tx_hash().unpack();
+                    let tx = genesis
+                        .transactions
+                        .into_iter()
+                        .find(|tx| tx.hash == tx_hash)
+                        .unwrap();
+                    let out_index: u32 = sighash_celldep.out_point().index().unpack();
+                    tx.inner.outputs[out_index as usize].clone().into()
+                };
+                CellDepEx {
+                    name: "secp256k1_sighash_all".to_string(),
+                    celldep: sighash_celldep.clone(),
+                    output: CellOutputEx::new(output, vec![]),
+                    with_data: false,
+                }
+            }
+            Network::Testnet => {
+                CellDepEx::new_from_outpoint(
+                    rpc,
+                    "secp256k1_sighash_all".to_string(),
+                    h256!("0xf8de3bb47d055cdf460d93a2a6e1b05f7432f9777c8c474abf4eec1d4aee5d37"),
+                    0,
+                    DepType::DepGroup,
+                    false,
+                )
+                .await?
+            }
+            Network::Mainnet => {
+                CellDepEx::new_from_outpoint(
+                    rpc,
+                    "secp256k1_sighash_all".to_string(),
+                    h256!("0x71a7ba8fc96349fea0ed3a5c47992e3b4084b031a42264a018e0072e8172e46c"),
+                    0,
+                    DepType::DepGroup,
+                    false,
+                )
+                .await?
+            }
+            _ => return Err(eyre!("secp256k1_sighash_all not valid for fake network")),
+        };
+        skeleton.celldep(celldep);
         Ok(())
     }
 }
@@ -124,7 +165,6 @@ impl<T: RPC> Operation<T> for AddSecp256k1SighashCellDep {
 /// Operation that add input cell to transaction skeleton by lock script
 ///
 /// `count`: u32, the count of input cells to add that searching coming out of ckb-indexer
-/// `skip_exist`: bool, if true, skip the input cell if it already exists in skeleton, rather than return error
 pub struct AddInputCell {
     pub lock_script: ScriptEx,
     pub type_script: Option<ScriptEx>,
@@ -137,6 +177,9 @@ impl AddInputCell {
         let mut query = CellQueryOptions::new_lock(self.lock_script.clone().to_script(skeleton)?);
         if let Some(type_script) = &self.type_script {
             query.secondary_script = Some(type_script.clone().to_script(skeleton)?);
+        } else {
+            query.secondary_script_len_range = Some(ValueRangeOption::new(0, 1));
+            query.data_len_range = Some(ValueRangeOption::new(0, 1));
         }
         query.with_data = Some(true);
         query.script_search_mode = Some(self.search_mode.clone());
@@ -175,7 +218,7 @@ pub struct AddInputCellByOutPoint {
 impl<T: RPC> Operation<T> for AddInputCellByOutPoint {
     async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
         let cell_input =
-            CellInputEx::new_from_outpoint(rpc, self.tx_hash, self.index, self.since).await?;
+            CellInputEx::new_from_outpoint(rpc, self.tx_hash, self.index, self.since, true).await?;
         skeleton.input(cell_input)?.witness(Default::default());
         Ok(())
     }
@@ -235,22 +278,22 @@ impl<T: RPC> Operation<T> for AddCellInputByType {
 
 /// Operation that add output cell to transaction skeleton
 ///
-/// `use_additional_capacity`: bool, if true, the capacity of output cell will be minimal capacity plus `capacity`
-/// `user_type_id`: bool, if true, calculate type id and override into type script if provided
+/// `absolute_capacity` bool, wether mark the `capacity` as absolute value or additional
+/// `type_id`: bool, if true, calculate type id and override into type script if provided
 #[derive(Default)]
 pub struct AddOutputCell {
     pub lock_script: ScriptEx,
     pub type_script: Option<ScriptEx>,
     pub capacity: u64,
     pub data: Vec<u8>,
-    pub use_additional_capacity: bool,
-    pub use_type_id: bool,
+    pub absolute_capacity: bool,
+    pub type_id: bool,
 }
 
 #[async_trait]
 impl<T: RPC> Operation<T> for AddOutputCell {
     async fn run(self: Box<Self>, _: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
-        let type_script = if self.use_type_id {
+        let type_script = if self.type_id {
             let type_id = skeleton.calc_type_id(skeleton.outputs.len())?;
             let type_script = self
                 .type_script
@@ -273,7 +316,7 @@ impl<T: RPC> Operation<T> for AddOutputCell {
             .as_builder()
             .build_exact_capacity(Capacity::bytes(self.data.len())?)?;
         let minimal_capacity: u64 = output.capacity().unpack();
-        if self.use_additional_capacity {
+        if !self.absolute_capacity {
             let capacity = minimal_capacity + self.capacity;
             output = output.as_builder().capacity(capacity.pack()).build();
         } else if self.capacity > minimal_capacity {
@@ -302,8 +345,8 @@ impl<T: RPC> Operation<T> for AddOutputCellByAddress {
             type_script: None,
             capacity: 0,
             data: self.data,
-            use_additional_capacity: true,
-            use_type_id: self.add_type_id,
+            absolute_capacity: false,
+            type_id: self.add_type_id,
         })
         .run(rpc, skeleton)
         .await

@@ -36,8 +36,8 @@ pub fn secp256k1_sighash_transfer(
             type_script: None,
             data: Vec::new(),
             capacity: ckb.into(),
-            use_additional_capacity: false,
-            use_type_id: false,
+            absolute_capacity: true,
+            type_id: false,
         }),
     ]);
     if let Some(privkey) = sign {

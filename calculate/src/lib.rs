@@ -3,6 +3,7 @@ pub mod operation;
 pub mod rpc;
 pub mod simulation;
 pub mod skeleton;
+pub use instruction::TransactionCalculator;
 
 // Re-exports to eliminate the need for downstream dependencies to specify the version of ckb_* crates
 pub mod re_exports {
