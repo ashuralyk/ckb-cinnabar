@@ -13,11 +13,10 @@ use ckb_sdk::Address;
 use crate::object::*;
 
 pub fn generate_contract_deployment_path(
-    network: &str,
+    network: &Network,
     contract_name: &str,
     deployment_path: &str,
 ) -> eyre::Result<PathBuf> {
-    let network: Network = network.parse()?;
     Ok(PathBuf::new()
         .join(deployment_path)
         .join(network.to_string())
@@ -25,7 +24,7 @@ pub fn generate_contract_deployment_path(
 }
 
 pub fn load_contract_deployment(
-    network: &str,
+    network: &Network,
     contract_name: &str,
     deployment_path: &str,
     version: Option<&str>,
@@ -55,8 +54,8 @@ pub fn load_contract_binary(
     Ok((contract_binary, contract_hash))
 }
 
-pub fn create_rpc_from_network(network: &str) -> eyre::Result<RpcClient> {
-    match network.parse()? {
+pub fn create_rpc_from_network(network: &Network) -> eyre::Result<RpcClient> {
+    match network {
         Network::Mainnet => Ok(RpcClient::new_mainnet()),
         Network::Testnet => Ok(RpcClient::new_testnet()),
         Network::Fake => Err(eyre::eyre!("fake network")),

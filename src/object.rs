@@ -10,22 +10,32 @@ use ckb_cinnabar_calculator::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Clone)]
 pub enum TypeIdMode {
     Keep,
     Remove,
     New,
 }
 
-impl TryFrom<String> for TypeIdMode {
-    type Error = eyre::Error;
+impl FromStr for TypeIdMode {
+    type Err = eyre::Error;
 
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        match value.as_str() {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
             "keep" => Ok(TypeIdMode::Keep),
             "remove" => Ok(TypeIdMode::Remove),
             "new" => Ok(TypeIdMode::New),
             _ => Err(eyre::eyre!("invalid type_id_mode")),
+        }
+    }
+}
+
+impl ToString for TypeIdMode {
+    fn to_string(&self) -> String {
+        match self {
+            TypeIdMode::Keep => "keep".to_string(),
+            TypeIdMode::Remove => "remove".to_string(),
+            TypeIdMode::New => "new".to_string(),
         }
     }
 }
@@ -47,65 +57,6 @@ impl TryFrom<String> for ListMode {
             "consumed" => Ok(ListMode::Consumed),
             _ => Err(eyre::eyre!("invalid list mode")),
         }
-    }
-}
-
-#[derive(Clone, Default)]
-pub struct Hash256(H256);
-
-impl From<Hash256> for H256 {
-    fn from(value: Hash256) -> Self {
-        value.0
-    }
-}
-
-impl From<H256> for Hash256 {
-    fn from(value: H256) -> Self {
-        Hash256(value)
-    }
-}
-
-impl FromStr for Hash256 {
-    type Err = eyre::Error;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        hex::decode(value.trim_start_matches("0x"))
-            .map_err(|_| eyre::eyre!("invalid hex string"))
-            .and_then(|bytes| {
-                if bytes.len() != 32 {
-                    Err(eyre::eyre!("invalid hash length"))
-                } else {
-                    let mut inner = [0u8; 32];
-                    inner.copy_from_slice(&bytes);
-                    Ok(Hash256(H256::from(inner)))
-                }
-            })
-    }
-}
-
-impl Display for Hash256 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:#x}", self.0)
-    }
-}
-
-impl<'de> Deserialize<'de> for Hash256 {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        String::deserialize(deserializer)?
-            .parse()
-            .map_err(serde::de::Error::custom)
-    }
-}
-
-impl Serialize for Hash256 {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        self.to_string().serialize(serializer)
     }
 }
 
@@ -178,13 +129,13 @@ pub struct DeploymentRecord {
     pub date: String,
     pub operation: String,
     pub version: String,
-    pub tx_hash: Hash256,
+    pub tx_hash: H256,
     pub out_index: u32,
-    pub data_hash: Option<Hash256>,
+    pub data_hash: Option<H256>,
     pub occupied_capacity: u64,
     pub payer_address: CkbAddress,
     pub contract_owner_address: CkbAddress,
-    pub type_id: Option<Hash256>,
+    pub type_id: Option<H256>,
     // This field is not required, so you can edit in your <contract>.json file to add comment for cooperations
     #[serde(default, rename = "__comment")]
     pub comment: Option<String>,

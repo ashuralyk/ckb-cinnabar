@@ -129,6 +129,11 @@ impl ScriptEx {
             self.try_into()
         }
     }
+
+    /// Build packed Script from ScriptEx, throw error if failed
+    pub fn to_script_unchecked(self) -> Script {
+        self.try_into().expect("unchecked to_script")
+    }
 }
 
 impl TryFrom<ScriptEx> for Script {
@@ -243,10 +248,23 @@ impl CellInputEx {
         let data = indexer_cell.output_data.map(|v| v.into_bytes().to_vec());
         Self::new(input, indexer_cell.output.into(), data)
     }
+
+    /// Turn a CelldepEx into CellInputEx
+    pub fn new_from_celldep(celldep: &CellDepEx) -> Self {
+        let input = CellInput::new_builder()
+            .previous_output(celldep.celldep.out_point())
+            .build();
+        let data = if celldep.with_data {
+            Some(celldep.output.data.clone())
+        } else {
+            None
+        };
+        Self::new(input, celldep.output.output.clone(), data)
+    }
 }
 
 /// CellOutput for transaction skeleton, which contains cell data
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CellOutputEx {
     pub output: CellOutput,
     pub data: Vec<u8>,
@@ -412,17 +430,19 @@ impl CellDepEx {
 /// Traditional witness args that contains lock, input_type and output_type, which
 /// splited for better composability
 #[derive(Debug, Clone)]
-pub struct WitnessArgsEx {
+pub struct WitnessEx {
     pub empty: bool,
+    pub traditional: bool,
     pub lock: Vec<u8>,
     pub input_type: Vec<u8>,
     pub output_type: Vec<u8>,
 }
 
-impl Default for WitnessArgsEx {
+impl Default for WitnessEx {
     fn default() -> Self {
-        WitnessArgsEx {
+        WitnessEx {
             empty: true,
+            traditional: true,
             lock: Vec::new(),
             input_type: Vec::new(),
             output_type: Vec::new(),
@@ -430,14 +450,26 @@ impl Default for WitnessArgsEx {
     }
 }
 
-impl WitnessArgsEx {
+impl WitnessEx {
     /// Directly initialize a WitnessArgsEx
     pub fn new(lock: Vec<u8>, input_type: Vec<u8>, output_type: Vec<u8>) -> Self {
-        WitnessArgsEx {
+        WitnessEx {
             empty: false,
+            traditional: true,
             lock,
             input_type,
             output_type,
+        }
+    }
+
+    /// Initialize a WitnessArgsEx and mark it non-traditional
+    pub fn new_plain(plain_bytes: Vec<u8>) -> Self {
+        WitnessEx {
+            empty: false,
+            traditional: false,
+            lock: plain_bytes,
+            input_type: Vec::new(),
+            output_type: Vec::new(),
         }
     }
 
@@ -469,8 +501,23 @@ impl WitnessArgsEx {
         if self.empty {
             Bytes::default()
         } else {
-            self.into_witness_args().as_bytes().pack()
+            if self.traditional {
+                self.into_witness_args().as_bytes().pack()
+            } else {
+                self.into_packed_plain_bytes()
+            }
         }
+    }
+
+    /// Turn into packed raw bytes, which is normally not in format of WitnessArgs
+    pub fn into_packed_plain_bytes(self) -> Bytes {
+        let bytes = self
+            .lock
+            .into_iter()
+            .chain(self.input_type)
+            .chain(self.output_type)
+            .collect::<Vec<_>>();
+        bytes.pack()
     }
 }
 
@@ -480,7 +527,7 @@ pub struct TransactionSkeleton {
     pub inputs: Vec<CellInputEx>,
     pub outputs: Vec<CellOutputEx>,
     pub celldeps: Vec<CellDepEx>,
-    pub witnesses: Vec<WitnessArgsEx>,
+    pub witnesses: Vec<WitnessEx>,
 }
 
 impl TransactionSkeleton {
@@ -567,7 +614,7 @@ impl TransactionSkeleton {
                 let lock = witness_args.lock().to_opt().unwrap_or_default();
                 let input_type = witness_args.input_type().to_opt().unwrap_or_default();
                 let output_type = witness_args.output_type().to_opt().unwrap_or_default();
-                Ok(WitnessArgsEx::new(
+                Ok(WitnessEx::new(
                     lock.raw_data().to_vec(),
                     input_type.raw_data().to_vec(),
                     output_type.raw_data().to_vec(),
@@ -658,17 +705,21 @@ impl TransactionSkeleton {
     }
 
     /// Push a output cell from ckb address, which is majorly used to receive capacity change
-    pub fn output_from_address(&mut self, address: Address, data: Vec<u8>) -> &mut Self {
+    pub fn output_from_address(&mut self, address: Address, data: Vec<u8>) -> Result<&mut Self> {
         self.output_from_script(address.payload().into(), data)
     }
 
     /// Push a output cell from lock script
-    pub fn output_from_script(&mut self, lock_script: Script, data: Vec<u8>) -> &mut Self {
+    pub fn output_from_script(
+        &mut self,
+        lock_script: ScriptEx,
+        data: Vec<u8>,
+    ) -> Result<&mut Self> {
         let output = CellOutput::new_builder()
-            .lock(lock_script)
+            .lock(lock_script.to_script(&self)?)
             .build_exact_capacity(Capacity::zero())
             .expect("build exact capacity");
-        self.output(CellOutputEx::new(output, data))
+        Ok(self.output(CellOutputEx::new(output, data)))
     }
 
     /// Push a batch of output cells
@@ -703,6 +754,11 @@ impl TransactionSkeleton {
         self.celldeps.contains(cell_dep)
     }
 
+    /// Check if cell dep exists by name
+    pub fn get_celldep_by_name(&self, name: &str) -> Option<&CellDepEx> {
+        self.celldeps.iter().find(|celldep| &celldep.name == name)
+    }
+
     /// Push a batch of cell deps
     pub fn celldeps(&mut self, cell_deps: Vec<CellDepEx>) -> &mut Self {
         cell_deps.into_iter().for_each(|v| {
@@ -714,13 +770,13 @@ impl TransactionSkeleton {
     }
 
     /// Push a single witness
-    pub fn witness(&mut self, witness: WitnessArgsEx) -> &mut Self {
+    pub fn witness(&mut self, witness: WitnessEx) -> &mut Self {
         self.witnesses.push(witness);
         self
     }
 
     /// Push a batch of witnesses
-    pub fn witnesses(&mut self, witnesses: Vec<WitnessArgsEx>) -> &mut Self {
+    pub fn witnesses(&mut self, witnesses: Vec<WitnessEx>) -> &mut Self {
         self.witnesses.extend(witnesses);
         self
     }
@@ -858,11 +914,11 @@ impl TransactionSkeleton {
     ) -> Result<&mut Self> {
         let change_cell_index = match change_receiver {
             ChangeReceiver::Address(changer) => {
-                self.output_from_address(changer, Default::default());
+                self.output_from_address(changer, Default::default())?;
                 self.outputs.len() - 1
             }
             ChangeReceiver::Script(changer) => {
-                self.output_from_script(changer, Default::default());
+                self.output_from_script(changer.into(), Default::default())?;
                 self.outputs.len() - 1
             }
             ChangeReceiver::Output(index) => {
@@ -1062,7 +1118,7 @@ pub enum ChangeReceiver {
     /// Balance by adding an extra change cell from ckb address
     Address(Address),
     /// Balance by adding an extra change cell from lock script
-    Script(Script),
+    Script(ScriptEx),
     /// Balance by choosing an existing output cell
     Output(usize),
 }
@@ -1075,6 +1131,12 @@ impl From<Address> for ChangeReceiver {
 
 impl From<Script> for ChangeReceiver {
     fn from(value: Script) -> Self {
+        ChangeReceiver::Script(value.into())
+    }
+}
+
+impl From<ScriptEx> for ChangeReceiver {
+    fn from(value: ScriptEx) -> Self {
         ChangeReceiver::Script(value)
     }
 }

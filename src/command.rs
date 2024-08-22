@@ -1,15 +1,21 @@
-use ckb_cinnabar_calculator::re_exports::eyre;
+use ckb_cinnabar_calculator::{
+    re_exports::{ckb_sdk::Address, eyre},
+    rpc::Network,
+};
 use clap::{Parser, Subcommand};
 
-use crate::handle::{consume_contract, deploy_contract, migrate_contract};
+use crate::{
+    handle::{consume_contract, deploy_contract, migrate_contract},
+    object::TypeIdMode,
+};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 #[command(propagate_version = true)]
 struct Cli {
     /// CKB network, options are `mainnet`, `testnet` or URL (e.g. http://localhost:8114)
-    #[arg(short, long, default_value_t = String::from("testnet"))]
-    network: String,
+    #[arg(short, long, default_value_t = Network::Testnet)]
+    network: Network,
 
     /// Directory of the contract deployment information
     #[arg(long, default_value_t = String::from("deployment"))]
@@ -35,10 +41,10 @@ enum Commands {
         tag: String,
         /// Who pays the capacity and transaction fee
         #[arg(long)]
-        payer_address: String,
+        payer_address: Address,
         /// Who owns the contract cell, if None, <payer_address> will be in charge
         #[arg(long)]
-        contract_owner_address: Option<String>,
+        contract_owner_address: Option<Address>,
         /// Whether to deploy contract with `type_id`
         #[arg(long, default_value_t = false)]
         type_id: bool,
@@ -56,10 +62,10 @@ enum Commands {
         to_tag: String,
         /// Who onws the new contract cell, if None, previous contract owner of <from_tag> will be in charge
         #[arg(long)]
-        contract_owner_address: Option<String>,
+        contract_owner_address: Option<Address>,
         /// How to process the `type_id` of migrated contract, operation is `keep`, `remove` or `new`
-        #[arg(long, default_value_t = String::from("keep"))]
-        type_id_mode: String,
+        #[arg(long, default_value_t = TypeIdMode::Keep)]
+        type_id_mode: TypeIdMode,
     },
     /// Consume on-chain contract to release the capacity
     Consume {
@@ -71,7 +77,7 @@ enum Commands {
         tag: String,
         /// Who receives the released capacity, if None, previous contract owner of <tag> will be in charge
         #[arg(long)]
-        receiver_address: Option<String>,
+        receiver_address: Option<Address>,
     },
 }
 

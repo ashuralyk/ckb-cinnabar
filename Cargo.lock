@@ -352,6 +352,7 @@ dependencies = [
  "futures",
  "hex",
  "jsonrpc-core",
+ "molecule 0.8.0",
  "rand 0.8.5",
  "reqwest 0.12.5",
  "rpassword",

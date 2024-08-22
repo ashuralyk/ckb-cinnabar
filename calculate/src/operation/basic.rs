@@ -33,7 +33,7 @@ use crate::{
     rpc::{GetCellsIter, Network, RPC},
     skeleton::{
         CellDepEx, CellInputEx, CellOutputEx, ChangeReceiver, ScriptEx, TransactionSkeleton,
-        WitnessArgsEx,
+        WitnessEx,
     },
 };
 
@@ -164,7 +164,8 @@ impl<T: RPC> Operation<T> for AddSecp256k1SighashCellDep {
 
 /// Operation that add input cell to transaction skeleton by lock script
 ///
-/// `count`: u32, the count of input cells to add that searching coming out of ckb-indexer
+/// # Parameters
+/// - `count`: u32, the count of input cells to add that searching coming out of ckb-indexer
 pub struct AddInputCell {
     pub lock_script: ScriptEx,
     pub type_script: Option<ScriptEx>,
@@ -241,13 +242,13 @@ impl<T: RPC> Operation<T> for AddInputCellByAddress {
 }
 
 /// Operation that add input cell to transaction skeleton by type script
-pub struct AddCellInputByType {
+pub struct AddInputCellByType {
     pub type_script: ScriptEx,
     pub count: u32,
     pub search_mode: SearchMode,
 }
 
-impl AddCellInputByType {
+impl AddInputCellByType {
     fn search_key(&self, skeleton: &TransactionSkeleton) -> Result<SearchKey> {
         let mut query = CellQueryOptions::new_type(self.type_script.clone().to_script(skeleton)?);
         query.script_search_mode = Some(self.search_mode.clone());
@@ -257,7 +258,7 @@ impl AddCellInputByType {
 }
 
 #[async_trait]
-impl<T: RPC> Operation<T> for AddCellInputByType {
+impl<T: RPC> Operation<T> for AddInputCellByType {
     async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
         let mut iter = GetCellsIter::new(rpc, self.search_key(skeleton)?);
         let mut find_avaliable = false;
@@ -278,8 +279,9 @@ impl<T: RPC> Operation<T> for AddCellInputByType {
 
 /// Operation that add output cell to transaction skeleton
 ///
-/// `absolute_capacity` bool, wether mark the `capacity` as absolute value or additional
-/// `type_id`: bool, if true, calculate type id and override into type script if provided
+/// # Parameters
+/// - `absolute_capacity` bool, wether mark the `capacity` as absolute value or additional
+/// - `type_id`: bool, if true, calculate type id and override into type script if provided
 #[derive(Default)]
 pub struct AddOutputCell {
     pub lock_script: ScriptEx,
@@ -355,8 +357,9 @@ impl<T: RPC> Operation<T> for AddOutputCellByAddress {
 
 /// Operation that add output cell to transaction skeleton by copying input cell from target position
 ///
-/// `input_index`: usize, the index of input cell in inputs, if it is usize::MAX, copy the last one
-/// `adjust_capacity`: bool, if true, adjust the capacity if `data` provided
+/// # Parameters
+/// - `input_index`: usize, the index of input cell in inputs, if it is usize::MAX, copy the last one
+/// - `adjust_capacity`: bool, if true, adjust the capacity if `data` provided
 #[derive(Default)]
 pub struct AddOutputCellByInputIndex {
     pub input_index: usize,
@@ -425,7 +428,7 @@ impl<T: RPC> Operation<T> for AddWitnessArgs {
             witness.input_type = self.input_type;
             witness.output_type = self.output_type;
         } else {
-            let witness = WitnessArgsEx::new(self.lock, self.input_type, self.output_type);
+            let witness = WitnessEx::new(self.lock, self.input_type, self.output_type);
             skeleton.witness(witness);
         }
         Ok(())

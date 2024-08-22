@@ -8,6 +8,7 @@ use ckb_cinnabar_calculator::{
         AddSecp256k1SighashSignaturesWithCkbCli, BalanceTransaction,
     },
     re_exports::{ckb_sdk, eyre},
+    rpc::Network,
     skeleton::ChangeReceiver,
 };
 use ckb_sdk::Address;
@@ -19,11 +20,11 @@ pub use helper::*;
 
 /// Create a new contract version on-chain
 pub async fn deploy_contract(
-    network: String,
+    network: Network,
     contract_name: String,
     version: String,
-    payer_address: String,
-    contract_owner_address: Option<String>,
+    payer_address: Address,
+    contract_owner_address: Option<Address>,
     type_id: bool,
     deployment_path: String,
     binary_path: String,
@@ -35,13 +36,7 @@ pub async fn deploy_contract(
     }
     let rpc = create_rpc_from_network(&network)?;
     let (contract_binary, contract_hash) = load_contract_binary(&contract_name, &binary_path)?;
-    let payer_address: Address = payer_address
-        .parse()
-        .map_err(|_| eyre::eyre!("invalid payer address"))?;
-    let contract_owner_address = contract_owner_address
-        .clone()
-        .map(|s| s.parse().map_err(|_| eyre::eyre!("invalid owner address")))
-        .unwrap_or(Ok(payer_address.clone()))?;
+    let contract_owner_address = contract_owner_address.unwrap_or(payer_address.clone());
     let deploy_contract = DefaultInstruction::new(vec![
         Box::new(AddSecp256k1SighashCellDep {}),
         Box::new(AddInputCellByAddress {
@@ -80,12 +75,12 @@ pub async fn deploy_contract(
 
 /// Migrate a contract to a new version
 pub async fn migrate_contract(
-    network: String,
+    network: Network,
     contract_name: String,
     from_version: String,
     version: String,
-    contract_owner_address: Option<String>,
-    type_id_mode: String,
+    contract_owner_address: Option<Address>,
+    type_id_mode: TypeIdMode,
     deployment_path: String,
     binary_path: String,
 ) -> eyre::Result<()> {
@@ -102,9 +97,7 @@ pub async fn migrate_contract(
     let rpc = create_rpc_from_network(&network)?;
     let (contract_binary, contract_hash) = load_contract_binary(&contract_name, &binary_path)?;
     let payer_address: Address = deployment.contract_owner_address.clone().try_into()?;
-    let contract_owner_address: Address = contract_owner_address
-        .map(|s| s.parse().map_err(|_| eyre::eyre!("invalid owner address")))
-        .unwrap_or(Ok(payer_address.clone()))?;
+    let contract_owner_address: Address = contract_owner_address.unwrap_or(payer_address.clone());
     let mut migrate_contract = DefaultInstruction::new(vec![
         Box::new(AddSecp256k1SighashCellDep {}),
         Box::new(AddInputCellByOutPoint {
@@ -113,7 +106,7 @@ pub async fn migrate_contract(
             since: None,
         }),
     ]);
-    match type_id_mode.try_into()? {
+    match type_id_mode {
         TypeIdMode::Keep => {
             migrate_contract.push(Box::new(AddOutputCellByInputIndex {
                 input_index: 0,
@@ -169,10 +162,10 @@ pub async fn migrate_contract(
 
 /// Consume a contract
 pub async fn consume_contract(
-    network: String,
+    network: Network,
     contract_name: String,
     version: String,
-    receiver_address: Option<String>,
+    receiver_address: Option<Address>,
     deployment_path: String,
 ) -> eyre::Result<()> {
     let deployment =
@@ -182,12 +175,7 @@ pub async fn consume_contract(
         return Err(eyre::eyre!("version already consumed"));
     }
     let payer_address: Address = deployment.contract_owner_address.clone().try_into()?;
-    let receiver_address: Address = receiver_address
-        .map(|s| {
-            s.parse()
-                .map_err(|_| eyre::eyre!("invalid receiver address"))
-        })
-        .unwrap_or(Ok(payer_address.clone()))?;
+    let receiver_address: Address = receiver_address.unwrap_or(payer_address.clone());
     let rpc = create_rpc_from_network(&network)?;
     let consume_contract = DefaultInstruction::new(vec![
         Box::new(AddSecp256k1SighashCellDep {}),
