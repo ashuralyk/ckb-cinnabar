@@ -30,13 +30,14 @@ impl FromStr for TypeIdMode {
     }
 }
 
-impl ToString for TypeIdMode {
-    fn to_string(&self) -> String {
-        match self {
-            TypeIdMode::Keep => "keep".to_string(),
-            TypeIdMode::Remove => "remove".to_string(),
-            TypeIdMode::New => "new".to_string(),
-        }
+impl Display for TypeIdMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let inner = match self {
+            TypeIdMode::Keep => "keep",
+            TypeIdMode::Remove => "remove",
+            TypeIdMode::New => "new",
+        };
+        write!(f, "{inner}",)
     }
 }
 

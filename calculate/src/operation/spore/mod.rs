@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use ckb_sdk::{
     rpc::ckb_indexer::{SearchKey, SearchMode},
@@ -14,15 +12,13 @@ use ckb_types::{
 use eyre::{eyre, Result};
 
 use crate::{
-    operation::{AddOutputCell, Operation},
+    operation::{AddOutputCell, Log, Operation},
     rpc::{GetCellsIter, Network, RPC},
     skeleton::{CellDepEx, CellInputEx, CellOutputEx, ScriptEx, TransactionSkeleton, WitnessEx},
 };
 
 pub mod generated;
 use generated::*;
-
-use super::AddOutputCellByInputIndex;
 
 /// The latest Spore and Cluster contract version
 ///
@@ -83,12 +79,27 @@ pub mod hardcoded {
     }
 }
 
+pub mod hookkey {
+    /// The owner lock script of cluster cell that put in transaction's Inputs and Outputs field, which means it
+    /// should have matched signature in Witnesses
+    pub const CLUSTER_CELL_OWNER_LOCK: &str = "CLUSTER_CELL_OWNER_LOCK";
+    /// The new generated cluster unique id when creating new cluster cell in Outputs field
+    pub const NEW_CLUSTER_ID: &str = "NEW_CLUSTER_ID";
+    /// The new generated spore unique id when creating new spore cell in Outputs field
+    pub const NEW_SPORE_ID: &str = "NEW_SPORE_ID";
+}
+
 /// Add the lastest Spore deployment cell into transaction skeleton according to the network type.
 pub struct AddSporeCelldep {}
 
 #[async_trait]
 impl<T: RPC> Operation<T> for AddSporeCelldep {
-    async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+    async fn run(
+        self: Box<Self>,
+        rpc: &T,
+        skeleton: &mut TransactionSkeleton,
+        _: &mut Log,
+    ) -> Result<()> {
         skeleton.celldep(
             CellDepEx::new_from_outpoint(
                 rpc,
@@ -109,7 +120,12 @@ pub struct AddClusterCelldep {}
 
 #[async_trait]
 impl<T: RPC> Operation<T> for AddClusterCelldep {
-    async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+    async fn run(
+        self: Box<Self>,
+        rpc: &T,
+        skeleton: &mut TransactionSkeleton,
+        _: &mut Log,
+    ) -> Result<()> {
         skeleton.celldep(
             CellDepEx::new_from_outpoint(
                 rpc,
@@ -155,7 +171,12 @@ impl AddClusterCelldepByClusterId {
 
 #[async_trait]
 impl<T: RPC> Operation<T> for AddClusterCelldepByClusterId {
-    async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+    async fn run(
+        self: Box<Self>,
+        rpc: &T,
+        skeleton: &mut TransactionSkeleton,
+        log: &mut Log,
+    ) -> Result<()> {
         let name = format!("cluster-{:#x}", self.cluster_id);
         let cluster_celldep = if let Some(celldep) = skeleton.get_celldep_by_name(&name) {
             celldep
@@ -169,24 +190,36 @@ impl<T: RPC> Operation<T> for AddClusterCelldepByClusterId {
             skeleton.celldep(celldep);
             skeleton.celldeps.last().unwrap()
         };
-        let cluster_owner_lock_script = cluster_celldep.output.lock_script().into();
+        let cluster_owner_lock_script: ScriptEx = cluster_celldep.output.lock_script().into();
         let (inputs, outputs) = skeleton.lock_script_groups(&cluster_owner_lock_script);
         // ignore the case of only one legit cell in Inputs or Outputs
         if inputs.is_empty() || outputs.is_empty() {
+            log.insert(
+                hookkey::CLUSTER_CELL_OWNER_LOCK,
+                cluster_owner_lock_script
+                    .clone()
+                    .to_script_unchecked()
+                    .as_slice()
+                    .to_vec(),
+            );
             match self.authority_mode {
                 ClusterAuthorityMode::LockProxy => {
                     skeleton
-                        .input_from_script(rpc, cluster_owner_lock_script.clone().into())
+                        .input_from_script(rpc, cluster_owner_lock_script.clone())
                         .await?
-                        .output_from_script(cluster_owner_lock_script.into(), vec![])?;
+                        .output_from_script(cluster_owner_lock_script, vec![])?
+                        .witness(Default::default());
                 }
                 ClusterAuthorityMode::ClusterCell => {
                     let cluster_input_cell = CellInputEx::new_from_celldep(cluster_celldep);
                     let cluster_output_cell = cluster_input_cell.output.clone();
                     skeleton
                         .input(cluster_input_cell)?
-                        .output(cluster_output_cell);
-                    Box::new(AddClusterCelldep {}).run(rpc, skeleton).await?;
+                        .output(cluster_output_cell)
+                        .witness(Default::default());
+                    Box::new(AddClusterCelldep {})
+                        .run(rpc, skeleton, log)
+                        .await?;
                 }
                 ClusterAuthorityMode::Skip => {} // do nothing
             }
@@ -219,7 +252,12 @@ impl AddSporeInputCellBySporeId {
 
 #[async_trait]
 impl<T: RPC> Operation<T> for AddSporeInputCellBySporeId {
-    async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+    async fn run(
+        self: Box<Self>,
+        rpc: &T,
+        skeleton: &mut TransactionSkeleton,
+        hook: &mut Log,
+    ) -> Result<()> {
         let search_key = self.search_key(rpc)?;
         let Some(indexer_cell) = GetCellsIter::new(rpc, search_key).next().await? else {
             return Err(eyre!("no spore cell (id: {:#x})", self.spore_id));
@@ -233,8 +271,8 @@ impl<T: RPC> Operation<T> for AddSporeInputCellBySporeId {
                 ));
             }
         }
-        skeleton.input(spore_cell)?;
-        Box::new(AddSporeCelldep {}).run(rpc, skeleton).await
+        skeleton.input(spore_cell)?.witness(Default::default());
+        Box::new(AddSporeCelldep {}).run(rpc, skeleton, hook).await
     }
 }
 
@@ -246,19 +284,22 @@ impl<T: RPC> Operation<T> for AddSporeInputCellBySporeId {
 /// - `content`: The concrete content in bytes
 /// - `cluster_id`: The unique identifier of the cluster cell to create from
 /// - `authority_mode`: The cluster authority mode
-/// - `spore_id_collector`: The callback function to collect the generated spore id
 pub struct AddSporeOutputCell {
     pub lock_script: ScriptEx,
     pub content_type: String,
     pub content: Vec<u8>,
     pub cluster_id: Option<H256>,
     pub authority_mode: ClusterAuthorityMode,
-    pub spore_id_collector: Option<Arc<dyn Fn(H256) + Send + Sync>>,
 }
 
 #[async_trait]
 impl<T: RPC> Operation<T> for AddSporeOutputCell {
-    async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+    async fn run(
+        self: Box<Self>,
+        rpc: &T,
+        skeleton: &mut TransactionSkeleton,
+        log: &mut Log,
+    ) -> Result<()> {
         let molecule_spore_data = SporeData::new_builder()
             .content_type(self.content_type.as_bytes().pack())
             .content(self.content.pack())
@@ -274,61 +315,19 @@ impl<T: RPC> Operation<T> for AddSporeOutputCell {
             absolute_capacity: false,
             type_id: true,
         })
-        .run(rpc, skeleton)
+        .run(rpc, skeleton, log)
         .await?;
-        if let Some(collector) = self.spore_id_collector {
-            let spore_id = skeleton.calc_type_id(skeleton.outputs.len() - 1)?;
-            collector(spore_id);
-        }
+        let spore_id = skeleton.calc_type_id(skeleton.outputs.len() - 1)?;
+        log.insert(hookkey::NEW_SPORE_ID, spore_id.as_bytes().to_vec());
         if let Some(cluster_id) = self.cluster_id {
             Box::new(AddClusterCelldepByClusterId {
                 cluster_id,
                 authority_mode: self.authority_mode,
             })
-            .run(rpc, skeleton)
+            .run(rpc, skeleton, log)
             .await?;
         }
-        Box::new(AddSporeCelldep {}).run(rpc, skeleton).await
-    }
-}
-
-/// Search and add spore cell from transaction skeleton's input cells by index
-///
-/// # Parameters
-/// - `input_index`: The index of input cell in transaction skeleton
-/// - `lock_script`: The owner lock script, if None, use the one from input cell
-/// - `authority_mode`: The cluster authority mode
-pub struct AddSporeOutputCellByInputIndex {
-    pub input_index: usize,
-    pub lock_script: Option<ScriptEx>,
-    pub authority_mode: ClusterAuthorityMode,
-}
-
-#[async_trait]
-impl<T: RPC> Operation<T> for AddSporeOutputCellByInputIndex {
-    async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
-        Box::new(AddOutputCellByInputIndex {
-            input_index: self.input_index,
-            lock_script: self.lock_script,
-            type_script: None,
-            data: None,
-            adjust_capacity: true,
-        })
-        .run(rpc, skeleton)
-        .await?;
-        let spore_cell = skeleton.outputs.last().unwrap();
-        let molecule_spore_data = SporeData::from_compatible_slice(&spore_cell.data)
-            .map_err(|_| eyre!("indexed cell input has incompatible spore data"))?;
-        if let Some(cluster_id) = molecule_spore_data.cluster_id().to_opt() {
-            let cluster_id: [u8; 32] = cluster_id.raw_data().to_vec().try_into().unwrap();
-            Box::new(AddClusterCelldepByClusterId {
-                cluster_id: cluster_id.into(),
-                authority_mode: self.authority_mode,
-            })
-            .run(rpc, skeleton)
-            .await?;
-        }
-        Ok(())
+        Box::new(AddSporeCelldep {}).run(rpc, skeleton, log).await
     }
 }
 
@@ -354,14 +353,19 @@ impl AddClusterInputCellByClusterId {
 
 #[async_trait]
 impl<T: RPC> Operation<T> for AddClusterInputCellByClusterId {
-    async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+    async fn run(
+        self: Box<Self>,
+        rpc: &T,
+        skeleton: &mut TransactionSkeleton,
+        log: &mut Log,
+    ) -> Result<()> {
         let search_key = self.search_key(rpc)?;
         let Some(indexer_cell) = GetCellsIter::new(rpc, search_key).next().await? else {
             return Err(eyre!("no cluster cell (id: {:#x})", self.cluster_id));
         };
         let cluster_cell = CellInputEx::new_from_indexer_cell(indexer_cell);
-        skeleton.input(cluster_cell)?;
-        Box::new(AddClusterCelldep {}).run(rpc, skeleton).await
+        skeleton.input(cluster_cell)?.witness(Default::default());
+        Box::new(AddClusterCelldep {}).run(rpc, skeleton, log).await
     }
 }
 
@@ -376,12 +380,16 @@ pub struct AddClusterOutputCell {
     pub lock_script: ScriptEx,
     pub name: String,
     pub description: Vec<u8>,
-    pub cluster_id_collector: Option<Arc<dyn Fn(H256) + Send + Sync>>,
 }
 
 #[async_trait]
 impl<T: RPC> Operation<T> for AddClusterOutputCell {
-    async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+    async fn run(
+        self: Box<Self>,
+        rpc: &T,
+        skeleton: &mut TransactionSkeleton,
+        log: &mut Log,
+    ) -> Result<()> {
         let molecule_cluster_data = ClusterDataV2::new_builder()
             .name(self.name.as_bytes().pack())
             .description(self.description.pack())
@@ -396,13 +404,11 @@ impl<T: RPC> Operation<T> for AddClusterOutputCell {
             absolute_capacity: false,
             type_id: true,
         })
-        .run(rpc, skeleton)
+        .run(rpc, skeleton, log)
         .await?;
-        if let Some(collector) = self.cluster_id_collector {
-            let cluster_id = skeleton.calc_type_id(skeleton.outputs.len() - 1)?;
-            collector(cluster_id);
-        }
-        Box::new(AddClusterCelldep {}).run(rpc, skeleton).await
+        let cluster_id = skeleton.calc_type_id(skeleton.outputs.len() - 1)?;
+        log.insert(hookkey::NEW_CLUSTER_ID, cluster_id.as_bytes().to_vec());
+        Box::new(AddClusterCelldep {}).run(rpc, skeleton, log).await
     }
 }
 
@@ -426,7 +432,12 @@ impl AddSporeActions {
 
 #[async_trait]
 impl<T: RPC> Operation<T> for AddSporeActions {
-    async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+    async fn run(
+        self: Box<Self>,
+        rpc: &T,
+        skeleton: &mut TransactionSkeleton,
+        _: &mut Log,
+    ) -> Result<()> {
         let mut spore_actions: Vec<Action> = vec![];
         // prepare spore related action parameters
         let spore_code_hash = hardcoded::spore_code_hash(rpc.network())?;

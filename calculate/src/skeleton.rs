@@ -19,7 +19,7 @@ use ckb_types::{
 use eyre::{eyre, Result};
 use futures::future::join_all;
 
-use crate::rpc::{GetCellsIter, RPC};
+use crate::rpc::{GetCellsIter, Network, RPC};
 
 /// A wrapper of packed Script
 ///
@@ -96,8 +96,12 @@ impl ScriptEx {
     }
 
     /// Turn into CKB address
-    pub fn to_address(self, network: NetworkType) -> Result<Address> {
+    pub fn to_address(self, network: Network) -> Result<Address> {
         let payload = Script::try_from(self)?.into();
+        let network = match network {
+            Network::Mainnet => NetworkType::Mainnet,
+            _ => NetworkType::Testnet,
+        };
         Ok(Address::new(network, payload, true))
     }
 
@@ -500,12 +504,10 @@ impl WitnessEx {
         }
         if self.empty {
             Bytes::default()
+        } else if self.traditional {
+            self.into_witness_args().as_bytes().pack()
         } else {
-            if self.traditional {
-                self.into_witness_args().as_bytes().pack()
-            } else {
-                self.into_packed_plain_bytes()
-            }
+            self.into_packed_plain_bytes()
         }
     }
 
@@ -716,7 +718,7 @@ impl TransactionSkeleton {
         data: Vec<u8>,
     ) -> Result<&mut Self> {
         let output = CellOutput::new_builder()
-            .lock(lock_script.to_script(&self)?)
+            .lock(lock_script.to_script(self)?)
             .build_exact_capacity(Capacity::zero())
             .expect("build exact capacity");
         Ok(self.output(CellOutputEx::new(output, data)))
@@ -756,7 +758,7 @@ impl TransactionSkeleton {
 
     /// Check if cell dep exists by name
     pub fn get_celldep_by_name(&self, name: &str) -> Option<&CellDepEx> {
-        self.celldeps.iter().find(|celldep| &celldep.name == name)
+        self.celldeps.iter().find(|celldep| celldep.name == name)
     }
 
     /// Push a batch of cell deps
@@ -918,7 +920,7 @@ impl TransactionSkeleton {
                 self.outputs.len() - 1
             }
             ChangeReceiver::Script(changer) => {
-                self.output_from_script(changer.into(), Default::default())?;
+                self.output_from_script(changer, Default::default())?;
                 self.outputs.len() - 1
             }
             ChangeReceiver::Output(index) => {

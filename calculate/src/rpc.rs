@@ -1,9 +1,13 @@
-use std::fmt::Display;
-use std::future::Future;
-use std::pin::Pin;
-use std::str::FromStr;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::{
+    fmt::Display,
+    future::Future,
+    pin::Pin,
+    str::FromStr,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+};
 
 use ckb_jsonrpc_types::{
     BlockNumber, BlockView, CellWithStatus, HeaderView, JsonBytes, OutPoint, OutputsValidator,
@@ -12,8 +16,7 @@ use ckb_jsonrpc_types::{
 use ckb_sdk::rpc::ckb_indexer::{Cell, Order, Pagination, SearchKey};
 use ckb_types::H256;
 use eyre::{eyre, Error};
-use jsonrpc_core::futures::FutureExt;
-use jsonrpc_core::response::Output;
+use jsonrpc_core::{futures::FutureExt, response::Output};
 use reqwest::{Client, Url};
 
 pub type Rpc<T> = Pin<Box<dyn Future<Output = Result<T, Error>> + Send + 'static>>;

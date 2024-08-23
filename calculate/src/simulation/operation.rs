@@ -10,7 +10,7 @@ use ckb_types::{
 use eyre::Result;
 
 use crate::{
-    operation::Operation,
+    operation::{Log, Operation},
     rpc::RPC,
     skeleton::{CellDepEx, CellInputEx, ScriptEx, TransactionSkeleton},
 };
@@ -48,7 +48,12 @@ pub struct AddFakeContractCelldep {
 
 #[async_trait]
 impl<T: RPC> Operation<T> for AddFakeContractCelldep {
-    async fn run(self: Box<Self>, _: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+    async fn run(
+        self: Box<Self>,
+        _: &T,
+        skeleton: &mut TransactionSkeleton,
+        _: &mut Log,
+    ) -> Result<()> {
         let celldep_out_point = fake_outpoint();
         let celldep = CellDep::new_builder()
             .out_point(celldep_out_point)
@@ -83,7 +88,12 @@ pub struct AddFakeContractCelldepByName {
 
 #[async_trait]
 impl<T: RPC> Operation<T> for AddFakeContractCelldepByName {
-    async fn run(self: Box<Self>, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+    async fn run(
+        self: Box<Self>,
+        rpc: &T,
+        skeleton: &mut TransactionSkeleton,
+        log: &mut Log,
+    ) -> Result<()> {
         let contract_path = PathBuf::new()
             .join(self.contract_binary_path)
             .join(&self.contract);
@@ -93,7 +103,7 @@ impl<T: RPC> Operation<T> for AddFakeContractCelldepByName {
             contract_data,
             with_type_id: self.with_type_id,
         })
-        .run(rpc, skeleton)
+        .run(rpc, skeleton, log)
         .await
     }
 }
@@ -103,7 +113,12 @@ pub struct AddAlwaysSuccessCelldep {}
 
 #[async_trait]
 impl<T: RPC> Operation<T> for AddAlwaysSuccessCelldep {
-    async fn run(self: Box<Self>, _: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+    async fn run(
+        self: Box<Self>,
+        _: &T,
+        skeleton: &mut TransactionSkeleton,
+        _: &mut Log,
+    ) -> Result<()> {
         let always_success_out_point = fake_outpoint();
         let celldep = CellDep::new_builder()
             .out_point(always_success_out_point)
@@ -128,7 +143,12 @@ pub struct AddFakeCellInput {
 
 #[async_trait]
 impl<T: RPC> Operation<T> for AddFakeCellInput {
-    async fn run(self: Box<Self>, _: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+    async fn run(
+        self: Box<Self>,
+        _: &T,
+        skeleton: &mut TransactionSkeleton,
+        _: &mut Log,
+    ) -> Result<()> {
         let primary_script = self.lock_script.to_script(skeleton)?;
         let second_script = if let Some(second) = self.type_script {
             Some(second.to_script(skeleton)?)

@@ -3,9 +3,7 @@ use std::{fs, path::PathBuf};
 use chrono::prelude::Utc;
 use ckb_cinnabar_calculator::{
     instruction::{Instruction, TransactionCalculator},
-    re_exports::{
-        ckb_hash::blake2b_256, ckb_jsonrpc_types::OutputsValidator, ckb_sdk, ckb_types::H256, eyre,
-    },
+    re_exports::{ckb_hash::blake2b_256, ckb_jsonrpc_types::OutputsValidator, ckb_sdk, eyre},
     rpc::{Network, RpcClient, RPC},
 };
 use ckb_sdk::Address;
@@ -74,7 +72,7 @@ pub async fn send_and_record_transaction<T: RPC>(
     payer_address: Address,
     contract_owner_address: Option<Address>,
 ) -> eyre::Result<()> {
-    let skeleton = TransactionCalculator::new(instructions)
+    let (skeleton, _) = TransactionCalculator::new(instructions)
         .new_skeleton(&rpc)
         .await?;
     let occupied_capacity = skeleton.outputs[0].occupied_capacity().as_u64();
@@ -91,9 +89,9 @@ pub async fn send_and_record_transaction<T: RPC>(
         date: Utc::now().to_rfc3339(),
         operation: operation.to_string(),
         version,
-        tx_hash: tx_hash.into(),
+        tx_hash,
         out_index: 0,
-        data_hash: contract_hash.map(|v| H256::from(v).into()),
+        data_hash: contract_hash.map(Into::into),
         occupied_capacity,
         payer_address: payer_address.into(),
         contract_owner_address: contract_owner_address.into(),

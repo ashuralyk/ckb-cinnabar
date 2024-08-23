@@ -1,7 +1,7 @@
 use eyre::Result;
 
 use crate::{
-    operation::Operation,
+    operation::{Log, Operation},
     rpc::{RpcClient, RPC},
     skeleton::TransactionSkeleton,
 };
@@ -52,9 +52,14 @@ impl<T: RPC> Instruction<T> {
     }
 
     /// Execute all operations in sequence to assemble transaction skeleton
-    pub async fn run(self, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+    pub async fn run(
+        self,
+        rpc: &T,
+        skeleton: &mut TransactionSkeleton,
+        log: &mut Log,
+    ) -> Result<()> {
         for operation in self.operations {
-            operation.run(rpc, skeleton).await?;
+            operation.run(rpc, skeleton, log).await?;
         }
         Ok(())
     }
@@ -63,36 +68,42 @@ impl<T: RPC> Instruction<T> {
 /// Take responsibility for executing instructions and then assemble transaction skeleton
 pub struct TransactionCalculator<T: RPC> {
     instructions: Vec<Instruction<T>>,
+    log: Log,
 }
 
 impl<T: RPC> Default for TransactionCalculator<T> {
     fn default() -> Self {
         TransactionCalculator {
             instructions: Vec::new(),
+            log: Log::new(),
         }
     }
 }
 
 impl<T: RPC> TransactionCalculator<T> {
     pub fn new(instructions: Vec<Instruction<T>>) -> Self {
-        TransactionCalculator { instructions }
+        TransactionCalculator {
+            instructions,
+            log: Log::new(),
+        }
     }
 
-    pub fn instruction(&mut self, instruction: Instruction<T>) -> &mut Self {
+    pub fn instruction(mut self, instruction: Instruction<T>) -> Self {
         self.instructions.push(instruction);
         self
     }
 
-    pub async fn new_skeleton(self, rpc: &T) -> Result<TransactionSkeleton> {
+    pub async fn new_skeleton(self, rpc: &T) -> Result<(TransactionSkeleton, Log)> {
         let mut skeleton = TransactionSkeleton::default();
-        self.apply_skeleton(rpc, &mut skeleton).await?;
-        Ok(skeleton)
+        let log = self.apply_skeleton(rpc, &mut skeleton).await?;
+        Ok((skeleton, log))
     }
 
-    pub async fn apply_skeleton(self, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<()> {
+    pub async fn apply_skeleton(self, rpc: &T, skeleton: &mut TransactionSkeleton) -> Result<Log> {
+        let mut log = self.log;
         for instruction in self.instructions {
-            instruction.run(rpc, skeleton).await?;
+            instruction.run(rpc, skeleton, &mut log).await?;
         }
-        Ok(())
+        Ok(log)
     }
 }

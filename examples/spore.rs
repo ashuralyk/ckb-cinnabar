@@ -1,12 +1,18 @@
-use std::sync::Arc;
+use std::collections::HashSet;
 
 use ckb_cinnabar_calculator::{
     instruction::predefined::{
         balance_and_sign_with_ckb_cli, burn_spores, mint_clusters, mint_spores, transfer_clusters,
         transfer_spores, Cluster, Spore,
     },
-    re_exports::{ckb_sdk::Address, ckb_types::H256, tokio},
-    rpc::RpcClient,
+    operation::hookkey,
+    re_exports::{
+        ckb_sdk::Address,
+        ckb_types::{packed::Script, prelude::Entity, H256},
+        tokio,
+    },
+    rpc::{RpcClient, RPC},
+    skeleton::ScriptEx,
     TransactionCalculator,
 };
 use clap::{Parser, Subcommand};
@@ -124,8 +130,8 @@ fn bytify(value: String) -> Vec<u8> {
 
 #[tokio::main]
 pub async fn main() {
-    let cmd = Cli::parse();
-    let (spore, signer) = match cmd.command {
+    let mut signers = HashSet::new();
+    let spore = match Cli::parse().command {
         Commands::Spore(spore) => match spore.command {
             SporeCommands::Mint {
                 minter,
@@ -139,23 +145,16 @@ pub async fn main() {
                     content: bytify(content),
                     cluster_id: cluster_id.map(h256),
                 };
-                let mint = mint_spores(
-                    &minter,
-                    vec![spore],
-                    false,
-                    Some(Arc::new(|spore_id| {
-                        println!("Spore id: {:#x}", spore_id);
-                    })),
-                );
-                (mint, minter)
+                signers.insert(minter.clone());
+                mint_spores(&minter, vec![spore], false)
             }
             SporeCommands::Transfer { spore_id, from, to } => {
-                let transfer = transfer_spores(&from, vec![(to, h256(spore_id))]);
-                (transfer, from)
+                signers.insert(from.clone());
+                transfer_spores(&from, vec![(to, h256(spore_id))])
             }
             SporeCommands::Burn { spore_id, owner } => {
-                let burn = burn_spores(&owner, vec![h256(spore_id)]);
-                (burn, owner)
+                signers.insert(owner.clone());
+                burn_spores(&owner, vec![h256(spore_id)])
             }
         },
         Commands::Cluster(cluster) => match cluster.command {
@@ -169,33 +168,50 @@ pub async fn main() {
                     cluster_name,
                     cluster_description: bytify(cluster_description),
                 };
-                let mint = mint_clusters(
-                    &minter,
-                    vec![cluster],
-                    Some(Arc::new(|cluster_id| {
-                        println!("Cluster id: {:#x}", cluster_id);
-                    })),
-                );
-                (mint, minter)
+                signers.insert(minter.clone());
+                mint_clusters(&minter, vec![cluster])
             }
             ClusterCommands::Transfer {
                 cluster_id,
                 from,
                 to,
             } => {
-                let transfer = transfer_clusters(&from, vec![(to, h256(cluster_id))]);
-                (transfer, from)
+                signers.insert(from.clone());
+                transfer_clusters(&from, vec![(to, h256(cluster_id))])
             }
         },
     };
 
     // build transaction
     let rpc = RpcClient::new_testnet();
-    let mut calculator = TransactionCalculator::default();
-    calculator
+    let (mut skeleton, log) = TransactionCalculator::default()
         .instruction(spore)
-        .instruction(balance_and_sign_with_ckb_cli(&signer, 2000, None));
-    let skeleton = calculator.new_skeleton(&rpc).await.expect("calculate");
+        .new_skeleton(&rpc)
+        .await
+        .expect("spore calculate");
+    for (key, value) in log {
+        match key {
+            hookkey::NEW_SPORE_ID => println!("new spore_id: {}", hex::encode(value)),
+            hookkey::NEW_CLUSTER_ID => println!("new cluster_id: {}", hex::encode(value)),
+            hookkey::CLUSTER_CELL_OWNER_LOCK => {
+                let lock_script = Script::from_compatible_slice(&value).unwrap();
+                let address = ScriptEx::from(lock_script)
+                    .to_address(rpc.network())
+                    .unwrap();
+                signers.insert(address);
+            }
+            _ => {}
+        };
+    }
+    // TODO: there's a bug if signing more than once through ckb-cli, need to find out why
+    let signs = signers
+        .into_iter()
+        .map(|signer| balance_and_sign_with_ckb_cli(&signer, 2000, None))
+        .collect::<Vec<_>>();
+    TransactionCalculator::new(signs)
+        .apply_skeleton(&rpc, &mut skeleton)
+        .await
+        .expect("sign calculate");
 
     // send transaction without any block confirmations
     let hash = skeleton.send_and_wait(&rpc, 0, None).await.expect("send");

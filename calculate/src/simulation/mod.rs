@@ -15,7 +15,7 @@ use ckb_types::{
 };
 use eyre::Result;
 
-use crate::{instruction::Instruction, rpc::RPC, skeleton::TransactionSkeleton};
+use crate::{instruction::Instruction, operation::Log, rpc::RPC, skeleton::TransactionSkeleton};
 
 mod operation;
 mod rpc;
@@ -130,8 +130,9 @@ impl TransactionSimulator {
         max_cycles: u64,
     ) -> Result<Cycle> {
         let mut skeleton = TransactionSkeleton::default();
+        let mut log = Log::new();
         for instruction in instructions {
-            instruction.run(rpc, &mut skeleton).await?;
+            instruction.run(rpc, &mut skeleton, &mut log).await?;
         }
         if self.print_tx {
             println!("transaction skeleton: {}", skeleton);

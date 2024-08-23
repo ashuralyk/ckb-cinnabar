@@ -33,7 +33,6 @@ pub async fn main() {
     let rpc = RpcClient::new_testnet();
 
     // build transfer instruction
-    let mut calculator = TransactionCalculator::default();
     let transfer = secp256k1_sighash_transfer(&from, &to, ckb);
     let balance_and_sign = if let Some(secret_key) = secret_key {
         balance_and_sign(&from, secret_key, ADDITIONAL_FEE_RATE)
@@ -42,10 +41,12 @@ pub async fn main() {
     };
 
     // apply transfer instructio and build transaction
-    calculator
+    let (skeleton, _) = TransactionCalculator::default()
         .instruction(transfer)
-        .instruction(balance_and_sign);
-    let skeleton = calculator.new_skeleton(&rpc).await.expect("calculate");
+        .instruction(balance_and_sign)
+        .new_skeleton(&rpc)
+        .await
+        .expect("calculate");
 
     // send transaction without any block confirmations
     let hash = skeleton.send_and_wait(&rpc, 0, None).await.expect("send");

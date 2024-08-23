@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::Arc, usize};
+use std::{path::PathBuf, usize};
 
 use ckb_sdk::{Address, HumanCapacity};
 use ckb_types::H256;
@@ -65,7 +65,7 @@ pub fn balance_and_sign(
 /// # Parameters
 /// - `signer`: The address who is supposed to provide capacity to balance, in the meantime, receive the change
 /// - `additional_fee_rate`: The additional fee rate to add
-/// - `cache_path`: The path to store the transaction cache file
+/// - `cache_path`: The path to store the transaction cache file, default is `/tmp`
 pub fn balance_and_sign_with_ckb_cli(
     signer: &Address,
     additional_fee_rate: u64,
@@ -80,7 +80,7 @@ pub fn balance_and_sign_with_ckb_cli(
         Box::new(AddSecp256k1SighashSignaturesWithCkbCli {
             signer_address: signer.clone(),
             cache_path: cache_path.unwrap_or_else(|| PathBuf::from("/tmp")),
-            keep_cache_file: false,
+            keep_cache_file: true,
         }),
     ])
 }
@@ -98,15 +98,14 @@ pub struct Spore {
 /// - `minter`: The address to mint Spore
 /// - `spores`: The Spores to mint
 /// - `cluster_lock_proxy`: Whether to use cluster lock proxy
-/// - `spore_id_collector`: The callback to collect spore id, e.g. collect for persistence
 pub fn mint_spores(
     minter: &Address,
     spores: Vec<Spore>,
     cluster_lock_proxy: bool,
-    spore_id_collector: Option<Arc<dyn Fn(H256) + Send + Sync>>,
 ) -> DefaultInstruction {
     let mut mint = DefaultInstruction::new(vec![
         Box::new(AddSecp256k1SighashCellDep {}),
+        // Used to calculate the spore unique id
         Box::new(AddInputCellByAddress {
             address: minter.clone(),
         }),
@@ -129,7 +128,6 @@ pub fn mint_spores(
             content,
             cluster_id,
             authority_mode: authority_mode.clone(),
-            spore_id_collector: spore_id_collector.clone(),
         }));
     }
     mint.push(Box::new(AddSporeActions {}));
@@ -144,22 +142,19 @@ pub fn mint_spores(
 ///     - `0`: The address to transfer Spore to
 ///     - `1`: The Spore ID to transfer
 pub fn transfer_spores(from: &Address, spores: Vec<(Address, H256)>) -> DefaultInstruction {
-    let mut transfer = DefaultInstruction::new(vec![
-        Box::new(AddSecp256k1SighashCellDep {}),
-        Box::new(AddInputCellByAddress {
-            address: from.clone(),
-        }),
-    ]);
+    let mut transfer = DefaultInstruction::new(vec![Box::new(AddSecp256k1SighashCellDep {})]);
     for (to, spore_id) in spores {
         transfer
             .push(Box::new(AddSporeInputCellBySporeId {
                 spore_id,
                 check_owner: Some(from.clone().into()),
             }))
-            .push(Box::new(AddSporeOutputCellByInputIndex {
+            .push(Box::new(AddOutputCellByInputIndex {
                 input_index: usize::MAX,
                 lock_script: Some(to.into()),
-                authority_mode: ClusterAuthorityMode::Skip,
+                type_script: None,
+                data: None,
+                adjust_capacity: true,
             }));
     }
     transfer.push(Box::new(AddSporeActions {}));
@@ -172,12 +167,7 @@ pub fn transfer_spores(from: &Address, spores: Vec<(Address, H256)>) -> DefaultI
 /// - `owner`: The address to burn Spore from
 /// - `spores`: The Spores to burn
 pub fn burn_spores(owner: &Address, spores: Vec<H256>) -> DefaultInstruction {
-    let mut burn = DefaultInstruction::new(vec![
-        Box::new(AddSecp256k1SighashCellDep {}),
-        Box::new(AddInputCellByAddress {
-            address: owner.clone(),
-        }),
-    ]);
+    let mut burn = DefaultInstruction::new(vec![Box::new(AddSecp256k1SighashCellDep {})]);
     spores.into_iter().for_each(|spore_id| {
         burn.push(Box::new(AddSporeInputCellBySporeId {
             spore_id,
@@ -199,12 +189,7 @@ pub struct Cluster {
 /// # Parameters
 /// - `minter`: The address to mint Cluster
 /// - `clusters`: The Clusters to mint
-/// - `cluster_id_collector`: The callback to collect cluster id, e.g. collect for persistence
-pub fn mint_clusters(
-    minter: &Address,
-    clusters: Vec<Cluster>,
-    cluster_id_collector: Option<Arc<dyn Fn(H256) + Send + Sync>>,
-) -> DefaultInstruction {
+pub fn mint_clusters(minter: &Address, clusters: Vec<Cluster>) -> DefaultInstruction {
     let mut mint = DefaultInstruction::new(vec![
         Box::new(AddSecp256k1SighashCellDep {}),
         Box::new(AddInputCellByAddress {
@@ -221,7 +206,6 @@ pub fn mint_clusters(
             lock_script: owner.unwrap_or_else(|| minter.clone()).into(),
             name: cluster_name,
             description: cluster_description,
-            cluster_id_collector: cluster_id_collector.clone(),
         }));
     }
     mint.push(Box::new(AddSporeActions {}));

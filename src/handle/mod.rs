@@ -101,7 +101,7 @@ pub async fn migrate_contract(
     let mut migrate_contract = DefaultInstruction::new(vec![
         Box::new(AddSecp256k1SighashCellDep {}),
         Box::new(AddInputCellByOutPoint {
-            tx_hash: deployment.tx_hash.into(),
+            tx_hash: deployment.tx_hash,
             index: deployment.out_index,
             since: None,
         }),
@@ -180,7 +180,7 @@ pub async fn consume_contract(
     let consume_contract = DefaultInstruction::new(vec![
         Box::new(AddSecp256k1SighashCellDep {}),
         Box::new(AddInputCellByOutPoint {
-            tx_hash: deployment.tx_hash.into(),
+            tx_hash: deployment.tx_hash,
             index: deployment.out_index,
             since: None,
         }),
