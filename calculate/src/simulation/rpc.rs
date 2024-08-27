@@ -15,6 +15,7 @@ type FnGetBlockByNumber = Box<dyn Fn(BlockNumber) -> Option<BlockView> + Send + 
 type FnGetBlock = Box<dyn Fn(H256) -> Option<BlockView> + Send + Sync>;
 type FnGetHeader = Box<dyn Fn(H256) -> Option<HeaderView> + Send + Sync>;
 type FnGetHeaderByNumber = Box<dyn Fn(BlockNumber) -> Option<HeaderView> + Send + Sync>;
+type FnGetBlockHash = Box<dyn Fn(BlockNumber) -> Option<H256> + Send + Sync>;
 type FnGetTipBlockNumber = Box<dyn Fn() -> BlockNumber + Send + Sync>;
 type FnGetTipHeader = Box<dyn Fn() -> HeaderView + Send + Sync>;
 type FnTxPoolInfo = Box<dyn Fn() -> TxPoolInfo + Send + Sync>;
@@ -29,6 +30,7 @@ pub struct FakeRpcClient {
     pub method_get_block: Option<Arc<FnGetBlock>>,
     pub method_get_header: Option<Arc<FnGetHeader>>,
     pub method_get_header_by_number: Option<Arc<FnGetHeaderByNumber>>,
+    pub method_get_block_hash: Option<Arc<FnGetBlockHash>>,
     pub method_get_tip_block_number: Option<Arc<FnGetTipBlockNumber>>,
     pub method_get_tip_header: Option<Arc<FnGetTipHeader>>,
     pub method_tx_pool_info: Option<Arc<FnTxPoolInfo>>,
@@ -92,6 +94,13 @@ impl RPC for FakeRpcClient {
             unimplemented!("fake get_header_by_number method")
         };
         Box::pin(async move { Ok(get_header_by_number(number)) })
+    }
+
+    fn get_block_hash(&self, number: BlockNumber) -> Rpc<Option<H256>> {
+        let Some(get_block_hash) = self.method_get_block_hash.clone() else {
+            unimplemented!("fake get_block_hash method")
+        };
+        Box::pin(async move { Ok(get_block_hash(number)) })
     }
 
     fn get_tip_block_number(&self) -> Rpc<BlockNumber> {

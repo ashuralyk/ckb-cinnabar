@@ -32,8 +32,8 @@ use serde_json::Value;
 use crate::{
     rpc::{GetCellsIter, Network, RPC},
     skeleton::{
-        CellDepEx, CellInputEx, CellOutputEx, ChangeReceiver, ScriptEx, TransactionSkeleton,
-        WitnessEx,
+        CellDepEx, CellInputEx, CellOutputEx, ChangeReceiver, HeaderDepEx, ScriptEx,
+        TransactionSkeleton, WitnessEx,
     },
 };
 
@@ -184,6 +184,52 @@ impl<T: RPC> Operation<T> for AddSecp256k1SighashCellDep {
     }
 }
 
+/// Operation that add a standalone header dep to transaction without linking to any input cell
+pub struct AddHeaderDep {
+    pub block_hash: H256,
+}
+
+#[async_trait]
+impl<T: RPC> Operation<T> for AddHeaderDep {
+    async fn run(
+        self: Box<Self>,
+        rpc: &T,
+        skeleton: &mut TransactionSkeleton,
+        _: &mut Log,
+    ) -> Result<()> {
+        let header_dep = HeaderDepEx::new(rpc, self.block_hash, None).await?;
+        skeleton.headerdep(header_dep);
+        Ok(())
+    }
+}
+
+/// Operation that add a header dep to transaction by input index, which will link to that input cell
+pub struct AddHeaderDepByInputIndex {
+    pub input_index: usize,
+}
+
+#[async_trait]
+impl<T: RPC> Operation<T> for AddHeaderDepByInputIndex {
+    async fn run(
+        self: Box<Self>,
+        rpc: &T,
+        skeleton: &mut TransactionSkeleton,
+        _: &mut Log,
+    ) -> Result<()> {
+        let input = if self.input_index == usize::MAX {
+            skeleton.inputs.last().ok_or(eyre!("empty input"))?
+        } else {
+            skeleton
+                .inputs
+                .get(self.input_index)
+                .ok_or(eyre!("input not found"))?
+        };
+        let cell_outpoint = input.input.previous_output();
+        skeleton.headerdep(HeaderDepEx::new_from_outpoint(rpc, cell_outpoint).await?);
+        Ok(())
+    }
+}
+
 /// Operation that add input cell to transaction skeleton by lock script
 ///
 /// # Parameters
@@ -222,7 +268,7 @@ impl<T: RPC> Operation<T> for AddInputCell {
         let mut find_avaliable = false;
         while let Some(cells) = iter.next_batch(self.count).await? {
             cells.into_iter().try_for_each(|cell| {
-                let cell_input = CellInputEx::new_from_indexer_cell(cell);
+                let cell_input = CellInputEx::new_from_indexer_cell(cell, None);
                 find_avaliable = true;
                 skeleton.input(cell_input)?.witness(Default::default());
                 Result::<()>::Ok(())
@@ -306,7 +352,7 @@ impl<T: RPC> Operation<T> for AddInputCellByType {
         let mut find_avaliable = false;
         while let Some(cells) = iter.next_batch(self.count).await? {
             cells.into_iter().try_for_each(|cell| {
-                let cell_input = CellInputEx::new_from_indexer_cell(cell);
+                let cell_input = CellInputEx::new_from_indexer_cell(cell, None);
                 find_avaliable = true;
                 skeleton.input(cell_input)?.witness(Default::default());
                 Result::<()>::Ok(())

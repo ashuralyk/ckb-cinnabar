@@ -23,7 +23,7 @@ use generated::*;
 /// The latest Spore and Cluster contract version
 ///
 /// note: detail refers to https://github.com/sporeprotocol/spore-contract/blob/master/docs/VERSIONS.md
-pub mod hardcoded {
+mod hardcoded {
     use super::*;
 
     pub const SPORE_MAINNET_TX_HASH: H256 =
@@ -211,7 +211,7 @@ impl<T: RPC> Operation<T> for AddClusterCelldepByClusterId {
                         .witness(Default::default());
                 }
                 ClusterAuthorityMode::ClusterCell => {
-                    let cluster_input_cell = CellInputEx::new_from_celldep(cluster_celldep);
+                    let cluster_input_cell = CellInputEx::new_from_celldep(cluster_celldep, None);
                     let cluster_output_cell = cluster_input_cell.output.clone();
                     skeleton
                         .input(cluster_input_cell)?
@@ -262,7 +262,7 @@ impl<T: RPC> Operation<T> for AddSporeInputCellBySporeId {
         let Some(indexer_cell) = GetCellsIter::new(rpc, search_key).next().await? else {
             return Err(eyre!("no spore cell (id: {:#x})", self.spore_id));
         };
-        let spore_cell = CellInputEx::new_from_indexer_cell(indexer_cell);
+        let spore_cell = CellInputEx::new_from_indexer_cell(indexer_cell, None);
         if let Some(owner) = self.check_owner {
             if spore_cell.output.lock_script() != owner.to_script(skeleton)? {
                 return Err(eyre!(
@@ -363,7 +363,7 @@ impl<T: RPC> Operation<T> for AddClusterInputCellByClusterId {
         let Some(indexer_cell) = GetCellsIter::new(rpc, search_key).next().await? else {
             return Err(eyre!("no cluster cell (id: {:#x})", self.cluster_id));
         };
-        let cluster_cell = CellInputEx::new_from_indexer_cell(indexer_cell);
+        let cluster_cell = CellInputEx::new_from_indexer_cell(indexer_cell, None);
         skeleton.input(cluster_cell)?.witness(Default::default());
         Box::new(AddClusterCelldep {}).run(rpc, skeleton, log).await
     }

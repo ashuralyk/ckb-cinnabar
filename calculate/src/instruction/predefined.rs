@@ -239,4 +239,66 @@ pub fn transfer_clusters(from: &Address, clusters: Vec<(Address, H256)>) -> Defa
     transfer
 }
 
-// TODO: Add more predefined instructions here, e.g. xUDT and DAO
+/// Deposit capacity to Nervos DAO
+///
+/// # Parameters
+/// - `depositer`: The address to deposit capacity
+/// - `ckb`: The amount of CKB to deposit, e.g. "100.5 CKB"
+pub fn dao_deposit(depositer: &Address, ckb: HumanCapacity) -> DefaultInstruction {
+    DefaultInstruction::new(vec![
+        Box::new(AddSecp256k1SighashCellDep {}),
+        Box::new(AddDaoDepositOutputCell {
+            owner: depositer.clone().into(),
+            deposit_capacity: ckb.into(),
+        }),
+    ])
+}
+
+/// Withdraw capacity from Nervos DAO, which only makes a mark as phase one
+///
+/// # Parameters
+/// - `depositer`: The address to withdraw capacity
+/// - `upperbound_capacity`: The maximum capacity to withdraw from Nervos DAO
+/// - `upperbound_timestamp`: The upperbound timestamp that only choose cells before it
+/// - `transfer_to`: if provided, the capacity will be transferred to this address
+pub fn dao_withdraw_phase_one(
+    depositer: &Address,
+    upperbound_capacity: Option<HumanCapacity>,
+    upperbound_timestamp: Option<u64>,
+    transfer_to: Option<&Address>,
+) -> DefaultInstruction {
+    DefaultInstruction::new(vec![
+        Box::new(AddSecp256k1SighashCellDep {}),
+        Box::new(AddDaoWithdrawPhaseOneCells {
+            maximal_withdraw_capacity: upperbound_capacity.map(Into::into).unwrap_or(u64::MAX),
+            upperbound_timesamp: upperbound_timestamp.unwrap_or(u64::MAX),
+            owner: depositer.clone().into(),
+            transfer_to: transfer_to.map(|v| v.clone().into()),
+            throw_if_no_avaliable: true,
+        }),
+    ])
+}
+
+/// Withdraw capacity from Nervos DAO, which actually withdraws the capacity
+///
+/// # Parameters
+/// - `withdrawer`: The address to withdraw capacity
+/// - `upperbound_capacity`: The maximum capacity to withdraw from Nervos DAO
+/// - `transfer_to`: if provided, the capacity will be transferred to this address
+pub fn dao_withdraw_phase_two(
+    withdrawer: &Address,
+    upperbound_capacity: Option<HumanCapacity>,
+    transfer_to: Option<&Address>,
+) -> DefaultInstruction {
+    DefaultInstruction::new(vec![
+        Box::new(AddSecp256k1SighashCellDep {}),
+        Box::new(AddDaoWithdrawPhaseTwoCells {
+            maximal_withdraw_capacity: upperbound_capacity.map(Into::into).unwrap_or(u64::MAX),
+            owner: withdrawer.clone().into(),
+            transfer_to: transfer_to.map(|v| v.clone().into()),
+            throw_if_no_avaliable: true,
+        }),
+    ])
+}
+
+// TODO: Add more predefined instructions here, e.g. xUDT

@@ -10,7 +10,7 @@ use ckb_sdk::{
 use ckb_types::{
     core::{
         cell::{CellMetaBuilder, ResolvedTransaction},
-        Capacity, DepType, ScriptHashType, TransactionView,
+        Capacity, DepType, HeaderView, ScriptHashType, TransactionView,
     },
     packed::{Bytes, CellDep, CellInput, CellOutput, OutPoint, OutPointVec, Script, WitnessArgs},
     prelude::{Builder, Entity, Pack, Unpack},
@@ -245,18 +245,20 @@ impl CellInputEx {
     }
 
     /// Initialize a CellInputEx from the ckb-indexer specific cell
-    pub fn new_from_indexer_cell(indexer_cell: Cell) -> Self {
+    pub fn new_from_indexer_cell(indexer_cell: Cell, since: Option<u64>) -> Self {
         let input = CellInput::new_builder()
             .previous_output(indexer_cell.out_point.into())
+            .since(since.unwrap_or(0).pack())
             .build();
         let data = indexer_cell.output_data.map(|v| v.into_bytes().to_vec());
         Self::new(input, indexer_cell.output.into(), data)
     }
 
     /// Turn a CelldepEx into CellInputEx
-    pub fn new_from_celldep(celldep: &CellDepEx) -> Self {
+    pub fn new_from_celldep(celldep: &CellDepEx, since: Option<u64>) -> Self {
         let input = CellInput::new_builder()
             .previous_output(celldep.celldep.out_point())
+            .since(since.unwrap_or(0).pack())
             .build();
         let data = if celldep.with_data {
             Some(celldep.output.data.clone())
@@ -296,6 +298,19 @@ impl CellOutputEx {
             builder.build_exact_capacity(Capacity::bytes(data.len())?)?
         };
         Ok(CellOutputEx::new(output, data))
+    }
+
+    /// Correct capacity if the declared is less than the occupied
+    pub fn correct_capacity(mut self) -> Self {
+        let declared_capacity = self.capacity();
+        let occupied_capaicty = self.occupied_capacity();
+        self.output = self
+            .output
+            .clone()
+            .as_builder()
+            .capacity(declared_capacity.max(occupied_capaicty).pack())
+            .build();
+        self
     }
 
     /// Exactly occupied capacity of the cell
@@ -523,6 +538,59 @@ impl WitnessEx {
     }
 }
 
+/// A block hash wrapper that contains the link to a cell input
+#[derive(Clone, Debug)]
+pub struct HeaderDepEx {
+    pub block_hash: H256,
+    pub header: HeaderView,
+    pub cellinput_outpoint: Option<OutPoint>,
+}
+
+impl HeaderDepEx {
+    pub async fn new<T: RPC>(
+        rpc: &T,
+        block_hash: H256,
+        outpoint: Option<OutPoint>,
+    ) -> Result<Self> {
+        let header = rpc
+            .get_header(&block_hash)
+            .await?
+            .ok_or(eyre!("header not found"))?;
+        Ok(HeaderDepEx {
+            block_hash,
+            header: header.into(),
+            cellinput_outpoint: outpoint,
+        })
+    }
+
+    pub async fn new_from_outpoint<T: RPC>(rpc: &T, outpoint: OutPoint) -> Result<Self> {
+        let tx_hash = outpoint.tx_hash();
+        let tx_with_status = rpc
+            .get_transaction(&tx_hash.unpack())
+            .await?
+            .ok_or(eyre!("transaction not found by input outpoint"))?;
+        let block_hash = tx_with_status
+            .tx_status
+            .block_hash
+            .ok_or(eyre!("transaction not in block"))?;
+        HeaderDepEx::new(rpc, block_hash, Some(outpoint)).await
+    }
+
+    pub async fn new_from_block_number<T: RPC>(rpc: &T, block_number: u64) -> Result<Self> {
+        let block_hash = rpc
+            .get_block_hash(block_number.into())
+            .await?
+            .ok_or(eyre!("block not found"))?;
+        HeaderDepEx::new(rpc, block_hash, None).await
+    }
+}
+
+impl PartialEq for HeaderDepEx {
+    fn eq(&self, other: &Self) -> bool {
+        self.block_hash == other.block_hash
+    }
+}
+
 /// TransactionSkeleton for building transaction
 #[derive(Default, Clone, Debug)]
 pub struct TransactionSkeleton {
@@ -530,6 +598,7 @@ pub struct TransactionSkeleton {
     pub outputs: Vec<CellOutputEx>,
     pub celldeps: Vec<CellDepEx>,
     pub witnesses: Vec<WitnessEx>,
+    pub headerdeps: Vec<HeaderDepEx>,
 }
 
 impl TransactionSkeleton {
@@ -540,6 +609,8 @@ impl TransactionSkeleton {
             .update_inputs_from_transaction_view(rpc, tx)
             .await?
             .update_celldeps_from_transaction_view(rpc, tx)
+            .await?
+            .update_headerdeps_from_transaction_view(rpc, tx)
             .await?
             .update_outputs_from_transaction_view(tx)
             .update_witnesses_from_transaction_view(tx)?;
@@ -590,6 +661,22 @@ impl TransactionSkeleton {
             .await
             .into_iter()
             .collect::<Result<_>>()?;
+        Ok(self)
+    }
+
+    /// Override HeaderDeps part of TransactionSkeleton from packed TransactionView
+    pub async fn update_headerdeps_from_transaction_view<T: RPC>(
+        &mut self,
+        rpc: &T,
+        tx: &TransactionView,
+    ) -> Result<&mut Self> {
+        let mut headerdeps = vec![];
+        for header_dep in tx.header_deps_iter() {
+            let block_hash: H256 = header_dep.unpack();
+            let header_dep = HeaderDepEx::new(rpc, block_hash, None).await?;
+            headerdeps.push(header_dep);
+        }
+        self.headerdeps = headerdeps;
         Ok(self)
     }
 
@@ -648,7 +735,7 @@ impl TransactionSkeleton {
         let mut find_available_input = false;
         let mut iter = GetCellsIter::new(rpc, search_key.into());
         while let Some(cell) = iter.next().await? {
-            let cell_input = CellInputEx::new_from_indexer_cell(cell);
+            let cell_input = CellInputEx::new_from_indexer_cell(cell, None);
             if self.contains_input(&cell_input) {
                 continue;
             }
@@ -768,6 +855,14 @@ impl TransactionSkeleton {
                 self.celldeps.push(v);
             }
         });
+        self
+    }
+
+    /// Push a single header dep
+    pub fn headerdep(&mut self, header_dep: HeaderDepEx) -> &mut Self {
+        if !self.headerdeps.contains(&header_dep) {
+            self.headerdeps.push(header_dep);
+        }
         self
     }
 

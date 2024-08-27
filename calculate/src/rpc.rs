@@ -118,6 +118,7 @@ pub trait RPC: Clone + Send + Sync {
     fn get_block(&self, hash: &H256) -> Rpc<Option<BlockView>>;
     fn get_header(&self, hash: &H256) -> Rpc<Option<HeaderView>>;
     fn get_header_by_number(&self, number: BlockNumber) -> Rpc<Option<HeaderView>>;
+    fn get_block_hash(&self, number: BlockNumber) -> Rpc<Option<H256>>;
     fn get_tip_block_number(&self) -> Rpc<BlockNumber>;
     fn get_tip_header(&self) -> Rpc<HeaderView>;
     fn tx_pool_info(&self) -> Rpc<TxPoolInfo>;
@@ -239,6 +240,10 @@ impl RPC for RpcClient {
         .boxed()
     }
 
+    fn get_block_hash(&self, number: BlockNumber) -> Rpc<Option<H256>> {
+        jsonrpc!("get_block_hash", Target::CKB, self, Option<H256>, number).boxed()
+    }
+
     fn get_tip_block_number(&self) -> Rpc<BlockNumber> {
         jsonrpc!("get_tip_block_number", Target::CKB, self, BlockNumber).boxed()
     }
@@ -279,11 +284,14 @@ impl RPC for RpcClient {
     }
 }
 
+pub type Filter = Box<dyn Fn(&Cell) -> bool + Send + Sync>;
+
 /// A wrapper of get_cells rpc call, it will automatically cross over live cells in interation
 pub struct GetCellsIter<'a, T: RPC> {
     rpc: &'a T,
     search_key: SearchKey,
     cursor: Option<JsonBytes>,
+    filter: Option<Filter>,
 }
 
 impl<'a, T: RPC> GetCellsIter<'a, T> {
@@ -292,7 +300,13 @@ impl<'a, T: RPC> GetCellsIter<'a, T> {
             rpc,
             search_key,
             cursor: None,
+            filter: None,
         }
+    }
+
+    pub fn filter(mut self, filter: Filter) -> Self {
+        self.filter = Some(filter);
+        self
     }
 
     pub async fn next_batch(&mut self, limit: u32) -> eyre::Result<Option<Vec<Cell>>> {
@@ -300,11 +314,16 @@ impl<'a, T: RPC> GetCellsIter<'a, T> {
             .rpc
             .get_cells(self.search_key.clone(), limit, self.cursor.clone())
             .await?;
-        if cells.objects.is_empty() {
+        let objects = if let Some(filter) = &self.filter {
+            cells.objects.into_iter().filter(filter).collect()
+        } else {
+            cells.objects
+        };
+        if objects.is_empty() {
             return Ok(None);
         }
         self.cursor = Some(cells.last_cursor);
-        Ok(Some(cells.objects))
+        Ok(Some(objects))
     }
 
     pub async fn next(&mut self) -> eyre::Result<Option<Cell>> {
