@@ -77,6 +77,22 @@ $ cargo run --example secp256k1_transfer ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49
 # if no <secret_key> provided, then need `ckb-cli` to be installed
 ```
 
+Run [spore](examples/spore.rs) example:
+```bash
+$ cargo run --example spore -- spore mint --minter ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqfqmf4hphl9jkrw3934mwe6m3a2nx88rzgdlw820 --content-type "text/plain" --content "hello, cinnabar"
+
+# other commands please see help
+$ cargo run --example spore
+```
+
+Run DAO example:
+```bash
+$ cargo run --example dao -- --operator ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqfqmf4hphl9jkrw3934mwe6m3a2nx88rzgdlw820 deposit --ckb 1000.0
+
+# other commands please see help
+$ cargo run --example dao
+```
+
 > note: Instruction can be compared to the interface provided by contracts from those Account model based block chains.
 
 ## Verify Module

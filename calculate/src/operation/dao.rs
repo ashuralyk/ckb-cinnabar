@@ -27,7 +27,7 @@ mod hardcoded {
         h256!("0xe2fb199810d49a4d8beec56718ba2593b665db9d52299a0f9e6e75416d73ff5c");
     pub const DAO_TESTNET_TX_HASH: H256 =
         h256!("0x8f8c79eb6671709633fe6a46de93c0fedc9c1b8a6527a18d3983879542635c9f");
-    pub const DAO_CODE_HASH: H256 =
+    pub const DAO_TYPE_HASH: H256 =
         h256!("0x82d76d1b75fe2fd9a27dfbaa65a039221a380d76c926f378d3f81cf3e7e13f2e");
 
     pub fn dao_tx_hash(network: Network) -> Result<H256> {
@@ -83,7 +83,7 @@ impl<T: RPC> Operation<T> for AddDaoDepositOutputCell {
         skeleton: &mut TransactionSkeleton,
         log: &mut Log,
     ) -> Result<()> {
-        let dao_type_script = ScriptEx::new_code(hardcoded::DAO_CODE_HASH, vec![]);
+        let dao_type_script = ScriptEx::new_type(hardcoded::DAO_TYPE_HASH, vec![]);
         skeleton.output(CellOutputEx::new_from_scripts(
             self.owner.to_script(skeleton)?,
             Some(dao_type_script.to_script_unchecked()),
@@ -112,7 +112,7 @@ pub struct AddDaoWithdrawPhaseOneCells {
 
 impl AddDaoWithdrawPhaseOneCells {
     fn search_key(&self, skeleton: &TransactionSkeleton) -> Result<SearchKey> {
-        let dao_type_script = ScriptEx::new_code(hardcoded::DAO_CODE_HASH, vec![]);
+        let dao_type_script = ScriptEx::new_type(hardcoded::DAO_TYPE_HASH, vec![]);
         let mut search_key: SearchKey =
             CellQueryOptions::new_lock(self.owner.clone().to_script(skeleton)?).into();
         search_key.with_data = Some(true);
@@ -216,7 +216,7 @@ pub struct AddDaoWithdrawPhaseTwoCells {
 
 impl AddDaoWithdrawPhaseTwoCells {
     fn search_key(&self, skeleton: &TransactionSkeleton) -> Result<SearchKey> {
-        let dao_type_script = ScriptEx::new_code(hardcoded::DAO_CODE_HASH, vec![]);
+        let dao_type_script = ScriptEx::new_type(hardcoded::DAO_TYPE_HASH, vec![]);
         let mut query = CellQueryOptions::new_lock(self.owner.clone().to_script(skeleton)?);
         query.with_data = Some(true);
         query.secondary_script = Some(dao_type_script.to_script_unchecked());

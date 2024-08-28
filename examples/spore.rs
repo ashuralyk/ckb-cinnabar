@@ -130,6 +130,7 @@ fn bytify(value: String) -> Vec<u8> {
 
 #[tokio::main]
 pub async fn main() {
+    #[allow(clippy::mutable_key_type)]
     let mut signers = HashSet::new();
     let spore = match Cli::parse().command {
         Commands::Spore(spore) => match spore.command {
