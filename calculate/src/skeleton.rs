@@ -713,6 +713,19 @@ impl TransactionSkeleton {
         Ok(self)
     }
 
+    /// Get input cell by index, which may fail if index out of range
+    ///
+    /// note: if index is `usize::MAX`, return the last input cell
+    pub fn get_input_by_index(&self, input_index: usize) -> Result<&CellInputEx> {
+        if input_index == usize::MAX {
+            self.inputs.last().ok_or(eyre!("no input"))
+        } else {
+            self.inputs
+                .get(input_index)
+                .ok_or(eyre!("input index out of range"))
+        }
+    }
+
     /// Push a single input cell
     pub fn input(&mut self, cell_input: CellInputEx) -> Result<&mut Self> {
         if self.contains_input(&cell_input) {
@@ -785,6 +798,19 @@ impl TransactionSkeleton {
     /// Pop the last input cell, which may fail if no input cell
     pub fn pop_input(&mut self) -> Result<CellInputEx> {
         self.inputs.pop().ok_or(eyre!("no input to pop"))
+    }
+
+    /// Get output cell by index, which may fail if index out of range
+    ///
+    /// note: if index is `usize::MAX`, return the last output cell
+    pub fn get_output_by_index(&self, output_index: usize) -> Result<&CellOutputEx> {
+        if output_index == usize::MAX {
+            return self.outputs.last().ok_or(eyre!("no output"));
+        } else {
+            self.outputs
+                .get(output_index)
+                .ok_or(eyre!("output index out of range"))
+        }
     }
 
     /// Push a single output cell

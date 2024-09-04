@@ -1,11 +1,12 @@
 use std::{fs, path::PathBuf};
 
 use async_trait::async_trait;
+use ckb_hash::blake2b_256;
 use ckb_sdk::constants::TYPE_ID_CODE_HASH;
 use ckb_types::{
     core::{Capacity, DepType},
     packed::CellOutput,
-    prelude::{Builder, Entity, Pack},
+    prelude::{Builder, Entity, Pack, Unpack},
 };
 use eyre::Result;
 
@@ -35,6 +36,14 @@ pub fn fake_outpoint() -> OutPoint {
 
 pub fn fake_input() -> CellInput {
     CellInput::new(fake_outpoint(), 0)
+}
+
+pub fn always_success_script(args: Vec<u8>) -> Script {
+    Script::new_builder()
+        .code_hash(blake2b_256(ALWAYS_SUCCESS).pack())
+        .hash_type(ScriptHashType::Data1.into())
+        .args(args.pack())
+        .build()
 }
 
 pub const ALWAYS_SUCCESS_NAME: &str = "always_success";
@@ -135,14 +144,16 @@ impl<T: RPC> Operation<T> for AddAlwaysSuccessCelldep {
 }
 
 /// Add a custom cell input to the transaction skeleton, which has primary and second scripts
-pub struct AddFakeCellInput {
+pub struct AddFakeInputCell {
     pub lock_script: ScriptEx,
     pub type_script: Option<ScriptEx>,
     pub data: Vec<u8>,
+    pub capacity: u64,
+    pub absolute_capacity: bool,
 }
 
 #[async_trait]
-impl<T: RPC> Operation<T> for AddFakeCellInput {
+impl<T: RPC> Operation<T> for AddFakeInputCell {
     async fn run(
         self: Box<Self>,
         _: &T,
@@ -155,15 +166,26 @@ impl<T: RPC> Operation<T> for AddFakeCellInput {
         } else {
             None
         };
-        let output = CellOutput::new_builder()
-            .lock(primary_script)
-            .type_(second_script.pack())
-            .build_exact_capacity(Capacity::bytes(self.data.len())?)?;
-        let custom_out_point = fake_outpoint();
-        let input = CellInput::new_builder()
-            .previous_output(custom_out_point)
-            .build();
-        skeleton.input(CellInputEx::new(input, output, Some(self.data)))?;
+        let output = if self.absolute_capacity {
+            CellOutput::new_builder()
+                .lock(primary_script)
+                .type_(second_script.pack())
+                .capacity(self.capacity.pack())
+                .build()
+        } else {
+            let output = CellOutput::new_builder()
+                .lock(primary_script)
+                .type_(second_script.pack())
+                .build_exact_capacity(Capacity::bytes(self.data.len())?)?;
+            let minimal_capacity: u64 = output.capacity().unpack();
+            output
+                .as_builder()
+                .capacity((minimal_capacity + self.capacity).pack())
+                .build()
+        };
+        skeleton
+            .input(CellInputEx::new(fake_input(), output, Some(self.data)))?
+            .witness(Default::default());
         Ok(())
     }
 }

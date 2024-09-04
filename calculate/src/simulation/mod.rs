@@ -117,9 +117,10 @@ impl TransactionSimulator {
         rpc: &T,
         instructions: Vec<Instruction<T>>,
         max_cycles: u64,
+        skeleton: Option<TransactionSkeleton>,
     ) -> Result<Cycle> {
         let rt = tokio::runtime::Runtime::new()?;
-        let await_result = self.async_verify(rpc, instructions, max_cycles);
+        let await_result = self.async_verify(rpc, instructions, max_cycles, skeleton);
         rt.block_on(await_result)
     }
 
@@ -128,8 +129,9 @@ impl TransactionSimulator {
         rpc: &T,
         instructions: Vec<Instruction<T>>,
         max_cycles: u64,
+        skeleton: Option<TransactionSkeleton>,
     ) -> Result<Cycle> {
-        let mut skeleton = TransactionSkeleton::default();
+        let mut skeleton = skeleton.unwrap_or_default();
         let mut log = Log::new();
         for instruction in instructions {
             instruction.run(rpc, &mut skeleton, &mut log).await?;

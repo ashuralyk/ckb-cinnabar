@@ -12,7 +12,7 @@ use ckb_types::{
 use eyre::{eyre, Result};
 
 use crate::{
-    operation::{AddOutputCell, Log, Operation},
+    operation::{basic::AddOutputCell, Log, Operation},
     rpc::{GetCellsIter, Network, RPC},
     skeleton::{CellDepEx, CellInputEx, CellOutputEx, ScriptEx, TransactionSkeleton, WitnessEx},
 };
@@ -23,7 +23,7 @@ use generated::*;
 /// The latest Spore and Cluster contract version
 ///
 /// note: detail refers to https://github.com/sporeprotocol/spore-contract/blob/master/docs/VERSIONS.md
-mod hardcoded {
+pub mod hardcoded {
     use super::*;
 
     pub const SPORE_MAINNET_TX_HASH: H256 =

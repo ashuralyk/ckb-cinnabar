@@ -14,11 +14,11 @@ pub fn generate_contract_deployment_path(
     network: &Network,
     contract_name: &str,
     deployment_path: &str,
-) -> eyre::Result<PathBuf> {
-    Ok(PathBuf::new()
+) -> PathBuf {
+    PathBuf::new()
         .join(deployment_path)
         .join(network.to_string())
-        .join(format!("{contract_name}.json")))
+        .join(format!("{contract_name}.json"))
 }
 
 pub fn load_contract_deployment(
@@ -27,7 +27,7 @@ pub fn load_contract_deployment(
     deployment_path: &str,
     version: Option<&str>,
 ) -> eyre::Result<Option<DeploymentRecord>> {
-    let path = generate_contract_deployment_path(network, contract_name, deployment_path)?;
+    let path = generate_contract_deployment_path(network, contract_name, deployment_path);
     if path.exists() {
         let file = fs::File::open(&path)?;
         let deployments: Vec<DeploymentRecord> = serde_json::from_reader(file)?;

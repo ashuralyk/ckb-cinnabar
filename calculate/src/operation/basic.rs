@@ -30,24 +30,13 @@ use secp256k1::SecretKey;
 use serde_json::Value;
 
 use crate::{
+    operation::{Log, Operation},
     rpc::{GetCellsIter, Network, RPC},
     skeleton::{
         CellDepEx, CellInputEx, CellOutputEx, ChangeReceiver, HeaderDepEx, ScriptEx,
         TransactionSkeleton, WitnessEx,
     },
 };
-
-pub type Log = HashMap<&'static str, Vec<u8>>;
-
-#[async_trait]
-pub trait Operation<T: RPC> {
-    async fn run(
-        self: Box<Self>,
-        rpc: &T,
-        skeleton: &mut TransactionSkeleton,
-        log: &mut Log,
-    ) -> Result<()>;
-}
 
 /// Operation that add cell dep to transaction skeleton by tx hash with index
 pub struct AddCellDep {
@@ -216,14 +205,7 @@ impl<T: RPC> Operation<T> for AddHeaderDepByInputIndex {
         skeleton: &mut TransactionSkeleton,
         _: &mut Log,
     ) -> Result<()> {
-        let input = if self.input_index == usize::MAX {
-            skeleton.inputs.last().ok_or(eyre!("empty input"))?
-        } else {
-            skeleton
-                .inputs
-                .get(self.input_index)
-                .ok_or(eyre!("input not found"))?
-        };
+        let input = skeleton.get_input_by_index(self.input_index)?;
         let cell_outpoint = input.input.previous_output();
         skeleton.headerdep(HeaderDepEx::new_from_outpoint(rpc, cell_outpoint).await?);
         Ok(())
@@ -475,14 +457,7 @@ impl<T: RPC> Operation<T> for AddOutputCellByInputIndex {
         skeleton: &mut TransactionSkeleton,
         _: &mut Log,
     ) -> Result<()> {
-        let cell_input = if self.input_index != usize::MAX {
-            skeleton
-                .inputs
-                .get(self.input_index)
-                .ok_or(eyre!("input not found"))?
-        } else {
-            skeleton.inputs.last().ok_or(eyre!("input not found"))?
-        };
+        let cell_input = skeleton.get_input_by_index(self.input_index)?;
         let mut cell_output = cell_input.output.clone();
         let mut output_builder = cell_output.output.as_builder();
         if let Some(data) = self.data {

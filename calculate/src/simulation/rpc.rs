@@ -1,41 +1,177 @@
-use std::sync::Arc;
+use std::collections::HashMap;
 
 use ckb_jsonrpc_types::{
-    BlockNumber, BlockView, CellWithStatus, HeaderView, JsonBytes, OutPoint, OutputsValidator,
-    Transaction, TransactionWithStatusResponse, TxPoolInfo,
+    BlockNumber, BlockView, CellData, CellInfo, CellWithStatus, HeaderView, JsonBytes, OutPoint,
+    OutputsValidator, Transaction, TransactionWithStatusResponse, TxPoolInfo, TxStatus,
 };
-use ckb_sdk::rpc::ckb_indexer::{Cell, Pagination, SearchKey};
-use ckb_types::H256;
+use ckb_sdk::rpc::ckb_indexer::{Cell, Pagination, ScriptType, SearchKey, SearchMode};
+use ckb_types::{
+    packed::{self, Header},
+    prelude::Unpack,
+    H256,
+};
+use eyre::eyre;
 
-use crate::rpc::{Rpc, RPC};
+use crate::{
+    rpc::{Rpc, RPC},
+    simulation::fake_outpoint,
+    skeleton::CellOutputEx,
+};
 
-type FnGetLiveCell = Box<dyn Fn(OutPoint, bool) -> CellWithStatus + Send + Sync>;
-type FnGetCells = Box<dyn Fn(SearchKey, u32, Option<JsonBytes>) -> Pagination<Cell> + Send + Sync>;
-type FnGetBlockByNumber = Box<dyn Fn(BlockNumber) -> Option<BlockView> + Send + Sync>;
-type FnGetBlock = Box<dyn Fn(H256) -> Option<BlockView> + Send + Sync>;
-type FnGetHeader = Box<dyn Fn(H256) -> Option<HeaderView> + Send + Sync>;
-type FnGetHeaderByNumber = Box<dyn Fn(BlockNumber) -> Option<HeaderView> + Send + Sync>;
-type FnGetBlockHash = Box<dyn Fn(BlockNumber) -> Option<H256> + Send + Sync>;
-type FnGetTipBlockNumber = Box<dyn Fn() -> BlockNumber + Send + Sync>;
-type FnGetTipHeader = Box<dyn Fn() -> HeaderView + Send + Sync>;
-type FnTxPoolInfo = Box<dyn Fn() -> TxPoolInfo + Send + Sync>;
-type FnGetTransaction = Box<dyn Fn(H256) -> Option<TransactionWithStatusResponse> + Send + Sync>;
-type FnSendTransaction = Box<dyn Fn(Transaction, Option<OutputsValidator>) -> H256 + Send + Sync>;
+#[derive(Default, Clone)]
+pub struct FakeProvider {
+    pub fake_cells: Vec<(OutPoint, CellOutputEx)>,
+    pub fake_headers: HashMap<H256, Header>,
+    pub fake_transaction_status: HashMap<H256, TxStatus>,
+    pub fake_feerate: u64,
+    pub fake_tipnumber: u64,
+}
+
+fn indexer_cell(cell: &CellOutputEx) -> Cell {
+    Cell {
+        block_number: 0.into(),
+        out_point: fake_outpoint().into(),
+        output: cell.output.clone().into(),
+        tx_index: 0.into(),
+        output_data: Some(JsonBytes::from_vec(cell.data.clone())),
+    }
+}
+
+fn script_prefix_equal(a: Option<&packed::Script>, b: Option<&packed::Script>) -> bool {
+    if let (Some(a), Some(b)) = (a, b) {
+        a.code_hash() == b.code_hash()
+            && a.hash_type() == b.hash_type()
+            && a.args().raw_data().starts_with(&b.args().raw_data())
+    } else {
+        false
+    }
+}
+
+impl FakeProvider {
+    fn get_cells_by_search_key(&self, search_key: SearchKey) -> Vec<Cell> {
+        self.fake_cells
+            .iter()
+            .filter_map(|(_, cell)| {
+                let (primary_script, script_a, secondary_script, script_b) =
+                    match search_key.script_type {
+                        ScriptType::Lock => {
+                            let primary_script: packed::Script = search_key.script.clone().into();
+                            let secondary_script: Option<Option<packed::Script>> =
+                                search_key.filter.clone().map(|v| v.script.map(Into::into));
+                            let lock_script = cell.lock_script();
+                            let type_script = cell.type_script();
+                            (
+                                primary_script,
+                                Some(lock_script),
+                                secondary_script,
+                                type_script,
+                            )
+                        }
+                        ScriptType::Type => {
+                            let primary_script: packed::Script = search_key.script.clone().into();
+                            let secondary_script: Option<Option<packed::Script>> =
+                                search_key.filter.clone().map(|v| v.script.map(Into::into));
+                            let lock_script = cell.lock_script();
+                            let type_script = cell.type_script();
+                            (
+                                primary_script,
+                                type_script,
+                                secondary_script,
+                                Some(lock_script),
+                            )
+                        }
+                    };
+                match search_key.script_search_mode {
+                    Some(SearchMode::Exact) | None => {
+                        if Some(primary_script) == script_a {
+                            if let Some(script) = secondary_script {
+                                if script == script_b {
+                                    return Some(indexer_cell(cell));
+                                }
+                            }
+                        }
+                    }
+                    Some(SearchMode::Prefix) => {
+                        if script_prefix_equal(script_a.as_ref(), Some(&primary_script)) {
+                            if let Some(script) = secondary_script {
+                                if script_prefix_equal(script_b.as_ref(), script.as_ref()) {
+                                    return Some(indexer_cell(cell));
+                                }
+                            }
+                        }
+                    }
+                    Some(SearchMode::Partial) => {
+                        panic!("partial search mode is not supported");
+                    }
+                }
+                None
+            })
+            .collect()
+    }
+
+    fn get_cell_by_outpoint(&self, out_point: &OutPoint) -> Option<CellWithStatus> {
+        let (_, cell) = self
+            .fake_cells
+            .iter()
+            .find(|(value, _)| value == out_point)?;
+        let cell_with_status = CellWithStatus {
+            cell: Some(CellInfo {
+                data: Some(CellData {
+                    content: JsonBytes::from_vec(cell.data.clone()),
+                    hash: H256::default(),
+                }),
+                output: cell.output.clone().into(),
+            }),
+            status: "live".to_owned(),
+        };
+        Some(cell_with_status)
+    }
+
+    fn get_header_by_hash(&self, block_hash: &H256) -> Option<HeaderView> {
+        self.fake_headers.get(block_hash).map(|header| HeaderView {
+            inner: header.clone().into(),
+            hash: block_hash.clone(),
+        })
+    }
+
+    fn get_header_by_number(&self, block_number: u64) -> Option<HeaderView> {
+        self.fake_headers
+            .iter()
+            .find(|(_, header)| Unpack::<u64>::unpack(&header.raw().number()) == block_number)
+            .map(|(hash, header)| HeaderView {
+                inner: header.clone().into(),
+                hash: hash.clone(),
+            })
+    }
+
+    fn get_transaction_by_hash(&self, hash: &H256) -> Option<TransactionWithStatusResponse> {
+        self.fake_transaction_status
+            .get(hash)
+            .map(|status| TransactionWithStatusResponse {
+                transaction: None,
+                cycles: None,
+                time_added_to_pool: None,
+                fee: None,
+                min_replace_fee: None,
+                tx_status: status.clone(),
+            })
+    }
+}
 
 #[derive(Clone, Default)]
 pub struct FakeRpcClient {
-    pub method_get_live_cell: Option<Arc<FnGetLiveCell>>,
-    pub method_get_cells: Option<Arc<FnGetCells>>,
-    pub method_get_block_by_number: Option<Arc<FnGetBlockByNumber>>,
-    pub method_get_block: Option<Arc<FnGetBlock>>,
-    pub method_get_header: Option<Arc<FnGetHeader>>,
-    pub method_get_header_by_number: Option<Arc<FnGetHeaderByNumber>>,
-    pub method_get_block_hash: Option<Arc<FnGetBlockHash>>,
-    pub method_get_tip_block_number: Option<Arc<FnGetTipBlockNumber>>,
-    pub method_get_tip_header: Option<Arc<FnGetTipHeader>>,
-    pub method_tx_pool_info: Option<Arc<FnTxPoolInfo>>,
-    pub method_get_transaction: Option<Arc<FnGetTransaction>>,
-    pub method_send_transaction: Option<Arc<FnSendTransaction>>,
+    pub fake_provider: FakeProvider,
+}
+
+impl FakeRpcClient {
+    pub fn insert_fake_cell(
+        &mut self,
+        out_point: packed::OutPoint,
+        cell: CellOutputEx,
+    ) -> &mut Self {
+        self.fake_provider.fake_cells.push((out_point.into(), cell));
+        self
+    }
 }
 
 unsafe impl Send for FakeRpcClient {}
@@ -46,104 +182,78 @@ impl RPC for FakeRpcClient {
         unimplemented!("fake url method")
     }
 
-    fn get_live_cell(&self, out_point: &OutPoint, with_data: bool) -> Rpc<CellWithStatus> {
-        let Some(get_live_cell) = self.method_get_live_cell.clone() else {
-            unimplemented!("fake get_live_cell method")
-        };
-        let out_point = out_point.clone();
-        Box::pin(async move { Ok(get_live_cell(out_point, with_data)) })
+    fn get_live_cell(&self, out_point: &OutPoint, _with_data: bool) -> Rpc<CellWithStatus> {
+        let cell = self
+            .fake_provider
+            .get_cell_by_outpoint(out_point)
+            .ok_or(eyre!("no live cell found"));
+        Box::pin(async move { cell })
     }
 
     fn get_cells(
         &self,
         search_key: SearchKey,
         limit: u32,
-        cursor: Option<JsonBytes>,
+        _cursor: Option<JsonBytes>,
     ) -> Rpc<Pagination<Cell>> {
-        let Some(get_cells) = self.method_get_cells.clone() else {
-            unimplemented!("fake get_cells method")
+        let cells =
+            self.fake_provider.get_cells_by_search_key(search_key)[..limit as usize].to_owned();
+        let result = Pagination::<Cell> {
+            objects: cells,
+            last_cursor: JsonBytes::default(),
         };
-        Box::pin(async move { Ok(get_cells(search_key, limit, cursor)) })
+        Box::pin(async move { Ok(result) })
     }
 
-    fn get_block_by_number(&self, number: BlockNumber) -> Rpc<Option<BlockView>> {
-        let Some(get_block_by_number) = self.method_get_block_by_number.clone() else {
-            unimplemented!("fake get_block_by_number method")
-        };
-        Box::pin(async move { Ok(get_block_by_number(number)) })
+    fn get_block_by_number(&self, _number: BlockNumber) -> Rpc<Option<BlockView>> {
+        unimplemented!("fake get_block_by_number method")
     }
 
-    fn get_block(&self, hash: &H256) -> Rpc<Option<BlockView>> {
-        let Some(get_block) = self.method_get_block.clone() else {
-            unimplemented!("fake get_block method")
-        };
-        let hash = hash.clone();
-        Box::pin(async move { Ok(get_block(hash)) })
+    fn get_block(&self, _hash: &H256) -> Rpc<Option<BlockView>> {
+        unimplemented!("fake get_block method")
     }
 
     fn get_header(&self, hash: &H256) -> Rpc<Option<HeaderView>> {
-        let Some(get_header) = self.method_get_header.clone() else {
-            unimplemented!("fake get_header method")
-        };
-        let hash = hash.clone();
-        Box::pin(async move { Ok(get_header(hash)) })
+        let header = self.fake_provider.get_header_by_hash(hash);
+        Box::pin(async move { Ok(header) })
     }
 
     fn get_header_by_number(&self, number: BlockNumber) -> Rpc<Option<HeaderView>> {
-        let Some(get_header_by_number) = self.method_get_header_by_number.clone() else {
-            unimplemented!("fake get_header_by_number method")
-        };
-        Box::pin(async move { Ok(get_header_by_number(number)) })
+        let header = self.fake_provider.get_header_by_number(number.into());
+        Box::pin(async move { Ok(header) })
     }
 
-    fn get_block_hash(&self, number: BlockNumber) -> Rpc<Option<H256>> {
-        let Some(get_block_hash) = self.method_get_block_hash.clone() else {
-            unimplemented!("fake get_block_hash method")
-        };
-        Box::pin(async move { Ok(get_block_hash(number)) })
+    fn get_block_hash(&self, _number: BlockNumber) -> Rpc<Option<H256>> {
+        unimplemented!("fake get_block_hash method")
     }
 
     fn get_tip_block_number(&self) -> Rpc<BlockNumber> {
-        let Some(get_tip_block_number) = self.method_get_tip_block_number.clone() else {
-            unimplemented!("fake get_tip_block_number method")
-        };
-        Box::pin(async move { Ok(get_tip_block_number()) })
+        let tip_number = self.fake_provider.fake_tipnumber;
+        Box::pin(async move { Ok(tip_number.into()) })
     }
 
     fn get_tip_header(&self) -> Rpc<HeaderView> {
-        let Some(get_tip_header) = self.method_get_tip_header.clone() else {
-            unimplemented!("fake get_tip_header method")
-        };
-        Box::pin(async move { Ok(get_tip_header()) })
+        unimplemented!("fake get_tip_header method")
     }
 
     fn tx_pool_info(&self) -> Rpc<TxPoolInfo> {
-        let Some(tx_pool_info) = self.method_tx_pool_info.clone() else {
-            let pool = TxPoolInfo {
-                min_fee_rate: 1000.into(),
-                ..Default::default()
-            };
-            return Box::pin(async move { Ok(pool) });
+        let pool = TxPoolInfo {
+            min_fee_rate: self.fake_provider.fake_feerate.into(),
+            ..Default::default()
         };
-        Box::pin(async move { Ok(tx_pool_info()) })
+        Box::pin(async move { Ok(pool) })
     }
 
     fn get_transaction(&self, hash: &H256) -> Rpc<Option<TransactionWithStatusResponse>> {
-        let Some(get_transaction) = self.method_get_transaction.clone() else {
-            unimplemented!("fake get_transaction method")
-        };
-        let hash = hash.clone();
-        Box::pin(async move { Ok(get_transaction(hash)) })
+        let transaction = self.fake_provider.get_transaction_by_hash(hash);
+        Box::pin(async move { Ok(transaction) })
     }
 
     fn send_transaction(
         &self,
-        tx: Transaction,
-        outputs_validator: Option<OutputsValidator>,
+        _tx: Transaction,
+        _outputs_validator: Option<OutputsValidator>,
     ) -> Rpc<H256> {
-        let Some(send_transaction) = self.method_send_transaction.clone() else {
-            unimplemented!("fake send_transaction method")
-        };
-        Box::pin(async move { Ok(send_transaction(tx, outputs_validator)) })
+        unimplemented!("fake send_transaction method")
     }
 }

@@ -4,7 +4,10 @@ use ckb_sdk::{Address, HumanCapacity};
 use ckb_types::H256;
 use secp256k1::SecretKey;
 
-use crate::{instruction::DefaultInstruction, operation::*};
+use crate::{
+    instruction::DefaultInstruction,
+    operation::{basic::*, dao::*, spore::*},
+};
 
 /// Transfer CKB from one address to another
 ///

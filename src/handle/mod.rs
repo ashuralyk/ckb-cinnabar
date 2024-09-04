@@ -2,7 +2,7 @@
 
 use ckb_cinnabar_calculator::{
     instruction::DefaultInstruction,
-    operation::{
+    operation::basic::{
         AddInputCellByAddress, AddInputCellByOutPoint, AddOutputCellByAddress,
         AddOutputCellByInputIndex, AddSecp256k1SighashCellDep,
         AddSecp256k1SighashSignaturesWithCkbCli, BalanceTransaction,
@@ -58,7 +58,7 @@ pub async fn deploy_contract(
             keep_cache_file: true,
         }),
     ]);
-    let tx_path = generate_contract_deployment_path(&network, &contract_name, &deployment_path)?;
+    let tx_path = generate_contract_deployment_path(&network, &contract_name, &deployment_path);
     send_and_record_transaction(
         rpc,
         vec![deploy_contract],
@@ -145,7 +145,7 @@ pub async fn migrate_contract(
             keep_cache_file: true,
         }),
     ]);
-    let tx_path = generate_contract_deployment_path(&network, &contract_name, &deployment_path)?;
+    let tx_path = generate_contract_deployment_path(&network, &contract_name, &deployment_path);
     send_and_record_transaction(
         rpc,
         vec![migrate_contract],
@@ -195,7 +195,7 @@ pub async fn consume_contract(
             keep_cache_file: true,
         }),
     ]);
-    let tx_path = generate_contract_deployment_path(&network, &contract_name, &deployment_path)?;
+    let tx_path = generate_contract_deployment_path(&network, &contract_name, &deployment_path);
     send_and_record_transaction(
         rpc,
         vec![consume_contract],

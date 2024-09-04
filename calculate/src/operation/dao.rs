@@ -20,7 +20,7 @@ use crate::{
     },
 };
 
-mod hardcoded {
+pub mod hardcoded {
     use super::*;
 
     pub const DAO_MAINNET_TX_HASH: H256 =
