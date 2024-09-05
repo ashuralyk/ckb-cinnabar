@@ -4,15 +4,16 @@ use async_trait::async_trait;
 use ckb_hash::blake2b_256;
 use ckb_sdk::constants::TYPE_ID_CODE_HASH;
 use ckb_types::{
-    core::{Capacity, DepType},
-    packed::CellOutput,
-    prelude::{Builder, Entity, Pack, Unpack},
+    core::{Capacity, DepType, HeaderView},
+    packed::{CellOutput, Header, RawHeader},
+    prelude::{Builder, Entity, IntoHeaderView, Pack, Unpack},
+    H256,
 };
 use eyre::Result;
 
 use crate::{
     operation::{Log, Operation},
-    rpc::RPC,
+    rpc::{Network, RPC},
     skeleton::{CellDepEx, CellInputEx, ScriptEx, TransactionSkeleton},
 };
 
@@ -46,35 +47,46 @@ pub fn always_success_script(args: Vec<u8>) -> Script {
         .build()
 }
 
+pub fn fake_header_view(block_number: u64, timestamp: u64, epoch: u64) -> HeaderView {
+    let header = RawHeader::new_builder()
+        .number(block_number.pack())
+        .timestamp(timestamp.pack())
+        .epoch(epoch.pack())
+        .build();
+    Header::new_builder().raw(header).build().into_view()
+}
+
 pub const ALWAYS_SUCCESS_NAME: &str = "always_success";
 
 /// Add a custom contract celldep to the transaction skeleton
 pub struct AddFakeContractCelldep {
     pub name: String,
     pub contract_data: Vec<u8>,
-    pub with_type_id: bool,
+    pub type_id_args: Option<H256>,
 }
 
 #[async_trait]
 impl<T: RPC> Operation<T> for AddFakeContractCelldep {
     async fn run(
         self: Box<Self>,
-        _: &T,
+        rpc: &T,
         skeleton: &mut TransactionSkeleton,
         _: &mut Log,
     ) -> Result<()> {
+        if rpc.network() != Network::Fake {
+            return Err(eyre::eyre!("only support fake network"));
+        }
         let celldep_out_point = fake_outpoint();
         let celldep = CellDep::new_builder()
             .out_point(celldep_out_point)
             .dep_type(DepType::Code.into())
             .build();
         let mut output = CellOutput::new_builder();
-        if self.with_type_id {
-            let args = random_hash();
+        if let Some(args) = self.type_id_args {
             let type_script = Script::new_builder()
                 .code_hash(TYPE_ID_CODE_HASH.pack())
                 .hash_type(ScriptHashType::Type.into())
-                .args(args.to_vec().pack())
+                .args(args.as_bytes().pack())
                 .build();
             output = output.type_(Some(type_script).pack());
         }
@@ -91,7 +103,7 @@ impl<T: RPC> Operation<T> for AddFakeContractCelldep {
 /// Add a custom contract celldep to the transaction skeleton by loading compiled native contract
 pub struct AddFakeContractCelldepByName {
     pub contract: String,
-    pub with_type_id: bool,
+    pub type_id_args: Option<H256>,
     pub contract_binary_path: String,
 }
 
@@ -110,7 +122,7 @@ impl<T: RPC> Operation<T> for AddFakeContractCelldepByName {
         Box::new(AddFakeContractCelldep {
             name: self.contract,
             contract_data,
-            with_type_id: self.with_type_id,
+            type_id_args: self.type_id_args,
         })
         .run(rpc, skeleton, log)
         .await
@@ -118,10 +130,10 @@ impl<T: RPC> Operation<T> for AddFakeContractCelldepByName {
 }
 
 /// Add always success celldep to the transaction skeleton
-pub struct AddAlwaysSuccessCelldep {}
+pub struct AddFakeAlwaysSuccessCelldep {}
 
 #[async_trait]
-impl<T: RPC> Operation<T> for AddAlwaysSuccessCelldep {
+impl<T: RPC> Operation<T> for AddFakeAlwaysSuccessCelldep {
     async fn run(
         self: Box<Self>,
         _: &T,

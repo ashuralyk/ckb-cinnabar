@@ -15,19 +15,27 @@ use eyre::{eyre, Result};
 use crate::{
     operation::{basic::AddOutputCell, Log, Operation},
     rpc::{GetCellsIter, Network, RPC},
-    skeleton::{CellDepEx, CellInputEx, ScriptEx, TransactionSkeleton},
+    skeleton::{CellInputEx, ScriptEx, TransactionSkeleton},
 };
+
+use super::basic::AddCellDep;
 
 /// Component-use simple scripts
 ///
 /// note: migrations please refer to https://github.com/ckb-ecofund/ckb-proxy-locks/tree/main/migrations
 pub mod hardcoded {
+    use crate::simulation::random_hash;
+
     use super::*;
 
     pub const COMPONENT_MAINNET_TX_HASH: H256 =
         h256!("0x10d63a996157d32c01078058000052674ca58d15f921bec7f1dcdac2160eb66b");
     pub const COMPONENT_TESTNET_TX_HASH: H256 =
         h256!("0xb4f171c9c9caf7401f54a8e56225ae21d95032150a87a4678eac3f66a3137b93");
+
+    lazy_static::lazy_static! {
+        pub static ref COMPONENT_FAKENET_TX_HASH: H256 = random_hash().into();
+    }
 
     pub const ALWAYS_SUCCESS_CODE_HASH: H256 =
         h256!("0x3b521cc4b552f109d092d8cc468a8048acb53c5952dbe769d2b2f9cf6e47f7f1");
@@ -65,29 +73,33 @@ pub mod hardcoded {
         }
     }
 
-    pub fn build_script(name: Name, args: &[u8]) -> Result<Script> {
-        Ok(Script::new_builder()
-            .code_hash(
-                match name {
-                    Name::AlwaysSuccess => ALWAYS_SUCCESS_CODE_HASH,
-                    Name::InputTypeProxy => INPUT_TYPE_PROXY_CODE_HASH,
-                    Name::LockProxy => LOCK_PROXY_CODE_HASH,
-                    Name::OutputTypeProxy => OUTPUT_TYPE_PROXY_CODE_HASH,
-                    Name::SingleUse => SINGLE_USE_CODE_HASH,
-                    Name::TypeBurn => TYPE_BURN_CODE_HASH,
-                }
-                .pack(),
-            )
-            .hash_type(ScriptHashType::Data1.into())
-            .args(args.pack())
-            .build())
+    pub fn build_script(network: Network, name: Name, args: &[u8]) -> ScriptEx {
+        match network {
+            Network::Mainnet | Network::Testnet => Script::new_builder()
+                .code_hash(
+                    match name {
+                        Name::AlwaysSuccess => ALWAYS_SUCCESS_CODE_HASH,
+                        Name::InputTypeProxy => INPUT_TYPE_PROXY_CODE_HASH,
+                        Name::LockProxy => LOCK_PROXY_CODE_HASH,
+                        Name::OutputTypeProxy => OUTPUT_TYPE_PROXY_CODE_HASH,
+                        Name::SingleUse => SINGLE_USE_CODE_HASH,
+                        Name::TypeBurn => TYPE_BURN_CODE_HASH,
+                    }
+                    .pack(),
+                )
+                .hash_type(ScriptHashType::Data1.into())
+                .args(args.pack())
+                .build()
+                .into(),
+            _ => (name.to_string(), args.to_owned()).into(),
+        }
     }
 
-    pub fn component_tx_hash(network: Network) -> Result<H256> {
+    pub fn component_tx_hash(network: Network) -> H256 {
         match network {
-            Network::Mainnet => Ok(COMPONENT_MAINNET_TX_HASH),
-            Network::Testnet => Ok(COMPONENT_TESTNET_TX_HASH),
-            _ => Err(eyre::eyre!("unsupported network")),
+            Network::Mainnet => COMPONENT_MAINNET_TX_HASH,
+            Network::Testnet => COMPONENT_TESTNET_TX_HASH,
+            _ => COMPONENT_FAKENET_TX_HASH.clone(),
         }
     }
 }
@@ -106,20 +118,17 @@ impl<T: RPC> Operation<T> for AddComponentCelldep {
         self: Box<Self>,
         rpc: &T,
         skeleton: &mut TransactionSkeleton,
-        _: &mut Log,
+        log: &mut Log,
     ) -> Result<()> {
-        skeleton.celldep(
-            CellDepEx::new_from_outpoint(
-                rpc,
-                self.name.to_string(),
-                hardcoded::component_tx_hash(rpc.network())?,
-                self.name as u32,
-                DepType::Code,
-                false,
-            )
-            .await?,
-        );
-        Ok(())
+        Box::new(AddCellDep {
+            name: self.name.to_string(),
+            tx_hash: hardcoded::component_tx_hash(rpc.network()),
+            index: self.name as u32,
+            dep_type: DepType::Code,
+            with_data: false,
+        })
+        .run(rpc, skeleton, log)
+        .await
     }
 }
 
@@ -147,10 +156,13 @@ impl<T: RPC> Operation<T> for AddTypeBurnOutputCell {
         let reference_type_hash = reference_output
             .calc_type_hash()
             .ok_or(eyre!("reference output has no type script"))?;
-        let type_burn_lock_script =
-            hardcoded::build_script(hardcoded::Name::TypeBurn, reference_type_hash.as_bytes())?;
+        let type_burn_lock_script = hardcoded::build_script(
+            rpc.network(),
+            hardcoded::Name::TypeBurn,
+            reference_type_hash.as_bytes(),
+        );
         Box::new(AddOutputCell {
-            lock_script: type_burn_lock_script.into(),
+            lock_script: type_burn_lock_script,
             type_script: self.type_script,
             capacity: 0,
             data: self.data,
@@ -173,10 +185,17 @@ pub struct AddTypeBurnInputCell {
 }
 
 impl AddTypeBurnInputCell {
-    pub fn search_key(&self) -> Result<SearchKey> {
-        let type_burn_lock_script =
-            hardcoded::build_script(hardcoded::Name::TypeBurn, self.type_hash.as_bytes())?;
-        let mut query = CellQueryOptions::new_lock(type_burn_lock_script);
+    pub fn search_key(
+        &self,
+        network: Network,
+        skeleton: &TransactionSkeleton,
+    ) -> Result<SearchKey> {
+        let type_burn_lock_script = hardcoded::build_script(
+            network,
+            hardcoded::Name::TypeBurn,
+            self.type_hash.as_bytes(),
+        );
+        let mut query = CellQueryOptions::new_lock(type_burn_lock_script.to_script(skeleton)?);
         query.with_data = Some(true);
         Ok(query.into())
     }
@@ -190,8 +209,9 @@ impl<T: RPC> Operation<T> for AddTypeBurnInputCell {
         skeleton: &mut TransactionSkeleton,
         _: &mut Log,
     ) -> Result<()> {
-        let search_key = self.search_key()?;
-        while let Some(indexer_cell) = GetCellsIter::new(rpc, search_key.clone()).next().await? {
+        let search_key = self.search_key(rpc.network(), skeleton)?;
+        let mut iter = GetCellsIter::new(rpc, search_key.clone());
+        while let Some(indexer_cell) = iter.next().await? {
             let input = CellInputEx::new_from_indexer_cell(indexer_cell, None);
             skeleton.input(input)?.witness(Default::default());
             self.count -= 1;
@@ -252,11 +272,14 @@ impl<T: RPC> Operation<T> for AddLockProxyOutputCell {
         skeleton: &mut TransactionSkeleton,
         log: &mut Log,
     ) -> Result<()> {
-        let lock_proxy_script =
-            hardcoded::build_script(hardcoded::Name::LockProxy, self.lock_hash.as_bytes())?;
+        let lock_proxy_script = hardcoded::build_script(
+            rpc.network(),
+            hardcoded::Name::LockProxy,
+            self.lock_hash.as_bytes(),
+        );
         if self.lock_script {
             Box::new(AddOutputCell {
-                lock_script: lock_proxy_script.into(),
+                lock_script: lock_proxy_script,
                 type_script: self.second_script,
                 capacity: 0,
                 data: self.data,
@@ -268,7 +291,7 @@ impl<T: RPC> Operation<T> for AddLockProxyOutputCell {
         } else {
             Box::new(AddOutputCell {
                 lock_script: self.second_script.ok_or(eyre!("missing second script"))?,
-                type_script: Some(lock_proxy_script.into()),
+                type_script: Some(lock_proxy_script),
                 capacity: 0,
                 data: self.data,
                 absolute_capacity: false,
@@ -293,13 +316,20 @@ pub struct AddLockProxyInputCell {
 }
 
 impl AddLockProxyInputCell {
-    pub fn search_key(&self) -> Result<SearchKey> {
-        let lock_proxy_script =
-            hardcoded::build_script(hardcoded::Name::LockProxy, self.lock_hash.as_bytes())?;
+    pub fn search_key(
+        &self,
+        network: Network,
+        skeleton: &TransactionSkeleton,
+    ) -> Result<SearchKey> {
+        let lock_proxy_script = hardcoded::build_script(
+            network,
+            hardcoded::Name::LockProxy,
+            self.lock_hash.as_bytes(),
+        );
         let mut query = if self.lock_script {
-            CellQueryOptions::new_lock(lock_proxy_script)
+            CellQueryOptions::new_lock(lock_proxy_script.to_script(skeleton)?)
         } else {
-            CellQueryOptions::new_type(lock_proxy_script)
+            CellQueryOptions::new_type(lock_proxy_script.to_script(skeleton)?)
         };
         query.with_data = Some(true);
         query.script_search_mode = Some(SearchMode::Exact);
@@ -320,8 +350,9 @@ impl<T: RPC> Operation<T> for AddLockProxyInputCell {
         })
         .run(rpc, skeleton, log)
         .await?;
-        let search_key = self.search_key()?;
-        while let Some(indexer_cell) = GetCellsIter::new(rpc, search_key.clone()).next().await? {
+        let search_key = self.search_key(rpc.network(), skeleton)?;
+        let mut iter = GetCellsIter::new(rpc, search_key.clone());
+        while let Some(indexer_cell) = iter.next().await? {
             let input = CellInputEx::new_from_indexer_cell(indexer_cell, None);
             skeleton.input(input)?.witness(Default::default());
             self.count -= 1;

@@ -2,35 +2,30 @@ use std::collections::HashMap;
 
 use ckb_jsonrpc_types::{
     BlockNumber, BlockView, CellData, CellInfo, CellWithStatus, HeaderView, JsonBytes, OutPoint,
-    OutputsValidator, Transaction, TransactionWithStatusResponse, TxPoolInfo, TxStatus,
+    OutputsValidator, Status, Transaction, TransactionWithStatusResponse, TxPoolInfo, TxStatus,
 };
 use ckb_sdk::rpc::ckb_indexer::{Cell, Pagination, ScriptType, SearchKey, SearchMode};
-use ckb_types::{
-    packed::{self, Header},
-    prelude::Unpack,
-    H256,
-};
+use ckb_types::{core, packed, prelude::Unpack, H256};
 use eyre::eyre;
 
 use crate::{
     rpc::{Rpc, RPC},
-    simulation::fake_outpoint,
     skeleton::CellOutputEx,
 };
 
 #[derive(Default, Clone)]
 pub struct FakeProvider {
     pub fake_cells: Vec<(OutPoint, CellOutputEx)>,
-    pub fake_headers: HashMap<H256, Header>,
+    pub fake_headers: HashMap<H256, HeaderView>,
     pub fake_transaction_status: HashMap<H256, TxStatus>,
     pub fake_feerate: u64,
     pub fake_tipnumber: u64,
 }
 
-fn indexer_cell(cell: &CellOutputEx) -> Cell {
+fn indexer_cell(out_point: &OutPoint, cell: &CellOutputEx) -> Cell {
     Cell {
         block_number: 0.into(),
-        out_point: fake_outpoint().into(),
+        out_point: out_point.clone(),
         output: cell.output.clone().into(),
         tx_index: 0.into(),
         output_data: Some(JsonBytes::from_vec(cell.data.clone())),
@@ -48,65 +43,80 @@ fn script_prefix_equal(a: Option<&packed::Script>, b: Option<&packed::Script>) -
 }
 
 impl FakeProvider {
-    fn get_cells_by_search_key(&self, search_key: SearchKey) -> Vec<Cell> {
-        self.fake_cells
-            .iter()
-            .filter_map(|(_, cell)| {
-                let (primary_script, script_a, secondary_script, script_b) =
-                    match search_key.script_type {
-                        ScriptType::Lock => {
-                            let primary_script: packed::Script = search_key.script.clone().into();
-                            let secondary_script: Option<Option<packed::Script>> =
-                                search_key.filter.clone().map(|v| v.script.map(Into::into));
-                            let lock_script = cell.lock_script();
-                            let type_script = cell.type_script();
-                            (
-                                primary_script,
-                                Some(lock_script),
-                                secondary_script,
-                                type_script,
-                            )
-                        }
-                        ScriptType::Type => {
-                            let primary_script: packed::Script = search_key.script.clone().into();
-                            let secondary_script: Option<Option<packed::Script>> =
-                                search_key.filter.clone().map(|v| v.script.map(Into::into));
-                            let lock_script = cell.lock_script();
-                            let type_script = cell.type_script();
-                            (
-                                primary_script,
-                                type_script,
-                                secondary_script,
-                                Some(lock_script),
-                            )
-                        }
-                    };
-                match search_key.script_search_mode {
-                    Some(SearchMode::Exact) | None => {
-                        if Some(primary_script) == script_a {
-                            if let Some(script) = secondary_script {
-                                if script == script_b {
-                                    return Some(indexer_cell(cell));
-                                }
+    fn get_cells_by_search_key(
+        &self,
+        search_key: SearchKey,
+        limit: usize,
+        cursor: Option<JsonBytes>,
+    ) -> (Vec<Cell>, usize) {
+        if limit == 0 {
+            return (vec![], 0);
+        }
+        let mut offset = cursor
+            .map(|v| usize::from_le_bytes(v.into_bytes().to_vec().try_into().unwrap()))
+            .unwrap_or_default();
+        let mut objects = vec![];
+        for (out_point, cell) in self.fake_cells.iter().skip(offset) {
+            offset += 1;
+            let (primary_script, script_a, secondary_script, script_b) =
+                match search_key.script_type {
+                    ScriptType::Lock => {
+                        let primary_script: packed::Script = search_key.script.clone().into();
+                        let secondary_script: Option<Option<packed::Script>> =
+                            search_key.filter.clone().map(|v| v.script.map(Into::into));
+                        let lock_script = cell.lock_script();
+                        let type_script = cell.type_script();
+                        (
+                            primary_script,
+                            Some(lock_script),
+                            secondary_script,
+                            type_script,
+                        )
+                    }
+                    ScriptType::Type => {
+                        let primary_script: packed::Script = search_key.script.clone().into();
+                        let secondary_script: Option<Option<packed::Script>> =
+                            search_key.filter.clone().map(|v| v.script.map(Into::into));
+                        let lock_script = cell.lock_script();
+                        let type_script = cell.type_script();
+                        (
+                            primary_script,
+                            type_script,
+                            secondary_script,
+                            Some(lock_script),
+                        )
+                    }
+                };
+            match search_key.script_search_mode {
+                Some(SearchMode::Exact) | None => {
+                    if Some(primary_script) == script_a {
+                        if let Some(script) = secondary_script {
+                            if script != script_b {
+                                continue;
                             }
                         }
-                    }
-                    Some(SearchMode::Prefix) => {
-                        if script_prefix_equal(script_a.as_ref(), Some(&primary_script)) {
-                            if let Some(script) = secondary_script {
-                                if script_prefix_equal(script_b.as_ref(), script.as_ref()) {
-                                    return Some(indexer_cell(cell));
-                                }
-                            }
-                        }
-                    }
-                    Some(SearchMode::Partial) => {
-                        panic!("partial search mode is not supported");
+                        objects.push(indexer_cell(out_point, cell));
                     }
                 }
-                None
-            })
-            .collect()
+                Some(SearchMode::Prefix) => {
+                    if script_prefix_equal(script_a.as_ref(), Some(&primary_script)) {
+                        if let Some(script) = secondary_script {
+                            if !script_prefix_equal(script_b.as_ref(), script.as_ref()) {
+                                continue;
+                            }
+                        }
+                        objects.push(indexer_cell(out_point, cell))
+                    }
+                }
+                Some(SearchMode::Partial) => {
+                    panic!("partial search mode is not supported");
+                }
+            }
+            if objects.len() >= limit {
+                break;
+            }
+        }
+        (objects, offset)
     }
 
     fn get_cell_by_outpoint(&self, out_point: &OutPoint) -> Option<CellWithStatus> {
@@ -128,20 +138,14 @@ impl FakeProvider {
     }
 
     fn get_header_by_hash(&self, block_hash: &H256) -> Option<HeaderView> {
-        self.fake_headers.get(block_hash).map(|header| HeaderView {
-            inner: header.clone().into(),
-            hash: block_hash.clone(),
-        })
+        self.fake_headers.get(block_hash).cloned()
     }
 
     fn get_header_by_number(&self, block_number: u64) -> Option<HeaderView> {
         self.fake_headers
             .iter()
-            .find(|(_, header)| Unpack::<u64>::unpack(&header.raw().number()) == block_number)
-            .map(|(hash, header)| HeaderView {
-                inner: header.clone().into(),
-                hash: hash.clone(),
-            })
+            .find(|(_, header)| header.inner.number == block_number.into())
+            .map(|(_, header)| header.clone())
     }
 
     fn get_transaction_by_hash(&self, hash: &H256) -> Option<TransactionWithStatusResponse> {
@@ -172,6 +176,31 @@ impl FakeRpcClient {
         self.fake_provider.fake_cells.push((out_point.into(), cell));
         self
     }
+
+    pub fn insert_tx_status(
+        &mut self,
+        hash: H256,
+        block_hash: H256,
+        block_number: u64,
+    ) -> &mut Self {
+        self.fake_provider.fake_transaction_status.insert(
+            hash,
+            TxStatus {
+                status: Status::Committed,
+                block_hash: Some(block_hash),
+                block_number: Some(block_number.into()),
+                reason: None,
+            },
+        );
+        self
+    }
+
+    pub fn insert_fake_header(&mut self, header: core::HeaderView) -> &mut Self {
+        self.fake_provider
+            .fake_headers
+            .insert(header.hash().unpack(), header.into());
+        self
+    }
 }
 
 unsafe impl Send for FakeRpcClient {}
@@ -194,13 +223,14 @@ impl RPC for FakeRpcClient {
         &self,
         search_key: SearchKey,
         limit: u32,
-        _cursor: Option<JsonBytes>,
+        cursor: Option<JsonBytes>,
     ) -> Rpc<Pagination<Cell>> {
-        let cells =
-            self.fake_provider.get_cells_by_search_key(search_key)[..limit as usize].to_owned();
+        let (cells, cursor) =
+            self.fake_provider
+                .get_cells_by_search_key(search_key, limit as usize, cursor);
         let result = Pagination::<Cell> {
             objects: cells,
-            last_cursor: JsonBytes::default(),
+            last_cursor: JsonBytes::from_vec(cursor.to_le_bytes().to_vec()),
         };
         Box::pin(async move { Ok(result) })
     }

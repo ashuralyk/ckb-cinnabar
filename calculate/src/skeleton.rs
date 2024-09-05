@@ -107,10 +107,10 @@ impl ScriptEx {
 
     /// Build packed Script from ScriptEx and TransactionSkeleton
     pub fn to_script(self, skeleton: &TransactionSkeleton) -> Result<Script> {
-        if let ScriptEx::Reference(_, _) = &self {
+        if let ScriptEx::Reference(name, _) = &self {
             let (_, value) = skeleton
                 .find_celldep_by_script(&self)
-                .ok_or(eyre!("celldep not found"))?;
+                .ok_or(eyre!("celldep {name} not found"))?;
             if value.celldep.dep_type() == DepType::DepGroup.into() {
                 return Err(eyre!("no support for group celldep"));
             }
@@ -718,11 +718,11 @@ impl TransactionSkeleton {
     /// note: if index is `usize::MAX`, return the last input cell
     pub fn get_input_by_index(&self, input_index: usize) -> Result<&CellInputEx> {
         if input_index == usize::MAX {
-            self.inputs.last().ok_or(eyre!("no input"))
+            self.inputs.last().ok_or(eyre!("transaction input empty"))
         } else {
             self.inputs
                 .get(input_index)
-                .ok_or(eyre!("input index out of range"))
+                .ok_or(eyre!("transaction input index out of range"))
         }
     }
 
@@ -1150,12 +1150,18 @@ impl TransactionSkeleton {
             .into_iter()
             .map(|v| v.into_packed_bytes())
             .collect::<Vec<_>>();
+        let headers = self
+            .headerdeps
+            .into_iter()
+            .map(|v| v.block_hash.pack())
+            .collect::<Vec<_>>();
         TransactionView::new_advanced_builder()
             .inputs(inputs)
             .outputs(outputs)
             .outputs_data(outputs_data)
             .cell_deps(celldeps)
             .witnesses(witnesses)
+            .header_deps(headers)
             .build()
     }
 

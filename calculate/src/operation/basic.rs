@@ -55,16 +55,18 @@ impl<T: RPC> Operation<T> for AddCellDep {
         skeleton: &mut TransactionSkeleton,
         _: &mut Log,
     ) -> Result<()> {
-        let cell_dep = CellDepEx::new_from_outpoint(
-            rpc,
-            self.name,
-            self.tx_hash,
-            self.index,
-            self.dep_type,
-            self.with_data,
-        )
-        .await?;
-        skeleton.celldep(cell_dep);
+        if skeleton.get_celldep_by_name(&self.name).is_none() {
+            let cell_dep = CellDepEx::new_from_outpoint(
+                rpc,
+                self.name,
+                self.tx_hash,
+                self.index,
+                self.dep_type,
+                self.with_data,
+            )
+            .await?;
+            skeleton.celldep(cell_dep);
+        }
         Ok(())
     }
 }
@@ -96,15 +98,17 @@ impl<T: RPC> Operation<T> for AddCellDepByType {
         skeleton: &mut TransactionSkeleton,
         _: &mut Log,
     ) -> Result<()> {
-        let mut find_avaliable = false;
-        let mut iter = GetCellsIter::new(rpc, self.search_key(skeleton)?);
-        if let Some(cell) = iter.next().await? {
-            let cell_dep = CellDepEx::new_from_indexer_cell(self.name, cell, self.dep_type);
-            find_avaliable = true;
-            skeleton.celldep(cell_dep);
-        }
-        if !find_avaliable {
-            return Err(eyre!("cell dep not found"));
+        if skeleton.get_celldep_by_name(&self.name).is_none() {
+            let mut find_avaliable = false;
+            let mut iter = GetCellsIter::new(rpc, self.search_key(skeleton)?);
+            if let Some(cell) = iter.next().await? {
+                let cell_dep = CellDepEx::new_from_indexer_cell(self.name, cell, self.dep_type);
+                find_avaliable = true;
+                skeleton.celldep(cell_dep);
+            }
+            if !find_avaliable {
+                return Err(eyre!("cell dep not found"));
+            }
         }
         Ok(())
     }

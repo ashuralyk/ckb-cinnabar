@@ -20,10 +20,14 @@ use crate::{
 pub mod generated;
 use generated::*;
 
+use super::basic::AddCellDep;
+
 /// The latest Spore and Cluster contract version
 ///
 /// note: detail refers to https://github.com/sporeprotocol/spore-contract/blob/master/docs/VERSIONS.md
 pub mod hardcoded {
+    use crate::simulation::random_hash;
+
     use super::*;
 
     pub const SPORE_MAINNET_TX_HASH: H256 =
@@ -46,36 +50,41 @@ pub mod hardcoded {
     pub const CLUSTER_TESTNET_CODE_HASH: H256 =
         h256!("0x0bbe768b519d8ea7b96d58f1182eb7e6ef96c541fbd9526975077ee09f049058");
 
-    pub fn spore_tx_hash(network: Network) -> Result<H256> {
-        Ok(match network {
+    lazy_static::lazy_static! {
+        pub static ref SPORE_FAKENET_TX_HASH: H256 = random_hash().into();
+        pub static ref CLUSTER_FAKENET_TX_HASH: H256 = random_hash().into();
+    }
+
+    pub fn spore_tx_hash(network: Network) -> H256 {
+        match network {
             Network::Mainnet => SPORE_MAINNET_TX_HASH,
             Network::Testnet => SPORE_TESTNET_TX_HASH,
-            _ => return Err(eyre!("spore is not supported on custom/fake network")),
-        })
+            _ => SPORE_FAKENET_TX_HASH.clone(),
+        }
     }
 
-    pub fn spore_code_hash(network: Network) -> Result<H256> {
-        Ok(match network {
-            Network::Mainnet => SPORE_MAINNET_CODE_HASH,
-            Network::Testnet => SPORE_TESTNET_CODE_HASH,
-            _ => return Err(eyre!("spore is not supported on custom/fake network")),
-        })
+    pub fn spore_script(network: Network, args: Vec<u8>) -> ScriptEx {
+        match network {
+            Network::Mainnet => ScriptEx::new_code(SPORE_MAINNET_CODE_HASH, args),
+            Network::Testnet => ScriptEx::new_code(SPORE_TESTNET_CODE_HASH, args),
+            _ => ("spore".to_string(), args).into(),
+        }
     }
 
-    pub fn cluster_tx_hash(network: Network) -> Result<H256> {
-        Ok(match network {
+    pub fn cluster_tx_hash(network: Network) -> H256 {
+        match network {
             Network::Mainnet => CLUSTER_MAINNET_TX_HASH,
             Network::Testnet => CLUSTER_TESTNET_TX_HASH,
-            _ => return Err(eyre!("cluster is not supported on custom/fake network")),
-        })
+            _ => CLUSTER_FAKENET_TX_HASH.clone(),
+        }
     }
 
-    pub fn cluster_code_hash(network: Network) -> Result<H256> {
-        Ok(match network {
-            Network::Mainnet => CLUSTER_MAINNET_CODE_HASH,
-            Network::Testnet => CLUSTER_TESTNET_CODE_HASH,
-            _ => return Err(eyre!("cluster is not supported on custom/fake network")),
-        })
+    pub fn cluster_script(network: Network, args: Vec<u8>) -> ScriptEx {
+        match network {
+            Network::Mainnet => ScriptEx::new_code(CLUSTER_MAINNET_CODE_HASH, args),
+            Network::Testnet => ScriptEx::new_code(CLUSTER_TESTNET_CODE_HASH, args),
+            _ => ("cluster".to_string(), args).into(),
+        }
     }
 }
 
@@ -98,20 +107,17 @@ impl<T: RPC> Operation<T> for AddSporeCelldep {
         self: Box<Self>,
         rpc: &T,
         skeleton: &mut TransactionSkeleton,
-        _: &mut Log,
+        log: &mut Log,
     ) -> Result<()> {
-        skeleton.celldep(
-            CellDepEx::new_from_outpoint(
-                rpc,
-                "spore".to_string(),
-                hardcoded::spore_tx_hash(rpc.network())?,
-                0,
-                DepType::Code,
-                false,
-            )
-            .await?,
-        );
-        Ok(())
+        Box::new(AddCellDep {
+            name: "spore".to_string(),
+            tx_hash: hardcoded::spore_tx_hash(rpc.network()),
+            index: 0,
+            dep_type: DepType::Code,
+            with_data: false,
+        })
+        .run(rpc, skeleton, log)
+        .await
     }
 }
 
@@ -124,20 +130,17 @@ impl<T: RPC> Operation<T> for AddClusterCelldep {
         self: Box<Self>,
         rpc: &T,
         skeleton: &mut TransactionSkeleton,
-        _: &mut Log,
+        log: &mut Log,
     ) -> Result<()> {
-        skeleton.celldep(
-            CellDepEx::new_from_outpoint(
-                rpc,
-                "cluster".to_string(),
-                hardcoded::cluster_tx_hash(rpc.network())?,
-                0,
-                DepType::Code,
-                false,
-            )
-            .await?,
-        );
-        Ok(())
+        Box::new(AddCellDep {
+            name: "cluster".to_string(),
+            tx_hash: hardcoded::cluster_tx_hash(rpc.network()),
+            index: 0,
+            dep_type: DepType::Code,
+            with_data: false,
+        })
+        .run(rpc, skeleton, log)
+        .await
     }
 }
 
@@ -159,11 +162,10 @@ pub struct AddClusterCelldepByClusterId {
 }
 
 impl AddClusterCelldepByClusterId {
-    fn search_key<T: RPC>(&self, rpc: &T) -> Result<SearchKey> {
+    fn search_key<T: RPC>(&self, rpc: &T, skeleton: &TransactionSkeleton) -> Result<SearchKey> {
         let args = self.cluster_id.as_bytes().to_vec();
-        let cluster_type_script =
-            ScriptEx::new_code(hardcoded::cluster_code_hash(rpc.network())?, args);
-        let mut query = CellQueryOptions::new_type(cluster_type_script.try_into()?);
+        let cluster_type_script = hardcoded::cluster_script(rpc.network(), args);
+        let mut query = CellQueryOptions::new_type(cluster_type_script.to_script(skeleton)?);
         query.script_search_mode = Some(SearchMode::Exact);
         Ok(query.into())
     }
@@ -181,7 +183,7 @@ impl<T: RPC> Operation<T> for AddClusterCelldepByClusterId {
         let cluster_celldep = if let Some(celldep) = skeleton.get_celldep_by_name(&name) {
             celldep
         } else {
-            let search_key = self.search_key(rpc)?;
+            let search_key = self.search_key(rpc, skeleton)?;
             let Some(indexer_cell) = GetCellsIter::new(rpc, search_key).next().await? else {
                 return Err(eyre!("no cluster cell (id: {:#x})", self.cluster_id));
             };
@@ -241,8 +243,7 @@ pub struct AddSporeInputCellBySporeId {
 impl AddSporeInputCellBySporeId {
     fn search_key<T: RPC>(&self, rpc: &T) -> Result<SearchKey> {
         let args = self.spore_id.as_bytes().to_vec();
-        let spore_type_script =
-            ScriptEx::new_code(hardcoded::spore_code_hash(rpc.network())?, args);
+        let spore_type_script = hardcoded::spore_script(rpc.network(), args);
         let mut query = CellQueryOptions::new_type(spore_type_script.try_into()?);
         query.with_data = Some(true);
         query.script_search_mode = Some(SearchMode::Exact);
@@ -292,6 +293,15 @@ pub struct AddSporeOutputCell {
     pub authority_mode: ClusterAuthorityMode,
 }
 
+pub fn make_spore_data(content_type: &str, content: &[u8], cluster_id: Option<&H256>) -> Vec<u8> {
+    let molecule_spore_data = SporeData::new_builder()
+        .content_type(content_type.as_bytes().pack())
+        .content(content.pack())
+        .cluster_id(cluster_id.map(|v| v.as_bytes().pack()).pack())
+        .build();
+    molecule_spore_data.as_bytes().to_vec()
+}
+
 #[async_trait]
 impl<T: RPC> Operation<T> for AddSporeOutputCell {
     async fn run(
@@ -300,17 +310,13 @@ impl<T: RPC> Operation<T> for AddSporeOutputCell {
         skeleton: &mut TransactionSkeleton,
         log: &mut Log,
     ) -> Result<()> {
-        let molecule_spore_data = SporeData::new_builder()
-            .content_type(self.content_type.as_bytes().pack())
-            .content(self.content.pack())
-            .cluster_id(self.cluster_id.clone().map(|v| v.as_bytes().pack()).pack())
-            .build();
-        let spore_type_script =
-            ScriptEx::new_code(hardcoded::spore_code_hash(rpc.network())?, vec![]); // later on, args will be filled with type_id
+        let spore_data =
+            make_spore_data(&self.content_type, &self.content, self.cluster_id.as_ref());
+        let spore_type_script = hardcoded::spore_script(rpc.network(), vec![]); // later on, args will be filled with type_id
         Box::new(AddOutputCell {
             lock_script: self.lock_script,
             type_script: Some(spore_type_script),
-            data: molecule_spore_data.as_bytes().to_vec(),
+            data: spore_data,
             capacity: 0,
             absolute_capacity: false,
             type_id: true,
@@ -342,8 +348,7 @@ pub struct AddClusterInputCellByClusterId {
 impl AddClusterInputCellByClusterId {
     fn search_key<T: RPC>(&self, rpc: &T) -> Result<SearchKey> {
         let args = self.cluster_id.as_bytes().to_vec();
-        let cluster_type_script =
-            ScriptEx::new_code(hardcoded::cluster_code_hash(rpc.network())?, args);
+        let cluster_type_script = hardcoded::cluster_script(rpc.network(), args);
         let mut query = CellQueryOptions::new_type(cluster_type_script.try_into()?);
         query.with_data = Some(true);
         query.script_search_mode = Some(SearchMode::Exact);
@@ -382,6 +387,14 @@ pub struct AddClusterOutputCell {
     pub description: Vec<u8>,
 }
 
+pub fn make_cluster_data(name: &str, description: &[u8]) -> Vec<u8> {
+    let molecule_cluster_data = ClusterDataV2::new_builder()
+        .name(name.as_bytes().pack())
+        .description(description.pack())
+        .build();
+    molecule_cluster_data.as_bytes().to_vec()
+}
+
 #[async_trait]
 impl<T: RPC> Operation<T> for AddClusterOutputCell {
     async fn run(
@@ -390,16 +403,12 @@ impl<T: RPC> Operation<T> for AddClusterOutputCell {
         skeleton: &mut TransactionSkeleton,
         log: &mut Log,
     ) -> Result<()> {
-        let molecule_cluster_data = ClusterDataV2::new_builder()
-            .name(self.name.as_bytes().pack())
-            .description(self.description.pack())
-            .build();
-        let cluster_type_script =
-            ScriptEx::new_code(hardcoded::cluster_code_hash(rpc.network())?, vec![]); // later on, args will be filled with type_id
+        let cluster_data = make_cluster_data(&self.name, &self.description);
+        let cluster_type_script = hardcoded::cluster_script(rpc.network(), vec![]); // later on, args will be filled with type_id
         Box::new(AddOutputCell {
             lock_script: self.lock_script,
             type_script: Some(cluster_type_script),
-            data: molecule_cluster_data.as_bytes().to_vec(),
+            data: cluster_data,
             capacity: 0,
             absolute_capacity: false,
             type_id: true,
@@ -440,7 +449,10 @@ impl<T: RPC> Operation<T> for AddSporeActions {
     ) -> Result<()> {
         let mut spore_actions: Vec<Action> = vec![];
         // prepare spore related action parameters
-        let spore_code_hash = hardcoded::spore_code_hash(rpc.network())?;
+        let spore_code_hash = hardcoded::spore_script(rpc.network(), vec![])
+            .to_script(skeleton)?
+            .code_hash()
+            .unpack();
         let mut spore_output_cells = skeleton
             .outputs
             .iter()
@@ -483,7 +495,10 @@ impl<T: RPC> Operation<T> for AddSporeActions {
             spore_actions.push((output.type_script().unwrap(), mint_action.into()).into());
         }
         // prepare cluster related action parameters
-        let cluster_code_hash = hardcoded::cluster_code_hash(rpc.network())?;
+        let cluster_code_hash = hardcoded::cluster_script(rpc.network(), vec![])
+            .to_script(skeleton)?
+            .code_hash()
+            .unpack();
         let mut cluster_output_cells = skeleton
             .outputs
             .iter()
