@@ -241,10 +241,10 @@ pub struct AddSporeInputCellBySporeId {
 }
 
 impl AddSporeInputCellBySporeId {
-    fn search_key<T: RPC>(&self, rpc: &T) -> Result<SearchKey> {
+    fn search_key<T: RPC>(&self, rpc: &T, skeleton: &TransactionSkeleton) -> Result<SearchKey> {
         let args = self.spore_id.as_bytes().to_vec();
         let spore_type_script = hardcoded::spore_script(rpc.network(), args);
-        let mut query = CellQueryOptions::new_type(spore_type_script.try_into()?);
+        let mut query = CellQueryOptions::new_type(spore_type_script.to_script(skeleton)?);
         query.with_data = Some(true);
         query.script_search_mode = Some(SearchMode::Exact);
         Ok(query.into())
@@ -257,9 +257,9 @@ impl<T: RPC> Operation<T> for AddSporeInputCellBySporeId {
         self: Box<Self>,
         rpc: &T,
         skeleton: &mut TransactionSkeleton,
-        hook: &mut Log,
+        log: &mut Log,
     ) -> Result<()> {
-        let search_key = self.search_key(rpc)?;
+        let search_key = self.search_key(rpc, skeleton)?;
         let Some(indexer_cell) = GetCellsIter::new(rpc, search_key).next().await? else {
             return Err(eyre!("no spore cell (id: {:#x})", self.spore_id));
         };
@@ -273,7 +273,7 @@ impl<T: RPC> Operation<T> for AddSporeInputCellBySporeId {
             }
         }
         skeleton.input(spore_cell)?.witness(Default::default());
-        Box::new(AddSporeCelldep {}).run(rpc, skeleton, hook).await
+        Box::new(AddSporeCelldep {}).run(rpc, skeleton, log).await
     }
 }
 
@@ -346,10 +346,10 @@ pub struct AddClusterInputCellByClusterId {
 }
 
 impl AddClusterInputCellByClusterId {
-    fn search_key<T: RPC>(&self, rpc: &T) -> Result<SearchKey> {
+    fn search_key<T: RPC>(&self, rpc: &T, skeleton: &TransactionSkeleton) -> Result<SearchKey> {
         let args = self.cluster_id.as_bytes().to_vec();
         let cluster_type_script = hardcoded::cluster_script(rpc.network(), args);
-        let mut query = CellQueryOptions::new_type(cluster_type_script.try_into()?);
+        let mut query = CellQueryOptions::new_type(cluster_type_script.to_script(skeleton)?);
         query.with_data = Some(true);
         query.script_search_mode = Some(SearchMode::Exact);
         Ok(query.into())
@@ -364,7 +364,7 @@ impl<T: RPC> Operation<T> for AddClusterInputCellByClusterId {
         skeleton: &mut TransactionSkeleton,
         log: &mut Log,
     ) -> Result<()> {
-        let search_key = self.search_key(rpc)?;
+        let search_key = self.search_key(rpc, skeleton)?;
         let Some(indexer_cell) = GetCellsIter::new(rpc, search_key).next().await? else {
             return Err(eyre!("no cluster cell (id: {:#x})", self.cluster_id));
         };

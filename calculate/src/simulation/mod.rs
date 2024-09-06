@@ -177,6 +177,7 @@ impl TransactionSimulator {
     }
 }
 
+#[allow(clippy::mutable_key_type)]
 fn complete_resolved_tx(
     outpoint_to_headers: HashMap<OutPoint, HeaderView>,
     resolved_tx: &mut ResolvedTransaction,

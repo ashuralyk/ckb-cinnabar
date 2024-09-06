@@ -13,16 +13,16 @@ use ckb_types::{
 use eyre::{eyre, Result};
 
 use crate::{
-    operation::{Log, Operation},
+    operation::{basic::AddCellDep, Log, Operation},
     rpc::{GetCellsIter, Network, RPC},
-    skeleton::{
-        CellDepEx, CellInputEx, CellOutputEx, HeaderDepEx, ScriptEx, TransactionSkeleton, WitnessEx,
-    },
+    skeleton::{CellInputEx, CellOutputEx, HeaderDepEx, ScriptEx, TransactionSkeleton, WitnessEx},
 };
 
 pub mod hardcoded {
     use super::*;
+    use crate::simulation::random_hash;
 
+    pub const DAO_NAME: &str = "dao";
     pub const DAO_MAINNET_TX_HASH: H256 =
         h256!("0xe2fb199810d49a4d8beec56718ba2593b665db9d52299a0f9e6e75416d73ff5c");
     pub const DAO_TESTNET_TX_HASH: H256 =
@@ -30,11 +30,24 @@ pub mod hardcoded {
     pub const DAO_TYPE_HASH: H256 =
         h256!("0x82d76d1b75fe2fd9a27dfbaa65a039221a380d76c926f378d3f81cf3e7e13f2e");
 
-    pub fn dao_tx_hash(network: Network) -> Result<H256> {
+    lazy_static::lazy_static! {
+        pub static ref DAO_FAKENET_TX_HASH: H256 = random_hash().into();
+    }
+
+    pub fn dao_tx_hash(network: Network) -> H256 {
         match network {
-            Network::Mainnet => Ok(DAO_MAINNET_TX_HASH),
-            Network::Testnet => Ok(DAO_TESTNET_TX_HASH),
-            _ => Err(eyre!("DAO is not supported on Custom/Fake network")),
+            Network::Mainnet => DAO_MAINNET_TX_HASH,
+            Network::Testnet => DAO_TESTNET_TX_HASH,
+            _ => DAO_FAKENET_TX_HASH.clone(),
+        }
+    }
+
+    pub fn dao_script(network: Network) -> ScriptEx {
+        match network {
+            Network::Mainnet | Network::Testnet => {
+                ScriptEx::new_type(hardcoded::DAO_TYPE_HASH, vec![])
+            }
+            _ => (DAO_NAME.to_string(), vec![]).into(),
         }
     }
 }
@@ -48,20 +61,17 @@ impl<T: RPC> Operation<T> for AddDaoCelldep {
         self: Box<Self>,
         rpc: &T,
         skeleton: &mut TransactionSkeleton,
-        _: &mut Log,
+        log: &mut Log,
     ) -> Result<()> {
-        skeleton.celldep(
-            CellDepEx::new_from_outpoint(
-                rpc,
-                "dao".to_string(),
-                hardcoded::dao_tx_hash(rpc.network())?,
-                2,
-                DepType::Code,
-                false,
-            )
-            .await?,
-        );
-        Ok(())
+        Box::new(AddCellDep {
+            name: hardcoded::DAO_NAME.to_string(),
+            tx_hash: hardcoded::dao_tx_hash(rpc.network()),
+            index: 2,
+            dep_type: DepType::Code,
+            with_data: false,
+        })
+        .run(rpc, skeleton, log)
+        .await
     }
 }
 
@@ -83,10 +93,10 @@ impl<T: RPC> Operation<T> for AddDaoDepositOutputCell {
         skeleton: &mut TransactionSkeleton,
         log: &mut Log,
     ) -> Result<()> {
-        let dao_type_script = ScriptEx::new_type(hardcoded::DAO_TYPE_HASH, vec![]);
+        let dao_type_script = hardcoded::dao_script(rpc.network());
         skeleton.output(CellOutputEx::new_from_scripts(
             self.owner.to_script(skeleton)?,
-            Some(dao_type_script.to_script_unchecked()),
+            Some(dao_type_script.to_script(skeleton)?),
             vec![0u8; 8],
             Some(Capacity::shannons(self.deposit_capacity)),
         )?);
@@ -111,13 +121,13 @@ pub struct AddDaoWithdrawPhaseOneCells {
 }
 
 impl AddDaoWithdrawPhaseOneCells {
-    fn search_key(&self, skeleton: &TransactionSkeleton) -> Result<SearchKey> {
-        let dao_type_script = ScriptEx::new_type(hardcoded::DAO_TYPE_HASH, vec![]);
+    fn search_key(&self, network: Network, skeleton: &TransactionSkeleton) -> Result<SearchKey> {
+        let dao_type_script = hardcoded::dao_script(network);
         let mut search_key: SearchKey =
             CellQueryOptions::new_lock(self.owner.clone().to_script(skeleton)?).into();
         search_key.with_data = Some(true);
         search_key.filter = Some(SearchKeyFilter {
-            script: Some(dao_type_script.to_script_unchecked().into()),
+            script: Some(dao_type_script.to_script(skeleton)?.into()),
             output_data: Some(JsonBytes::from_vec(vec![0u8; 8])),
             output_data_filter_mode: Some(SearchMode::Exact),
             ..Default::default()
@@ -150,7 +160,7 @@ impl<T: RPC> Operation<T> for AddDaoWithdrawPhaseOneCells {
         log: &mut Log,
     ) -> Result<()> {
         let mut searched_capacity = 0u64;
-        let mut search = GetCellsIter::new(rpc, self.search_key(skeleton)?);
+        let mut search = GetCellsIter::new(rpc, self.search_key(rpc.network(), skeleton)?);
         let transfer_lock_script = if let Some(transfer_to) = self.transfer_to.clone() {
             Some(transfer_to.to_script(skeleton)?)
         } else {
@@ -215,11 +225,11 @@ pub struct AddDaoWithdrawPhaseTwoCells {
 }
 
 impl AddDaoWithdrawPhaseTwoCells {
-    fn search_key(&self, skeleton: &TransactionSkeleton) -> Result<SearchKey> {
-        let dao_type_script = ScriptEx::new_type(hardcoded::DAO_TYPE_HASH, vec![]);
+    fn search_key(&self, network: Network, skeleton: &TransactionSkeleton) -> Result<SearchKey> {
+        let dao_type_script = hardcoded::dao_script(network);
         let mut query = CellQueryOptions::new_lock(self.owner.clone().to_script(skeleton)?);
         query.with_data = Some(true);
-        query.secondary_script = Some(dao_type_script.to_script_unchecked());
+        query.secondary_script = Some(dao_type_script.to_script(skeleton)?);
         Ok(query.into())
     }
 
@@ -257,7 +267,7 @@ impl<T: RPC> Operation<T> for AddDaoWithdrawPhaseTwoCells {
         log: &mut Log,
     ) -> Result<()> {
         let mut searched_capacity = 0u64;
-        let mut search = GetCellsIter::new(rpc, self.search_key(skeleton)?);
+        let mut search = GetCellsIter::new(rpc, self.search_key(rpc.network(), skeleton)?);
         let mut output_capacity = 0u64;
         let mut withdraw_headerdeps = vec![];
         while let Some(cell) = search.next().await? {
