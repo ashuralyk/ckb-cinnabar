@@ -196,6 +196,32 @@ impl<T: RPC> Operation<T> for AddHeaderDep {
     }
 }
 
+/// Operation that add a header dep to transaction by block number
+pub struct AddHeaderDepByBlockNumber {
+    pub block_number: u64,
+}
+
+#[async_trait]
+impl<T: RPC> Operation<T> for AddHeaderDepByBlockNumber {
+    async fn run(
+        self: Box<Self>,
+        rpc: &T,
+        skeleton: &mut TransactionSkeleton,
+        _: &mut Log,
+    ) -> Result<()> {
+        let block_hash = rpc
+            .get_block_hash(self.block_number.into())
+            .await?
+            .ok_or(eyre!(
+                "block hash not found for block number {}",
+                self.block_number
+            ))?;
+        let header_dep = HeaderDepEx::new(rpc, block_hash, None).await?;
+        skeleton.headerdep(header_dep);
+        Ok(())
+    }
+}
+
 /// Operation that add a header dep to transaction by input index, which will link to that input cell
 pub struct AddHeaderDepByInputIndex {
     pub input_index: usize,

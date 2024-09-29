@@ -3,6 +3,7 @@ use std::{fmt::Display, time::Duration};
 use ckb_hash::{blake2b_256, Blake2bBuilder};
 use ckb_jsonrpc_types::{OutputsValidator, Status};
 use ckb_sdk::{
+    constants::TYPE_ID_CODE_HASH,
     rpc::ckb_indexer::{Cell, SearchMode},
     traits::{CellQueryOptions, ValueRangeOption},
     Address, AddressPayload, NetworkType,
@@ -54,6 +55,11 @@ impl ScriptEx {
     /// Initialize a ScriptEx of `Type`
     pub fn new_type(type_hash: H256, args: Vec<u8>) -> Self {
         ScriptEx::Script(type_hash, ScriptHashType::Type, args)
+    }
+
+    /// Initialize a ScriptEx of `TypeId`
+    pub fn new_type_id(args: H256) -> Self {
+        ScriptEx::new_type(TYPE_ID_CODE_HASH, args.as_bytes().to_vec())
     }
 
     /// Get `code_hash` of ScriptEx
