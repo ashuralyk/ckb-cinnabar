@@ -40,7 +40,7 @@ pub fn this_script_args() -> Result<Vec<u8>, Error> {
     Ok(args)
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Clone, Copy)]
 pub enum ScriptPlace {
     Lock,
     Type,
@@ -65,15 +65,16 @@ pub fn this_script_indices(source: Source, place: ScriptPlace) -> Result<Vec<usi
     Ok(indices)
 }
 
+#[derive(PartialEq, Eq, Clone, Copy)]
 pub enum ScriptPattern {
     Create,
     Transfer,
     Burn,
 }
 
-pub fn this_script_pattern() -> Result<ScriptPattern, Error> {
-    let in_input = load_cell(0, Source::GroupInput).is_ok();
-    let in_output = load_cell(0, Source::GroupOutput).is_ok();
+pub fn this_script_pattern(place: ScriptPlace) -> Result<ScriptPattern, Error> {
+    let in_input = this_script_count(Source::Input, place)? > 0;
+    let in_output = this_script_count(Source::Output, place)? > 0;
     match (in_input, in_output) {
         (true, true) => Ok(ScriptPattern::Transfer),
         (true, false) => Ok(ScriptPattern::Burn),

@@ -52,6 +52,11 @@ pub mod hardcoded {
     }
 }
 
+pub mod hookkey {
+    pub const DAO_WITHDRAW_PHASE_ONE: &str = "DAO_WITHDRAW_PHASE_ONE";
+    pub const DAO_WITHDRAW_PHASE_TWO: &str = "DAO_WITHDRAW_PHASE_TWO";
+}
+
 /// Add DAO celldep to the transaction
 pub struct AddDaoCelldep {}
 
@@ -196,10 +201,10 @@ impl<T: RPC> Operation<T> for AddDaoWithdrawPhaseOneCells {
                 .headerdep(deposit_header_dep)
                 .witness(Default::default());
         }
-        log.insert(
-            "AddDaoWithdrawPhaseOneCells",
+        log.push((
+            hookkey::DAO_WITHDRAW_PHASE_ONE,
             searched_capacity.to_le_bytes().to_vec(),
-        );
+        ));
         if searched_capacity == 0 {
             if self.throw_if_no_avaliable {
                 return Err(eyre!("no available DAO deposit cells"));
@@ -305,10 +310,10 @@ impl<T: RPC> Operation<T> for AddDaoWithdrawPhaseTwoCells {
                 withdraw_headerdeps.push(withdraw_headerdep);
             }
         }
-        log.insert(
-            "AddDaoWithdrawPhaseTwoCells",
+        log.push((
+            hookkey::DAO_WITHDRAW_PHASE_TWO,
             output_capacity.to_le_bytes().to_vec(),
-        );
+        ));
         if output_capacity == 0 {
             if self.throw_if_no_avaliable {
                 return Err(eyre!("no available DAO withdraw cells"));

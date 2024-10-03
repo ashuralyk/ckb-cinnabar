@@ -126,8 +126,10 @@ impl TransactionSimulator {
         self
     }
 
-    pub fn link_cell_to_header(mut self, outpoint: OutPoint, header: HeaderView) -> Self {
-        self.outpoint_to_headers.insert(outpoint, header);
+    pub fn link_cell_to_header(mut self, link: Vec<(OutPoint, HeaderView)>) -> Self {
+        link.into_iter().for_each(|(outpoint, header)| {
+            self.outpoint_to_headers.insert(outpoint, header);
+        });
         self
     }
 
@@ -156,6 +158,8 @@ impl TransactionSimulator {
         if self.print_tx {
             println!("transaction skeleton: {}", skeleton);
         }
+        log.into_iter()
+            .for_each(|(name, msg)| println!("[calculate log] {name} -> {}", hex::encode(msg)));
         let headers = skeleton
             .headerdeps
             .iter()

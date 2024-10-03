@@ -196,14 +196,14 @@ impl<T: RPC> Operation<T> for AddClusterCelldepByClusterId {
         let (inputs, outputs) = skeleton.lock_script_groups(&cluster_owner_lock_script);
         // ignore the case of only one legit cell in Inputs or Outputs
         if inputs.is_empty() || outputs.is_empty() {
-            log.insert(
+            log.push((
                 hookkey::CLUSTER_CELL_OWNER_LOCK,
                 cluster_owner_lock_script
                     .clone()
                     .to_script_unchecked()
                     .as_slice()
                     .to_vec(),
-            );
+            ));
             match self.authority_mode {
                 ClusterAuthorityMode::LockProxy => {
                     skeleton
@@ -227,6 +227,59 @@ impl<T: RPC> Operation<T> for AddClusterCelldepByClusterId {
             }
         }
         Ok(())
+    }
+}
+
+/// Search and add spore cell under the latest contract version with unique cluster_id
+///
+/// # Parameters
+/// - `lock_script`: The spore owner lock script
+/// - `cluster_id`: The unique identifier of the cluster cell
+/// - `count`: The number of spore cells to search and add
+pub struct AddSporeInputCellByClusterId {
+    pub lock_script: ScriptEx,
+    pub cluster_id: H256,
+    pub count: usize,
+}
+
+impl AddSporeInputCellByClusterId {
+    fn search_key<T: RPC>(&self, rpc: &T, skeleton: &TransactionSkeleton) -> Result<SearchKey> {
+        let partial_spore_type_script = hardcoded::spore_script(rpc.network(), vec![]);
+        let mut query = CellQueryOptions::new_lock(self.lock_script.clone().to_script(skeleton)?);
+        query.secondary_script = Some(partial_spore_type_script.to_script(skeleton)?);
+        query.with_data = Some(true);
+        query.script_search_mode = Some(SearchMode::Prefix);
+        Ok(query.into())
+    }
+}
+
+#[async_trait]
+impl<T: RPC> Operation<T> for AddSporeInputCellByClusterId {
+    async fn run(
+        self: Box<Self>,
+        rpc: &T,
+        skeleton: &mut TransactionSkeleton,
+        log: &mut Log,
+    ) -> Result<()> {
+        let search_key = self.search_key(rpc, skeleton)?;
+        let mut searched = 0usize;
+        let mut iter = GetCellsIter::new(rpc, search_key);
+        while let Some(indexer_cell) = iter.next().await? {
+            let spore_cell = CellInputEx::new_from_indexer_cell(indexer_cell, None);
+            let cluster_id = SporeData::from_compatible_slice(&spore_cell.output.data)?
+                .cluster_id()
+                .to_opt()
+                .map(|v| v.raw_data().to_vec());
+            if cluster_id != Some(self.cluster_id.as_bytes().to_vec()) {
+                continue;
+            }
+            skeleton.input(spore_cell)?.witness(Default::default());
+            searched += 1;
+            if searched >= self.count {
+                break;
+            }
+        }
+        Box::new(AddSporeCelldep {}).run(rpc, skeleton, log).await
     }
 }
 
@@ -310,6 +363,14 @@ impl<T: RPC> Operation<T> for AddSporeOutputCell {
         skeleton: &mut TransactionSkeleton,
         log: &mut Log,
     ) -> Result<()> {
+        if let Some(cluster_id) = self.cluster_id.clone() {
+            Box::new(AddClusterCelldepByClusterId {
+                cluster_id,
+                authority_mode: self.authority_mode,
+            })
+            .run(rpc, skeleton, log)
+            .await?;
+        }
         let spore_data =
             make_spore_data(&self.content_type, &self.content, self.cluster_id.as_ref());
         let spore_type_script = hardcoded::spore_script(rpc.network(), vec![]); // later on, args will be filled with type_id
@@ -324,15 +385,7 @@ impl<T: RPC> Operation<T> for AddSporeOutputCell {
         .run(rpc, skeleton, log)
         .await?;
         let spore_id = skeleton.calc_type_id(skeleton.outputs.len() - 1)?;
-        log.insert(hookkey::NEW_SPORE_ID, spore_id.as_bytes().to_vec());
-        if let Some(cluster_id) = self.cluster_id {
-            Box::new(AddClusterCelldepByClusterId {
-                cluster_id,
-                authority_mode: self.authority_mode,
-            })
-            .run(rpc, skeleton, log)
-            .await?;
-        }
+        log.push((hookkey::NEW_SPORE_ID, spore_id.as_bytes().to_vec()));
         Box::new(AddSporeCelldep {}).run(rpc, skeleton, log).await
     }
 }
@@ -416,7 +469,7 @@ impl<T: RPC> Operation<T> for AddClusterOutputCell {
         .run(rpc, skeleton, log)
         .await?;
         let cluster_id = skeleton.calc_type_id(skeleton.outputs.len() - 1)?;
-        log.insert(hookkey::NEW_CLUSTER_ID, cluster_id.as_bytes().to_vec());
+        log.push((hookkey::NEW_CLUSTER_ID, cluster_id.as_bytes().to_vec()));
         Box::new(AddClusterCelldep {}).run(rpc, skeleton, log).await
     }
 }
@@ -449,90 +502,93 @@ impl<T: RPC> Operation<T> for AddSporeActions {
     ) -> Result<()> {
         let mut spore_actions: Vec<Action> = vec![];
         // prepare spore related action parameters
-        let spore_code_hash = hardcoded::spore_script(rpc.network(), vec![])
-            .to_script(skeleton)?
-            .code_hash()
-            .unpack();
-        let mut spore_output_cells = skeleton
-            .outputs
-            .iter()
-            .filter_map(|cell| Self::compare_code_hash(cell, &spore_code_hash))
-            .collect::<Vec<_>>();
-        let spore_input_cells = skeleton
-            .inputs
-            .iter()
-            .filter_map(|cell| Self::compare_code_hash(&cell.output, &spore_code_hash))
-            .collect::<Vec<_>>();
-        // handle spore transfers and burns
-        for (input, spore_id) in spore_input_cells {
-            if let Some((i, (output, _))) = spore_output_cells
+        if let Ok(spore) = hardcoded::spore_script(rpc.network(), vec![]).to_script(skeleton) {
+            let spore_code_hash = spore.code_hash().unpack();
+            let mut spore_output_cells = skeleton
+                .outputs
                 .iter()
-                .enumerate()
-                .find(|(_, (output, _))| output.type_script() == input.type_script())
-            {
-                let transfer_action = TransferSpore::new_builder()
-                    .from(input.lock_script().into())
-                    .to(output.lock_script().into())
-                    .spore_id(spore_id.pack())
-                    .build();
-                spore_actions.push((output.type_script().unwrap(), transfer_action.into()).into());
-                spore_output_cells.remove(i);
-            } else {
-                let burn_action = BurnSpore::new_builder()
-                    .spore_id(spore_id.pack())
-                    .from(input.lock_script().into())
-                    .build();
-                spore_actions.push((input.type_script().unwrap(), burn_action.into()).into());
+                .filter_map(|cell| Self::compare_code_hash(cell, &spore_code_hash))
+                .collect::<Vec<_>>();
+            let spore_input_cells = skeleton
+                .inputs
+                .iter()
+                .filter_map(|cell| Self::compare_code_hash(&cell.output, &spore_code_hash))
+                .collect::<Vec<_>>();
+            // handle spore transfers and burns
+            for (input, spore_id) in spore_input_cells {
+                if let Some((i, (output, _))) = spore_output_cells
+                    .iter()
+                    .enumerate()
+                    .find(|(_, (output, _))| output.type_script() == input.type_script())
+                {
+                    let transfer_action = TransferSpore::new_builder()
+                        .from(input.lock_script().into())
+                        .to(output.lock_script().into())
+                        .spore_id(spore_id.pack())
+                        .build();
+                    spore_actions
+                        .push((output.type_script().unwrap(), transfer_action.into()).into());
+                    spore_output_cells.remove(i);
+                } else {
+                    let burn_action = BurnSpore::new_builder()
+                        .spore_id(spore_id.pack())
+                        .from(input.lock_script().into())
+                        .build();
+                    spore_actions.push((input.type_script().unwrap(), burn_action.into()).into());
+                }
             }
-        }
-        // handle spore mints
-        for (output, spore_id) in spore_output_cells {
-            let mint_action = MintSpore::new_builder()
-                .spore_id(spore_id.pack())
-                .to(output.lock_script().into())
-                .data_hash(output.data_hash().pack())
-                .build();
-            spore_actions.push((output.type_script().unwrap(), mint_action.into()).into());
+            // handle spore mints
+            for (output, spore_id) in spore_output_cells {
+                let mint_action = MintSpore::new_builder()
+                    .spore_id(spore_id.pack())
+                    .to(output.lock_script().into())
+                    .data_hash(output.data_hash().pack())
+                    .build();
+                spore_actions.push((output.type_script().unwrap(), mint_action.into()).into());
+            }
         }
         // prepare cluster related action parameters
-        let cluster_code_hash = hardcoded::cluster_script(rpc.network(), vec![])
-            .to_script(skeleton)?
-            .code_hash()
-            .unpack();
-        let mut cluster_output_cells = skeleton
-            .outputs
-            .iter()
-            .filter_map(|cell| Self::compare_code_hash(cell, &cluster_code_hash))
-            .collect::<Vec<_>>();
-        let cluster_input_cells = skeleton
-            .inputs
-            .iter()
-            .filter_map(|cell| Self::compare_code_hash(&cell.output, &cluster_code_hash))
-            .collect::<Vec<_>>();
-        // handle cluster transfers
-        for (input, cluster_id) in cluster_input_cells {
-            if let Some((i, (output, _))) = cluster_output_cells
+        if let Ok(cluster) = hardcoded::cluster_script(rpc.network(), vec![]).to_script(skeleton) {
+            let cluster_code_hash = cluster.code_hash().unpack();
+            let mut cluster_output_cells = skeleton
+                .outputs
                 .iter()
-                .enumerate()
-                .find(|(_, (output, _))| output.type_script() == input.type_script())
-            {
-                let transfer_action = TransferCluster::new_builder()
-                    .from(input.lock_script().into())
-                    .to(output.lock_script().into())
+                .filter_map(|cell| Self::compare_code_hash(cell, &cluster_code_hash))
+                .collect::<Vec<_>>();
+            let cluster_input_cells = skeleton
+                .inputs
+                .iter()
+                .filter_map(|cell| Self::compare_code_hash(&cell.output, &cluster_code_hash))
+                .collect::<Vec<_>>();
+            // handle cluster transfers
+            for (input, cluster_id) in cluster_input_cells {
+                if let Some((i, (output, _))) = cluster_output_cells
+                    .iter()
+                    .enumerate()
+                    .find(|(_, (output, _))| output.type_script() == input.type_script())
+                {
+                    let transfer_action = TransferCluster::new_builder()
+                        .from(input.lock_script().into())
+                        .to(output.lock_script().into())
+                        .cluster_id(cluster_id.pack())
+                        .build();
+                    spore_actions
+                        .push((output.type_script().unwrap(), transfer_action.into()).into());
+                    cluster_output_cells.remove(i);
+                }
+            }
+            // handle cluster mints
+            for (output, cluster_id) in cluster_output_cells {
+                let mint_action = MintCluster::new_builder()
                     .cluster_id(cluster_id.pack())
+                    .to(output.lock_script().into())
+                    .data_hash(output.data_hash().pack())
                     .build();
-                spore_actions.push((output.type_script().unwrap(), transfer_action.into()).into());
-                cluster_output_cells.remove(i);
+                spore_actions.push((output.type_script().unwrap(), mint_action.into()).into());
             }
         }
-        // handle cluster mints
-        for (output, cluster_id) in cluster_output_cells {
-            let mint_action = MintCluster::new_builder()
-                .cluster_id(cluster_id.pack())
-                .to(output.lock_script().into())
-                .data_hash(output.data_hash().pack())
-                .build();
-            spore_actions.push((output.type_script().unwrap(), mint_action.into()).into());
+        if spore_actions.is_empty() {
+            return Err(eyre!("no spore/cluster actions found"));
         }
         // add spore actions into skeleton's witness field
         let witness_layout: WitnessLayout = spore_actions.into();

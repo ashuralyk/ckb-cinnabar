@@ -17,9 +17,11 @@ use crate::{
 pub struct FakeProvider {
     pub fake_cells: Vec<(OutPoint, CellOutputEx)>,
     pub fake_headers: HashMap<H256, HeaderView>,
+    pub fake_outpoint_headers: HashMap<OutPoint, core::HeaderView>,
     pub fake_transaction_status: HashMap<H256, TxStatus>,
     pub fake_feerate: u64,
     pub fake_tipnumber: u64,
+    pub fate_tipheader: HeaderView,
 }
 
 fn indexer_cell(out_point: &OutPoint, cell: &CellOutputEx) -> Cell {
@@ -168,23 +170,49 @@ pub struct FakeRpcClient {
 }
 
 impl FakeRpcClient {
+    pub fn set_fake_tip(&mut self, tip_number: u64, tip_header: HeaderView) -> &mut Self {
+        self.fake_provider.fake_tipnumber = tip_number;
+        self.fake_provider.fate_tipheader = tip_header;
+        self
+    }
+
     pub fn insert_fake_cell(
         &mut self,
         out_point: packed::OutPoint,
         cell: CellOutputEx,
+        header: Option<core::HeaderView>,
     ) -> &mut Self {
-        self.fake_provider.fake_cells.push((out_point.into(), cell));
+        let out_point = out_point.into();
+        if self
+            .fake_provider
+            .fake_cells
+            .iter()
+            .any(|(v, _)| v == &out_point)
+        {
+            return self;
+        }
+        self.fake_provider
+            .fake_cells
+            .push((out_point.clone(), cell));
+        if let Some(header) = header {
+            let tx_hash = out_point.tx_hash.clone();
+            self.insert_fake_tx_status(tx_hash, header.hash().unpack(), header.number())
+                .insert_fake_header(header.clone());
+            self.fake_provider
+                .fake_outpoint_headers
+                .insert(out_point, header);
+        }
         self
     }
 
-    pub fn insert_tx_status(
+    pub fn insert_fake_tx_status(
         &mut self,
-        hash: H256,
+        tx_hash: H256,
         block_hash: H256,
         block_number: u64,
     ) -> &mut Self {
         self.fake_provider.fake_transaction_status.insert(
-            hash,
+            tx_hash,
             TxStatus {
                 status: Status::Committed,
                 block_hash: Some(block_hash),
@@ -200,6 +228,14 @@ impl FakeRpcClient {
             .fake_headers
             .insert(header.hash().unpack(), header.into());
         self
+    }
+
+    pub fn get_outpoint_to_headers(&self) -> Vec<(packed::OutPoint, core::HeaderView)> {
+        self.fake_provider
+            .fake_outpoint_headers
+            .iter()
+            .map(|(k, v)| (k.clone().into(), v.clone()))
+            .collect()
     }
 }
 
@@ -253,8 +289,9 @@ impl RPC for FakeRpcClient {
         Box::pin(async move { Ok(header) })
     }
 
-    fn get_block_hash(&self, _number: BlockNumber) -> Rpc<Option<H256>> {
-        unimplemented!("fake get_block_hash method")
+    fn get_block_hash(&self, number: BlockNumber) -> Rpc<Option<H256>> {
+        let header = self.fake_provider.get_header_by_number(number.into());
+        Box::pin(async move { Ok(header.map(|h| h.hash)) })
     }
 
     fn get_tip_block_number(&self) -> Rpc<BlockNumber> {
@@ -263,7 +300,8 @@ impl RPC for FakeRpcClient {
     }
 
     fn get_tip_header(&self) -> Rpc<HeaderView> {
-        unimplemented!("fake get_tip_header method")
+        let tip_header = self.fake_provider.fate_tipheader.clone();
+        Box::pin(async move { Ok(tip_header) })
     }
 
     fn tx_pool_info(&self) -> Rpc<TxPoolInfo> {
