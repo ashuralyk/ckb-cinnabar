@@ -974,7 +974,7 @@ impl TransactionSkeleton {
             .personal(b"ckb-default-hash")
             .build();
         hasher.update(first_input.input.as_slice());
-        hasher.update(&out_index.to_le_bytes());
+        hasher.update(&(out_index as u64).to_le_bytes());
         let mut type_id = [0u8; 32];
         hasher.finalize(&mut type_id);
         Ok(type_id.into())

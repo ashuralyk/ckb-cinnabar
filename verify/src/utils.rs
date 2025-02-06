@@ -16,7 +16,7 @@ pub fn calc_type_id(out_index: usize) -> Result<[u8; 32], Error> {
         .personal(CKB_HASH_PERSONALIZATION)
         .build();
     hash.update(input.as_slice());
-    hash.update(&(out_index as u32).to_le_bytes());
+    hash.update(&(out_index as u64).to_le_bytes());
     let mut type_id = [0u8; 32];
     hash.finalize(&mut type_id);
     Ok(type_id)

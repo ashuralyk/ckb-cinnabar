@@ -4,7 +4,7 @@ use ckb_std::error::SysError;
 macro_rules! define_errors {
     ($name:ident, {$($err:ident $(= $val:ident)? ,)+}) => {
         #[repr(i8)]
-        enum $name {
+        pub enum $name {
             $($err $(= $val)? ,)+
         }
 
