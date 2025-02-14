@@ -1,8 +1,6 @@
 use async_trait::async_trait;
 use ckb_jsonrpc_types::JsonBytes;
 use ckb_sdk::{
-    rpc::ckb_indexer::{SearchKey, SearchKeyFilter, SearchMode},
-    traits::CellQueryOptions,
     util::{calculate_dao_maximum_withdraw4, minimal_unlock_point},
     Since, SinceType,
 };
@@ -13,6 +11,7 @@ use ckb_types::{
 use eyre::{eyre, Result};
 
 use crate::{
+    indexer::{CellQueryOptions, SearchKey, SearchKeyFilter, SearchMode},
     operation::{basic::AddCellDep, Log, Operation},
     rpc::{GetCellsIter, Network, RPC},
     skeleton::{CellInputEx, CellOutputEx, HeaderDepEx, ScriptEx, TransactionSkeleton, WitnessEx},
@@ -60,7 +59,7 @@ pub mod hookkey {
 /// Add DAO celldep to the transaction
 pub struct AddDaoCelldep {}
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddDaoCelldep {
     async fn run(
         self: Box<Self>,
@@ -90,7 +89,7 @@ pub struct AddDaoDepositOutputCell {
     pub deposit_capacity: u64,
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddDaoDepositOutputCell {
     async fn run(
         self: Box<Self>,
@@ -156,7 +155,7 @@ impl AddDaoWithdrawPhaseOneCells {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddDaoWithdrawPhaseOneCells {
     async fn run(
         self: Box<Self>,
@@ -263,7 +262,7 @@ impl AddDaoWithdrawPhaseTwoCells {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddDaoWithdrawPhaseTwoCells {
     async fn run(
         self: Box<Self>,

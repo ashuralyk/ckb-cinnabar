@@ -1,10 +1,11 @@
 use std::{path::PathBuf, usize};
 
-use ckb_sdk::{Address, HumanCapacity};
+use ckb_sdk::HumanCapacity;
 use ckb_types::H256;
 use secp256k1::SecretKey;
 
 use crate::{
+    address::Address,
     instruction::DefaultInstruction,
     operation::{basic::*, dao::*, spore::*},
 };

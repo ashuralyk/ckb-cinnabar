@@ -19,5 +19,5 @@ reqwest = "0.12.5"
 
 ckb-cinnabar-calculator = { path = "calculate" }
 clap = { version = "4.5.13", features = ["derive"] }
-tokio = { version = "1.39.2", features = ["rt-multi-thread"] }
+tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros"] }
 serde = { version = "1.0", features = ["derive"] }

@@ -2,11 +2,11 @@ use std::{fs, path::PathBuf};
 
 use chrono::prelude::Utc;
 use ckb_cinnabar_calculator::{
+    address::Address,
     instruction::{Instruction, TransactionCalculator},
-    re_exports::{ckb_hash::blake2b_256, ckb_jsonrpc_types::OutputsValidator, ckb_sdk, eyre},
+    re_exports::{ckb_hash::blake2b_256, ckb_jsonrpc_types::OutputsValidator, eyre},
     rpc::{Network, RpcClient, RPC},
 };
-use ckb_sdk::Address;
 
 use crate::object::*;
 

@@ -10,33 +10,42 @@ use std::{
 
 use async_trait::async_trait;
 use ckb_jsonrpc_types::{JsonBytes, Transaction};
-use ckb_sdk::{
-    constants::TYPE_ID_CODE_HASH,
-    rpc::ckb_indexer::{SearchKey, SearchMode},
-    traits::{CellQueryOptions, DefaultCellDepResolver, ValueRangeOption},
-    transaction::signer::{SignContexts, TransactionSigner},
-    types::transaction_with_groups::TransactionWithScriptGroupsBuilder,
-    Address, NetworkInfo,
-};
 use ckb_types::{
     core::{Capacity, DepType},
-    h256,
     packed::CellOutput,
     prelude::{Builder, Entity, Pack, Unpack},
     H160, H256,
 };
 use eyre::{eyre, Result};
-use secp256k1::SecretKey;
 use serde_json::Value;
 
+#[cfg(not(target_arch = "wasm32"))]
+use ckb_sdk::{
+    traits::DefaultCellDepResolver,
+    transaction::signer::{SignContexts, TransactionSigner},
+    types::transaction_with_groups::TransactionWithScriptGroupsBuilder,
+    NetworkInfo,
+};
+
+#[cfg(not(target_arch = "wasm32"))]
+use ckb_types::h256;
+
+#[cfg(not(target_arch = "wasm32"))]
+use secp256k1::SecretKey;
+
 use crate::{
+    address::Address,
+    indexer::{CellQueryOptions, SearchKey, SearchMode, ValueRangeOption},
     operation::{Log, Operation},
-    rpc::{GetCellsIter, Network, RPC},
+    rpc::{GetCellsIter, RPC},
     skeleton::{
         CellDepEx, CellInputEx, CellOutputEx, ChangeReceiver, HeaderDepEx, ScriptEx,
-        TransactionSkeleton, WitnessEx,
+        TransactionSkeleton, WitnessEx, TYPE_ID_CODE_HASH,
     },
 };
+
+#[cfg(not(target_arch = "wasm32"))]
+use crate::rpc::Network;
 
 /// Operation that add cell dep to transaction skeleton by tx hash with index
 pub struct AddCellDep {
@@ -47,7 +56,7 @@ pub struct AddCellDep {
     pub with_data: bool,
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddCellDep {
     async fn run(
         self: Box<Self>,
@@ -90,7 +99,7 @@ impl AddCellDepByType {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddCellDepByType {
     async fn run(
         self: Box<Self>,
@@ -114,10 +123,12 @@ impl<T: RPC> Operation<T> for AddCellDepByType {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 /// Operation that add secp256k1_sighash_all cell dep to transaction skeleton
 pub struct AddSecp256k1SighashCellDep {}
 
-#[async_trait]
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddSecp256k1SighashCellDep {
     async fn run(
         self: Box<Self>,
@@ -182,7 +193,7 @@ pub struct AddHeaderDep {
     pub block_hash: H256,
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddHeaderDep {
     async fn run(
         self: Box<Self>,
@@ -201,7 +212,7 @@ pub struct AddHeaderDepByBlockNumber {
     pub block_number: u64,
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddHeaderDepByBlockNumber {
     async fn run(
         self: Box<Self>,
@@ -227,7 +238,7 @@ pub struct AddHeaderDepByInputIndex {
     pub input_index: usize,
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddHeaderDepByInputIndex {
     async fn run(
         self: Box<Self>,
@@ -268,7 +279,7 @@ impl AddInputCell {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddInputCell {
     async fn run(
         self: Box<Self>,
@@ -300,7 +311,7 @@ pub struct AddInputCellByOutPoint {
     pub since: Option<u64>,
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddInputCellByOutPoint {
     async fn run(
         self: Box<Self>,
@@ -320,7 +331,7 @@ pub struct AddInputCellByAddress {
     pub address: Address,
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddInputCellByAddress {
     async fn run(
         self: Box<Self>,
@@ -352,7 +363,7 @@ impl AddInputCellByType {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddInputCellByType {
     async fn run(
         self: Box<Self>,
@@ -392,7 +403,7 @@ pub struct AddOutputCell {
     pub type_id: bool,
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddOutputCell {
     async fn run(
         self: Box<Self>,
@@ -444,7 +455,7 @@ pub struct AddOutputCellByAddress {
     pub add_type_id: bool,
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddOutputCellByAddress {
     async fn run(
         self: Box<Self>,
@@ -479,7 +490,7 @@ pub struct AddOutputCellByInputIndex {
     pub adjust_capacity: bool,
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddOutputCellByInputIndex {
     async fn run(
         self: Box<Self>,
@@ -524,7 +535,7 @@ pub struct AddWitnessArgs {
     pub output_type: Vec<u8>,
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddWitnessArgs {
     async fn run(
         self: Box<Self>,
@@ -548,13 +559,15 @@ impl<T: RPC> Operation<T> for AddWitnessArgs {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 /// Operation that sign and add secp256k1_sighash_all signatures to transaction skeleton
 pub struct AddSecp256k1SighashSignatures {
     pub user_lock_scripts: Vec<ScriptEx>,
     pub user_private_keys: Vec<SecretKey>,
 }
 
-#[async_trait]
+#[cfg(not(target_arch = "wasm32"))]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddSecp256k1SighashSignatures {
     async fn run(
         self: Box<Self>,
@@ -608,7 +621,19 @@ pub struct AddSecp256k1SighashSignaturesWithCkbCli {
     pub keep_cache_file: bool,
 }
 
-#[async_trait]
+#[cfg(not(target_arch = "wasm32"))]
+fn get_cli_password() -> Result<String> {
+    Ok(rpassword::prompt_password(
+        "Enter password to unlock ckb-cli: ",
+    )?)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn get_cli_password() -> Result<String> {
+    Err(eyre!("ckb-cli is not supported in wasm environment"))
+}
+
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddSecp256k1SighashSignaturesWithCkbCli {
     async fn run(
         self: Box<Self>,
@@ -640,7 +665,7 @@ impl<T: RPC> Operation<T> for AddSecp256k1SighashSignaturesWithCkbCli {
         let tx_file = cache_dir.join(format!("tx-{tx_hash}-{witness_index}.json"));
         fs::write(&tx_file, tx_content)?;
         // read password for unlocking ckb-cli
-        let password = rpassword::prompt_password("Enter password to unlock ckb-cli: ")?;
+        let password = get_cli_password()?;
         // run ckb-cli to sign the tx
         let (url, _) = rpc.url();
         let mut ckb_cli = Command::new("ckb-cli")
@@ -691,7 +716,7 @@ pub struct BalanceTransaction {
     pub additional_fee_rate: u64,
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for BalanceTransaction {
     async fn run(
         self: Box<Self>,

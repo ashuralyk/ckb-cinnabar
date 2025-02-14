@@ -2,17 +2,12 @@ use std::{fmt::Display, time::Duration};
 
 use ckb_hash::{blake2b_256, Blake2bBuilder};
 use ckb_jsonrpc_types::{OutputsValidator, Status};
-use ckb_sdk::{
-    constants::TYPE_ID_CODE_HASH,
-    rpc::ckb_indexer::{Cell, SearchMode},
-    traits::{CellQueryOptions, ValueRangeOption},
-    Address, AddressPayload, NetworkType,
-};
 use ckb_types::{
     core::{
         cell::{CellMetaBuilder, ResolvedTransaction},
         Capacity, DepType, HeaderView, ScriptHashType, TransactionView,
     },
+    h256,
     packed::{Bytes, CellDep, CellInput, CellOutput, OutPoint, OutPointVec, Script, WitnessArgs},
     prelude::{Builder, Entity, Pack, Unpack},
     H256,
@@ -20,7 +15,13 @@ use ckb_types::{
 use eyre::{eyre, Result};
 use futures::future::join_all;
 
-use crate::rpc::{GetCellsIter, Network, RPC};
+use crate::{
+    address::{Address, AddressPayload},
+    indexer::{Cell, CellQueryOptions, SearchMode, ValueRangeOption},
+    rpc::{GetCellsIter, Network, RPC},
+};
+
+pub const TYPE_ID_CODE_HASH: H256 = h256!("0x545950455f4944");
 
 /// A wrapper of packed Script
 ///
@@ -104,11 +105,7 @@ impl ScriptEx {
     /// Turn into CKB address
     pub fn to_address(self, network: Network) -> Result<Address> {
         let payload = Script::try_from(self)?.into();
-        let network = match network {
-            Network::Mainnet => NetworkType::Mainnet,
-            _ => NetworkType::Testnet,
-        };
-        Ok(Address::new(network, payload, true))
+        Ok(Address::new(network, payload))
     }
 
     /// Build packed Script from ScriptEx and TransactionSkeleton

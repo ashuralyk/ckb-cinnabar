@@ -1,9 +1,10 @@
 use chrono::prelude::Utc;
 use ckb_cinnabar_calculator::{
+    address::Address,
     instruction::predefined::{
         balance_and_sign_with_ckb_cli, dao_deposit, dao_withdraw_phase_one, dao_withdraw_phase_two,
     },
-    re_exports::ckb_sdk::{Address, HumanCapacity},
+    re_exports::ckb_sdk::HumanCapacity,
     rpc::RpcClient,
     TransactionCalculator,
 };

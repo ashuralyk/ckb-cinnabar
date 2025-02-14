@@ -1,13 +1,13 @@
 use std::collections::HashSet;
 
 use ckb_cinnabar_calculator::{
+    address::Address,
     instruction::predefined::{
         balance_and_sign_with_ckb_cli, burn_spores, mint_clusters, mint_spores, transfer_clusters,
         transfer_spores, Cluster, Spore,
     },
     operation::spore::hookkey,
     re_exports::{
-        ckb_sdk::Address,
         ckb_types::{packed::Script, prelude::Entity, H256},
         tokio,
     },

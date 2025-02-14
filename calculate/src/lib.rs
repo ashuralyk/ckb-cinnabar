@@ -1,3 +1,5 @@
+pub mod address;
+pub mod indexer;
 pub mod instruction;
 pub mod operation;
 pub mod rpc;
@@ -10,9 +12,11 @@ pub mod re_exports {
     pub use async_trait;
     pub use ckb_hash;
     pub use ckb_jsonrpc_types;
-    pub use ckb_sdk;
     pub use ckb_types;
     pub use eyre;
     pub use secp256k1;
     pub use tokio;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub use ckb_sdk;
 }

@@ -1,13 +1,10 @@
 use ckb_cinnabar_calculator::{
+    address::Address,
     instruction::{
         predefined::{balance_and_sign, balance_and_sign_with_ckb_cli, secp256k1_sighash_transfer},
         TransactionCalculator,
     },
-    re_exports::{
-        ckb_sdk::{Address, HumanCapacity},
-        secp256k1::SecretKey,
-        tokio,
-    },
+    re_exports::{ckb_sdk::HumanCapacity, secp256k1::SecretKey, tokio},
     rpc::RpcClient,
 };
 
@@ -33,7 +30,7 @@ pub async fn main() {
     let rpc = RpcClient::new_testnet();
 
     // build transfer instruction
-    let transfer = secp256k1_sighash_transfer(&from, &to, ckb);
+    let transfer = secp256k1_sighash_transfer(&from, &to, ckb.into());
     let balance_and_sign = if let Some(secret_key) = secret_key {
         balance_and_sign(&from, secret_key, ADDITIONAL_FEE_RATE)
     } else {

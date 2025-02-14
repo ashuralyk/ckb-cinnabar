@@ -1,8 +1,4 @@
 use async_trait::async_trait;
-use ckb_sdk::{
-    rpc::ckb_indexer::{SearchKey, SearchMode},
-    traits::CellQueryOptions,
-};
 use ckb_types::{
     core::{DepType, ScriptHashType},
     h256,
@@ -13,6 +9,7 @@ use ckb_types::{
 use eyre::{eyre, Result};
 
 use crate::{
+    indexer::{CellQueryOptions, SearchKey, SearchMode},
     operation::{basic::AddOutputCell, Log, Operation},
     rpc::{GetCellsIter, Network, RPC},
     skeleton::{CellInputEx, ScriptEx, TransactionSkeleton},
@@ -112,7 +109,7 @@ pub struct AddComponentCelldep {
     pub name: hardcoded::Name,
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddComponentCelldep {
     async fn run(
         self: Box<Self>,
@@ -144,7 +141,7 @@ pub struct AddTypeBurnOutputCell {
     pub data: Vec<u8>,
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddTypeBurnOutputCell {
     async fn run(
         self: Box<Self>,
@@ -201,7 +198,7 @@ impl AddTypeBurnInputCell {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddTypeBurnInputCell {
     async fn run(
         mut self: Box<Self>,
@@ -228,7 +225,7 @@ pub struct AddTypeBurnInputCellByInputIndex {
     pub input_index: usize,
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddTypeBurnInputCellByInputIndex {
     async fn run(
         self: Box<Self>,
@@ -264,7 +261,7 @@ pub struct AddLockProxyOutputCell {
     pub data: Vec<u8>,
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddLockProxyOutputCell {
     async fn run(
         mut self: Box<Self>,
@@ -337,7 +334,7 @@ impl AddLockProxyInputCell {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddLockProxyInputCell {
     async fn run(
         mut self: Box<Self>,

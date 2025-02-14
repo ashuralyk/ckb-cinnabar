@@ -1,17 +1,17 @@
 #![allow(clippy::too_many_arguments)]
 
 use ckb_cinnabar_calculator::{
+    address::Address,
     instruction::DefaultInstruction,
     operation::basic::{
         AddInputCellByAddress, AddInputCellByOutPoint, AddOutputCellByAddress,
         AddOutputCellByInputIndex, AddSecp256k1SighashCellDep,
         AddSecp256k1SighashSignaturesWithCkbCli, BalanceTransaction,
     },
-    re_exports::{ckb_sdk, eyre},
+    re_exports::eyre,
     rpc::Network,
     skeleton::ChangeReceiver,
 };
-use ckb_sdk::Address;
 
 use crate::object::*;
 

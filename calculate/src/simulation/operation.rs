@@ -2,7 +2,6 @@ use std::{fs, path::PathBuf};
 
 use async_trait::async_trait;
 use ckb_hash::blake2b_256;
-use ckb_sdk::constants::TYPE_ID_CODE_HASH;
 use ckb_types::{
     core::{Capacity, DepType, HeaderView},
     packed::{CellOutput, Header, RawHeader},
@@ -14,7 +13,7 @@ use eyre::Result;
 use crate::{
     operation::{Log, Operation},
     rpc::{Network, RPC},
-    skeleton::{CellDepEx, CellInputEx, ScriptEx, TransactionSkeleton},
+    skeleton::{CellDepEx, CellInputEx, ScriptEx, TransactionSkeleton, TYPE_ID_CODE_HASH},
 };
 
 pub use ckb_always_success_script::ALWAYS_SUCCESS;
@@ -65,7 +64,7 @@ pub struct AddFakeContractCelldep {
     pub type_id_args: Option<H256>,
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddFakeContractCelldep {
     async fn run(
         self: Box<Self>,
@@ -107,7 +106,7 @@ pub struct AddFakeContractCelldepByName {
     pub contract_binary_path: String,
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddFakeContractCelldepByName {
     async fn run(
         self: Box<Self>,
@@ -132,7 +131,7 @@ impl<T: RPC> Operation<T> for AddFakeContractCelldepByName {
 /// Add always success celldep to the transaction skeleton
 pub struct AddFakeAlwaysSuccessCelldep {}
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddFakeAlwaysSuccessCelldep {
     async fn run(
         self: Box<Self>,
@@ -164,7 +163,7 @@ pub struct AddFakeInputCell {
     pub absolute_capacity: bool,
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddFakeInputCell {
     async fn run(
         self: Box<Self>,

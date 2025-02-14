@@ -1,8 +1,8 @@
 use std::{fmt::Display, str::FromStr};
 
 use ckb_cinnabar_calculator::{
+    address::Address,
     re_exports::{
-        ckb_sdk,
         ckb_types::{core, packed, prelude::*, H256},
         eyre,
     },
@@ -62,9 +62,9 @@ impl TryFrom<String> for ListMode {
 }
 
 #[derive(Clone, Default)]
-pub struct CkbAddress(Option<ckb_sdk::Address>);
+pub struct CkbAddress(Option<Address>);
 
-impl TryFrom<CkbAddress> for ckb_sdk::Address {
+impl TryFrom<CkbAddress> for Address {
     type Error = eyre::Error;
 
     fn try_from(value: CkbAddress) -> Result<Self, Self::Error> {
@@ -72,14 +72,14 @@ impl TryFrom<CkbAddress> for ckb_sdk::Address {
     }
 }
 
-impl From<ckb_sdk::Address> for CkbAddress {
-    fn from(value: ckb_sdk::Address) -> Self {
+impl From<Address> for CkbAddress {
+    fn from(value: Address) -> Self {
         CkbAddress(Some(value))
     }
 }
 
-impl From<Option<ckb_sdk::Address>> for CkbAddress {
-    fn from(value: Option<ckb_sdk::Address>) -> Self {
+impl From<Option<Address>> for CkbAddress {
+    fn from(value: Option<Address>) -> Self {
         CkbAddress(value)
     }
 }
@@ -88,7 +88,7 @@ impl FromStr for CkbAddress {
     type Err = eyre::Error;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        ckb_sdk::Address::from_str(value)
+        Address::from_str(value)
             .map(|v| CkbAddress(Some(v)))
             .map_err(|_| eyre::eyre!("invalid ckb address"))
     }

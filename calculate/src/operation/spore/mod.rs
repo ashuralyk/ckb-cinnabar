@@ -1,8 +1,4 @@
 use async_trait::async_trait;
-use ckb_sdk::{
-    rpc::ckb_indexer::{SearchKey, SearchMode},
-    traits::CellQueryOptions,
-};
 use ckb_types::{
     core::DepType,
     h256,
@@ -12,6 +8,7 @@ use ckb_types::{
 use eyre::{eyre, Result};
 
 use crate::{
+    indexer::{CellQueryOptions, SearchKey, SearchMode},
     operation::{basic::AddOutputCell, Log, Operation},
     rpc::{GetCellsIter, Network, RPC},
     skeleton::{CellDepEx, CellInputEx, CellOutputEx, ScriptEx, TransactionSkeleton, WitnessEx},
@@ -101,7 +98,7 @@ pub mod hookkey {
 /// Add the lastest Spore deployment cell into transaction skeleton according to the network type.
 pub struct AddSporeCelldep {}
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddSporeCelldep {
     async fn run(
         self: Box<Self>,
@@ -124,7 +121,7 @@ impl<T: RPC> Operation<T> for AddSporeCelldep {
 /// Add the lastest Cluster deployment cell into transaction skeleton according to the network type.
 pub struct AddClusterCelldep {}
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddClusterCelldep {
     async fn run(
         self: Box<Self>,
@@ -171,7 +168,7 @@ impl AddClusterCelldepByClusterId {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddClusterCelldepByClusterId {
     async fn run(
         self: Box<Self>,
@@ -253,7 +250,7 @@ impl AddSporeInputCellByClusterId {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddSporeInputCellByClusterId {
     async fn run(
         self: Box<Self>,
@@ -304,7 +301,7 @@ impl AddSporeInputCellBySporeId {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddSporeInputCellBySporeId {
     async fn run(
         self: Box<Self>,
@@ -355,7 +352,7 @@ pub fn make_spore_data(content_type: &str, content: &[u8], cluster_id: Option<&H
     molecule_spore_data.as_bytes().to_vec()
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddSporeOutputCell {
     async fn run(
         self: Box<Self>,
@@ -409,7 +406,7 @@ impl AddClusterInputCellByClusterId {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddClusterInputCellByClusterId {
     async fn run(
         self: Box<Self>,
@@ -448,7 +445,7 @@ pub fn make_cluster_data(name: &str, description: &[u8]) -> Vec<u8> {
     molecule_cluster_data.as_bytes().to_vec()
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddClusterOutputCell {
     async fn run(
         self: Box<Self>,
@@ -492,7 +489,7 @@ impl AddSporeActions {
     }
 }
 
-#[async_trait]
+#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddSporeActions {
     async fn run(
         self: Box<Self>,

@@ -4,11 +4,11 @@ use ckb_jsonrpc_types::{
     BlockNumber, BlockView, CellData, CellInfo, CellWithStatus, HeaderView, JsonBytes, OutPoint,
     OutputsValidator, Status, Transaction, TransactionWithStatusResponse, TxPoolInfo, TxStatus,
 };
-use ckb_sdk::rpc::ckb_indexer::{Cell, Pagination, ScriptType, SearchKey, SearchMode};
 use ckb_types::{core, packed, prelude::Unpack, H256};
 use eyre::eyre;
 
 use crate::{
+    indexer::{Cell, Pagination, ScriptType, SearchKey, SearchMode},
     rpc::{Rpc, RPC},
     skeleton::CellOutputEx,
 };

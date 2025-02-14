@@ -13,16 +13,39 @@ use ckb_jsonrpc_types::{
     BlockNumber, BlockView, CellWithStatus, HeaderView, JsonBytes, OutPoint, OutputsValidator,
     Transaction, TransactionWithStatusResponse, TxPoolInfo, Uint32,
 };
-use ckb_sdk::rpc::ckb_indexer::{Cell, Order, Pagination, SearchKey};
 use ckb_types::H256;
 use eyre::{eyre, Error};
-use jsonrpc_core::{futures::FutureExt, response::Output};
+use futures::FutureExt;
 use reqwest::{Client, Url};
+use serde::Deserialize;
 
+use crate::indexer::{Cell, Order, Pagination, SearchKey};
+
+#[cfg(target_arch = "wasm32")]
+pub type Rpc<T> = Pin<Box<dyn Future<Output = Result<T, Error>>>>;
+
+#[cfg(not(target_arch = "wasm32"))]
 pub type Rpc<T> = Pin<Box<dyn Future<Output = Result<T, Error>> + Send + 'static>>;
 
 pub const MAINNET_RPC_URL: &str = "https://mainnet.ckb.dev";
 pub const TESTNET_RPC_URL: &str = "https://testnet.ckbapp.dev";
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Output {
+    Success(JsonSuccess),
+    Failure(JsonError),
+}
+
+#[derive(Deserialize)]
+struct JsonSuccess {
+    pub result: serde_json::Value,
+}
+
+#[derive(Deserialize, Debug)]
+struct JsonError {
+    pub error: serde_json::Value,
+}
 
 #[allow(clippy::upper_case_acronyms)]
 enum Target {
@@ -62,14 +85,14 @@ macro_rules! jsonrpc {
                     Ok(serde_json::from_value::<$return>(success.result).unwrap())
                 }
                 Output::Failure(e) => {
-                    Err(eyre!("failed to get response from ckb rpc: {:?}", e))
+                    Err(eyre!("failed to get response from ckb rpc: {:?}", e.error))
                 }
             }
         }
     }}
 }
 
-#[derive(PartialEq, Eq, Clone)]
+#[derive(Hash, PartialEq, Eq, Clone, Debug)]
 pub enum Network {
     Mainnet,
     Testnet,
@@ -97,6 +120,23 @@ impl FromStr for Network {
             "testnet" => Ok(Network::Testnet),
             "fake" => Ok(Network::Fake),
             _ => Ok(Network::Custom(value.parse()?)),
+        }
+    }
+}
+
+impl Network {
+    pub fn from_prefix(prefix: &str) -> Option<Self> {
+        match prefix {
+            "ckb" => Some(Network::Mainnet),
+            "ckt" => Some(Network::Testnet),
+            _ => None,
+        }
+    }
+
+    pub fn to_prefix(&self) -> &'static str {
+        match self {
+            Network::Mainnet => "ckb",
+            _ => "ckt",
         }
     }
 }
@@ -177,15 +217,18 @@ impl RPC for RpcClient {
     }
 
     fn get_live_cell(&self, out_point: &OutPoint, with_data: bool) -> Rpc<CellWithStatus> {
-        jsonrpc!(
+        let future = jsonrpc!(
             "get_live_cell",
             Target::CKB,
             self,
             CellWithStatus,
             out_point,
             with_data
-        )
-        .boxed()
+        );
+        #[cfg(not(target_arch = "wasm32"))]
+        return future.boxed();
+        #[cfg(target_arch = "wasm32")]
+        return future.boxed_local();
     }
 
     fn get_cells(
@@ -197,7 +240,7 @@ impl RPC for RpcClient {
         let order = Order::Asc;
         let limit = Uint32::from(limit);
 
-        jsonrpc!(
+        let future = jsonrpc!(
             "get_cells",
             Target::Indexer,
             self,
@@ -206,65 +249,101 @@ impl RPC for RpcClient {
             order,
             limit,
             cursor,
-        )
-        .boxed()
+        );
+        #[cfg(not(target_arch = "wasm32"))]
+        return future.boxed();
+        #[cfg(target_arch = "wasm32")]
+        return future.boxed_local();
     }
 
     fn get_block_by_number(&self, number: BlockNumber) -> Rpc<Option<BlockView>> {
-        jsonrpc!(
+        let future = jsonrpc!(
             "get_block_by_number",
             Target::CKB,
             self,
             Option<BlockView>,
             number
-        )
-        .boxed()
+        );
+        #[cfg(not(target_arch = "wasm32"))]
+        return future.boxed();
+        #[cfg(target_arch = "wasm32")]
+        return future.boxed_local();
     }
 
     fn get_block(&self, hash: &H256) -> Rpc<Option<BlockView>> {
-        jsonrpc!("get_block", Target::CKB, self, Option<BlockView>, hash).boxed()
+        let future = jsonrpc!("get_block", Target::CKB, self, Option<BlockView>, hash);
+        #[cfg(not(target_arch = "wasm32"))]
+        return future.boxed();
+        #[cfg(target_arch = "wasm32")]
+        return future.boxed_local();
     }
 
     fn get_header(&self, hash: &H256) -> Rpc<Option<HeaderView>> {
-        jsonrpc!("get_header", Target::CKB, self, Option<HeaderView>, hash).boxed()
+        let future = jsonrpc!("get_header", Target::CKB, self, Option<HeaderView>, hash);
+        #[cfg(not(target_arch = "wasm32"))]
+        return future.boxed();
+        #[cfg(target_arch = "wasm32")]
+        return future.boxed_local();
     }
 
     fn get_header_by_number(&self, number: BlockNumber) -> Rpc<Option<HeaderView>> {
-        jsonrpc!(
+        let future = jsonrpc!(
             "get_header_by_number",
             Target::CKB,
             self,
             Option<HeaderView>,
             number
-        )
-        .boxed()
+        );
+        #[cfg(not(target_arch = "wasm32"))]
+        return future.boxed();
+        #[cfg(target_arch = "wasm32")]
+        return future.boxed_local();
     }
 
     fn get_block_hash(&self, number: BlockNumber) -> Rpc<Option<H256>> {
-        jsonrpc!("get_block_hash", Target::CKB, self, Option<H256>, number).boxed()
+        let future = jsonrpc!("get_block_hash", Target::CKB, self, Option<H256>, number);
+        #[cfg(not(target_arch = "wasm32"))]
+        return future.boxed();
+        #[cfg(target_arch = "wasm32")]
+        return future.boxed_local();
     }
 
     fn get_tip_block_number(&self) -> Rpc<BlockNumber> {
-        jsonrpc!("get_tip_block_number", Target::CKB, self, BlockNumber).boxed()
+        let future = jsonrpc!("get_tip_block_number", Target::CKB, self, BlockNumber);
+        #[cfg(not(target_arch = "wasm32"))]
+        return future.boxed();
+        #[cfg(target_arch = "wasm32")]
+        return future.boxed_local();
     }
 
     fn get_tip_header(&self) -> Rpc<HeaderView> {
-        jsonrpc!("get_tip_header", Target::CKB, self, HeaderView).boxed()
+        let future = jsonrpc!("get_tip_header", Target::CKB, self, HeaderView);
+        #[cfg(not(target_arch = "wasm32"))]
+        return future.boxed();
+        #[cfg(target_arch = "wasm32")]
+        return future.boxed_local();
     }
 
     fn tx_pool_info(&self) -> Rpc<TxPoolInfo> {
-        jsonrpc!("tx_pool_info", Target::CKB, self, TxPoolInfo).boxed()
+        let future = jsonrpc!("tx_pool_info", Target::CKB, self, TxPoolInfo);
+        #[cfg(not(target_arch = "wasm32"))]
+        return future.boxed();
+        #[cfg(target_arch = "wasm32")]
+        return future.boxed_local();
     }
 
     fn get_transaction(&self, hash: &H256) -> Rpc<Option<TransactionWithStatusResponse>> {
-        jsonrpc!(
+        let future = jsonrpc!(
             "get_transaction",
             Target::CKB,
             self,
             Option<TransactionWithStatusResponse>,
             hash
-        )
-        .boxed()
+        );
+        #[cfg(not(target_arch = "wasm32"))]
+        return future.boxed();
+        #[cfg(target_arch = "wasm32")]
+        return future.boxed_local();
     }
 
     fn send_transaction(
@@ -272,15 +351,18 @@ impl RPC for RpcClient {
         tx: Transaction,
         outputs_validator: Option<OutputsValidator>,
     ) -> Rpc<H256> {
-        jsonrpc!(
+        let future = jsonrpc!(
             "send_transaction",
             Target::CKB,
             self,
             H256,
             tx,
             outputs_validator
-        )
-        .boxed()
+        );
+        #[cfg(not(target_arch = "wasm32"))]
+        return future.boxed();
+        #[cfg(target_arch = "wasm32")]
+        return future.boxed_local();
     }
 }
 

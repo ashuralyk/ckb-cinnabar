@@ -6,6 +6,7 @@ use crate::{
     skeleton::TransactionSkeleton,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
 pub mod predefined;
 
 pub type DefaultInstruction = Instruction<RpcClient>;

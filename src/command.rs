@@ -1,7 +1,4 @@
-use ckb_cinnabar_calculator::{
-    re_exports::{ckb_sdk::Address, eyre},
-    rpc::Network,
-};
+use ckb_cinnabar_calculator::{address::Address, re_exports::eyre, rpc::Network};
 use clap::{Parser, Subcommand};
 
 use crate::{
