@@ -201,7 +201,7 @@ impl<T: RPC> Operation<T> for AddHeaderDep {
         skeleton: &mut TransactionSkeleton,
         _: &mut Log,
     ) -> Result<()> {
-        let header_dep = HeaderDepEx::new(rpc, self.block_hash, None).await?;
+        let header_dep = HeaderDepEx::new(rpc, self.block_hash, vec![]).await?;
         skeleton.headerdep(header_dep);
         Ok(())
     }
@@ -227,7 +227,7 @@ impl<T: RPC> Operation<T> for AddHeaderDepByBlockNumber {
                 "block hash not found for block number {}",
                 self.block_number
             ))?;
-        let header_dep = HeaderDepEx::new(rpc, block_hash, None).await?;
+        let header_dep = HeaderDepEx::new(rpc, block_hash, vec![]).await?;
         skeleton.headerdep(header_dep);
         Ok(())
     }

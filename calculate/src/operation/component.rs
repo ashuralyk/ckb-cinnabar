@@ -149,6 +149,11 @@ impl<T: RPC> Operation<T> for AddTypeBurnOutputCell {
         skeleton: &mut TransactionSkeleton,
         log: &mut Log,
     ) -> Result<()> {
+        Box::new(AddComponentCelldep {
+            name: hardcoded::Name::TypeBurn,
+        })
+        .run(rpc, skeleton, log)
+        .await?;
         let reference_output = skeleton.get_output_by_index(self.output_index)?;
         let reference_type_hash = reference_output
             .calc_type_hash()
@@ -204,8 +209,13 @@ impl<T: RPC> Operation<T> for AddTypeBurnInputCell {
         mut self: Box<Self>,
         rpc: &T,
         skeleton: &mut TransactionSkeleton,
-        _: &mut Log,
+        log: &mut Log,
     ) -> Result<()> {
+        Box::new(AddComponentCelldep {
+            name: hardcoded::Name::TypeBurn,
+        })
+        .run(rpc, skeleton, log)
+        .await?;
         let search_key = self.search_key(rpc.network(), skeleton)?;
         let mut iter = GetCellsIter::new(rpc, search_key.clone());
         while let Some(indexer_cell) = iter.next().await? {
@@ -233,6 +243,11 @@ impl<T: RPC> Operation<T> for AddTypeBurnInputCellByInputIndex {
         skeleton: &mut TransactionSkeleton,
         log: &mut Log,
     ) -> Result<()> {
+        Box::new(AddComponentCelldep {
+            name: hardcoded::Name::TypeBurn,
+        })
+        .run(rpc, skeleton, log)
+        .await?;
         let type_hash = skeleton
             .get_input_by_index(self.input_index)?
             .output
@@ -286,6 +301,11 @@ impl<T: RPC> Operation<T> for AddLockProxyOutputCell {
             .run(rpc, skeleton, log)
             .await
         } else {
+            Box::new(AddComponentCelldep {
+                name: hardcoded::Name::LockProxy,
+            })
+            .run(rpc, skeleton, log)
+            .await?;
             Box::new(AddOutputCell {
                 lock_script: self.second_script.ok_or(eyre!("missing second script"))?,
                 type_script: Some(lock_proxy_script),

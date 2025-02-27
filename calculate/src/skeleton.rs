@@ -546,15 +546,11 @@ impl WitnessEx {
 pub struct HeaderDepEx {
     pub block_hash: H256,
     pub header: HeaderView,
-    pub cellinput_outpoint: Option<OutPoint>,
+    pub cellinput_outpoints: Vec<OutPoint>,
 }
 
 impl HeaderDepEx {
-    pub async fn new<T: RPC>(
-        rpc: &T,
-        block_hash: H256,
-        outpoint: Option<OutPoint>,
-    ) -> Result<Self> {
+    pub async fn new<T: RPC>(rpc: &T, block_hash: H256, outpoints: Vec<OutPoint>) -> Result<Self> {
         let header = rpc
             .get_header(&block_hash)
             .await?
@@ -562,7 +558,7 @@ impl HeaderDepEx {
         Ok(HeaderDepEx {
             block_hash,
             header: header.into(),
-            cellinput_outpoint: outpoint,
+            cellinput_outpoints: outpoints,
         })
     }
 
@@ -576,7 +572,7 @@ impl HeaderDepEx {
             .tx_status
             .block_hash
             .ok_or(eyre!("transaction not in block"))?;
-        HeaderDepEx::new(rpc, block_hash, Some(outpoint)).await
+        HeaderDepEx::new(rpc, block_hash, vec![outpoint]).await
     }
 
     pub async fn new_from_block_number<T: RPC>(rpc: &T, block_number: u64) -> Result<Self> {
@@ -584,7 +580,7 @@ impl HeaderDepEx {
             .get_block_hash(block_number.into())
             .await?
             .ok_or(eyre!("block not found"))?;
-        HeaderDepEx::new(rpc, block_hash, None).await
+        HeaderDepEx::new(rpc, block_hash, vec![]).await
     }
 }
 
@@ -676,7 +672,7 @@ impl TransactionSkeleton {
         let mut headerdeps = vec![];
         for header_dep in tx.header_deps_iter() {
             let block_hash: H256 = header_dep.unpack();
-            let header_dep = HeaderDepEx::new(rpc, block_hash, None).await?;
+            let header_dep = HeaderDepEx::new(rpc, block_hash, vec![]).await?;
             headerdeps.push(header_dep);
         }
         self.headerdeps = headerdeps;
@@ -701,18 +697,22 @@ impl TransactionSkeleton {
             .witnesses()
             .into_iter()
             .map(|witness| {
-                let witness_args = WitnessArgs::from_slice(&witness.raw_data())
-                    .map_err(|_| eyre!("invalid witness args"))?;
-                let lock = witness_args.lock().to_opt().unwrap_or_default();
-                let input_type = witness_args.input_type().to_opt().unwrap_or_default();
-                let output_type = witness_args.output_type().to_opt().unwrap_or_default();
-                Ok(WitnessEx::new(
-                    lock.raw_data().to_vec(),
-                    input_type.raw_data().to_vec(),
-                    output_type.raw_data().to_vec(),
-                ))
+                if let Ok(witness_args) = WitnessArgs::from_slice(&witness.raw_data()) {
+                    let lock = witness_args.lock().to_opt().unwrap_or_default();
+                    let input_type = witness_args.input_type().to_opt().unwrap_or_default();
+                    let output_type = witness_args.output_type().to_opt().unwrap_or_default();
+                    WitnessEx::new(
+                        lock.raw_data().to_vec(),
+                        input_type.raw_data().to_vec(),
+                        output_type.raw_data().to_vec(),
+                    )
+                } else if witness.raw_data().is_empty() {
+                    WitnessEx::default()
+                } else {
+                    WitnessEx::new_plain(witness.raw_data().to_vec())
+                }
             })
-            .collect::<Result<_>>()?;
+            .collect::<Vec<_>>();
         Ok(self)
     }
 
@@ -889,7 +889,16 @@ impl TransactionSkeleton {
 
     /// Push a single header dep
     pub fn headerdep(&mut self, header_dep: HeaderDepEx) -> &mut Self {
-        if !self.headerdeps.contains(&header_dep) {
+        if let Some(headerdep) = self.headerdeps.iter_mut().find(|v| v == &&header_dep) {
+            header_dep
+                .cellinput_outpoints
+                .into_iter()
+                .for_each(|outpoint| {
+                    if !headerdep.cellinput_outpoints.contains(&outpoint) {
+                        headerdep.cellinput_outpoints.push(outpoint);
+                    }
+                });
+        } else {
             self.headerdeps.push(header_dep);
         }
         self
