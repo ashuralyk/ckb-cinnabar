@@ -8,3 +8,7 @@ mod verification;
 pub use error::*;
 pub use utils::*;
 pub use verification::*;
+
+pub mod re_exports {
+    pub use ckb_std;
+}

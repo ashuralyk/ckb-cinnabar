@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use ckb_jsonrpc_types::{
     BlockNumber, BlockView, CellData, CellInfo, CellWithStatus, HeaderView, JsonBytes, OutPoint,
-    OutputsValidator, Status, Transaction, TransactionWithStatusResponse, TxPoolInfo, TxStatus,
+    OutputsValidator, ResponseFormat, Status, Transaction, TransactionView,
+    TransactionWithStatusResponse, TxPoolInfo, TxStatus,
 };
 use ckb_types::{core, packed, prelude::Unpack, H256};
 use eyre::eyre;
@@ -18,7 +19,7 @@ pub struct FakeProvider {
     pub fake_cells: Vec<(OutPoint, CellOutputEx)>,
     pub fake_headers: HashMap<H256, HeaderView>,
     pub fake_outpoint_headers: HashMap<OutPoint, core::HeaderView>,
-    pub fake_transaction_status: HashMap<H256, TxStatus>,
+    pub fake_transaction: HashMap<H256, (TxStatus, Transaction)>,
     pub fake_feerate: u64,
     pub fake_tipnumber: u64,
     pub fate_tipheader: HeaderView,
@@ -151,10 +152,13 @@ impl FakeProvider {
     }
 
     fn get_transaction_by_hash(&self, hash: &H256) -> Option<TransactionWithStatusResponse> {
-        self.fake_transaction_status
+        self.fake_transaction
             .get(hash)
-            .map(|status| TransactionWithStatusResponse {
-                transaction: None,
+            .map(|(status, tx)| TransactionWithStatusResponse {
+                transaction: Some(ResponseFormat::json(TransactionView {
+                    inner: tx.clone(),
+                    hash: hash.clone(),
+                })),
                 cycles: None,
                 time_added_to_pool: None,
                 fee: None,
@@ -196,8 +200,13 @@ impl FakeRpcClient {
             .push((out_point.clone(), cell));
         if let Some(header) = header {
             let tx_hash = out_point.tx_hash.clone();
-            self.insert_fake_tx_status(tx_hash, header.hash().unpack(), header.number())
-                .insert_fake_header(header.clone());
+            self.insert_fake_transaction(
+                tx_hash,
+                header.hash().unpack(),
+                header.number(),
+                Default::default(),
+            )
+            .insert_fake_header(header.clone());
             self.fake_provider
                 .fake_outpoint_headers
                 .insert(out_point, header);
@@ -205,20 +214,24 @@ impl FakeRpcClient {
         self
     }
 
-    pub fn insert_fake_tx_status(
+    pub fn insert_fake_transaction(
         &mut self,
         tx_hash: H256,
         block_hash: H256,
         block_number: u64,
+        tx: Transaction,
     ) -> &mut Self {
-        self.fake_provider.fake_transaction_status.insert(
+        self.fake_provider.fake_transaction.insert(
             tx_hash,
-            TxStatus {
-                status: Status::Committed,
-                block_hash: Some(block_hash),
-                block_number: Some(block_number.into()),
-                reason: None,
-            },
+            (
+                TxStatus {
+                    status: Status::Committed,
+                    block_hash: Some(block_hash),
+                    block_number: Some(block_number.into()),
+                    reason: None,
+                },
+                tx,
+            ),
         );
         self
     }
