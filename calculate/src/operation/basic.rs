@@ -261,6 +261,7 @@ pub struct AddInputCell {
     pub lock_script: ScriptEx,
     pub type_script: Option<ScriptEx>,
     pub count: u32,
+    pub skip_data: bool,
     pub search_mode: SearchMode,
 }
 
@@ -271,6 +272,8 @@ impl AddInputCell {
             query.secondary_script = Some(type_script.clone().to_script(skeleton)?);
         } else {
             query.secondary_script_len_range = Some(ValueRangeOption::new(0, 1));
+        }
+        if self.skip_data {
             query.data_len_range = Some(ValueRangeOption::new(0, 1));
         }
         query.with_data = Some(true);
