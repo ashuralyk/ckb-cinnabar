@@ -1,6 +1,7 @@
 pub mod basic;
 pub mod component;
 pub mod spore;
+pub mod udt;
 pub use common::{Log, Operation};
 
 #[cfg(not(target_arch = "wasm32"))]
