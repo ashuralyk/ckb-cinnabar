@@ -10,12 +10,13 @@ use eyre::{eyre, Result};
 
 use crate::{
     indexer::{CellQueryOptions, SearchKey, SearchMode},
-    operation::{basic::AddOutputCell, Log, Operation},
+    operation::{
+        basic::{AddCellDep, AddOutputCell},
+        Log, Operation,
+    },
     rpc::{GetCellsIter, Network, RPC},
     skeleton::{CellInputEx, ScriptEx, TransactionSkeleton},
 };
-
-use super::basic::AddCellDep;
 
 /// Component-use simple scripts
 ///
@@ -70,7 +71,7 @@ pub mod hardcoded {
         }
     }
 
-    pub fn build_script(network: Network, name: Name, args: &[u8]) -> ScriptEx {
+    pub fn component_script(network: Network, name: Name, args: &[u8]) -> ScriptEx {
         match network {
             Network::Mainnet | Network::Testnet => Script::new_builder()
                 .code_hash(
@@ -158,7 +159,7 @@ impl<T: RPC> Operation<T> for AddTypeBurnOutputCell {
         let reference_type_hash = reference_output
             .calc_type_hash()
             .ok_or(eyre!("reference output has no type script"))?;
-        let type_burn_lock_script = hardcoded::build_script(
+        let type_burn_lock_script = hardcoded::component_script(
             rpc.network(),
             hardcoded::Name::TypeBurn,
             reference_type_hash.as_bytes(),
@@ -192,7 +193,7 @@ impl AddTypeBurnInputCell {
         network: Network,
         skeleton: &TransactionSkeleton,
     ) -> Result<SearchKey> {
-        let type_burn_lock_script = hardcoded::build_script(
+        let type_burn_lock_script = hardcoded::component_script(
             network,
             hardcoded::Name::TypeBurn,
             self.type_hash.as_bytes(),
@@ -284,7 +285,7 @@ impl<T: RPC> Operation<T> for AddLockProxyOutputCell {
         skeleton: &mut TransactionSkeleton,
         log: &mut Log,
     ) -> Result<()> {
-        let lock_proxy_script = hardcoded::build_script(
+        let lock_proxy_script = hardcoded::component_script(
             rpc.network(),
             hardcoded::Name::LockProxy,
             self.lock_hash.as_bytes(),
@@ -338,7 +339,7 @@ impl AddLockProxyInputCell {
         network: Network,
         skeleton: &TransactionSkeleton,
     ) -> Result<SearchKey> {
-        let lock_proxy_script = hardcoded::build_script(
+        let lock_proxy_script = hardcoded::component_script(
             network,
             hardcoded::Name::LockProxy,
             self.lock_hash.as_bytes(),

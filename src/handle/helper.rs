@@ -95,7 +95,7 @@ pub async fn send_and_record_transaction<T: RPC>(
         occupied_capacity,
         payer_address: payer_address.into(),
         contract_owner_address: contract_owner_address.into(),
-        type_id: type_id.map(Into::into),
+        type_id,
         comment: None,
     };
     save_contract_deployment(tx_path, deployment_record)

@@ -259,7 +259,7 @@ impl<T: RPC> Operation<T> for AddHeaderDepByInputIndex {
 /// - `count`: u32, the count of input cells to add that searching coming out of ckb-indexer
 pub struct AddInputCell {
     pub lock_script: ScriptEx,
-    pub type_script: Option<ScriptEx>,
+    pub type_script: Option<Option<ScriptEx>>,
     pub count: u32,
     pub skip_data: bool,
     pub search_mode: SearchMode,
@@ -269,9 +269,11 @@ impl AddInputCell {
     fn search_key(&self, skeleton: &TransactionSkeleton) -> Result<SearchKey> {
         let mut query = CellQueryOptions::new_lock(self.lock_script.clone().to_script(skeleton)?);
         if let Some(type_script) = &self.type_script {
-            query.secondary_script = Some(type_script.clone().to_script(skeleton)?);
-        } else {
-            query.secondary_script_len_range = Some(ValueRangeOption::new(0, 1));
+            if let Some(type_script) = type_script {
+                query.secondary_script = Some(type_script.clone().to_script(skeleton)?);
+            } else {
+                query.secondary_script_len_range = Some(ValueRangeOption::new(0, 1));
+            }
         }
         if self.skip_data {
             query.data_len_range = Some(ValueRangeOption::new(0, 1));

@@ -808,7 +808,7 @@ impl TransactionSkeleton {
     /// note: if index is `usize::MAX`, return the last output cell
     pub fn get_output_by_index(&self, output_index: usize) -> Result<&CellOutputEx> {
         if output_index == usize::MAX {
-            return self.outputs.last().ok_or(eyre!("no output"));
+            self.outputs.last().ok_or(eyre!("no output"))
         } else {
             self.outputs
                 .get(output_index)
@@ -1009,11 +1009,7 @@ impl TransactionSkeleton {
                 let expected_code_hash =
                     match (script.hash_type(), &celldep.output, celldep.with_data) {
                         (Ok(ScriptHashType::Type), output, _) => {
-                            if let Some(type_hash) = output.calc_type_hash() {
-                                type_hash
-                            } else {
-                                H256::default()
-                            }
+                            output.calc_type_hash().unwrap_or_default()
                         }
                         (Ok(_), output, true) => output.data_hash(),
                         _ => H256::default(),

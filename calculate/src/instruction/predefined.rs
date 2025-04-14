@@ -1,4 +1,4 @@
-use std::{path::PathBuf, usize};
+use std::path::PathBuf;
 
 use ckb_sdk::HumanCapacity;
 use ckb_types::H256;

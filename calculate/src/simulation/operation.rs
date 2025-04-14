@@ -31,7 +31,11 @@ pub fn random_hash() -> [u8; 32] {
 }
 
 pub fn fake_outpoint() -> OutPoint {
-    OutPoint::new(random_hash().pack(), 0)
+    let tx_hash = random_hash();
+    OutPoint::new(
+        tx_hash.pack(),
+        u32::from_le_bytes(tx_hash[0..4].try_into().unwrap()),
+    )
 }
 
 pub fn fake_input() -> CellInput {
