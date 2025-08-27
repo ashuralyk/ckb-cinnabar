@@ -137,6 +137,8 @@ pub struct DeploymentRecord {
     pub payer_address: CkbAddress,
     pub contract_owner_address: CkbAddress,
     pub type_id: Option<H256>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub type_id_args: Option<H256>,
     // This field is not required, so you can edit in your <contract>.json file to add comment for cooperations
     #[serde(default, rename = "__comment")]
     pub comment: Option<String>,

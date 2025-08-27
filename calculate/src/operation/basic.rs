@@ -123,6 +123,35 @@ impl<T: RPC> Operation<T> for AddCellDepByType {
     }
 }
 
+/// Operation that add cell dep to transaction skeleton by type script, which is type id for specific
+pub struct AddCellDepByTypeId {
+    pub name: String,
+    pub type_id: H256,
+    pub dep_type: DepType,
+    pub with_data: bool,
+}
+
+#[async_trait(?Send)]
+impl<T: RPC> Operation<T> for AddCellDepByTypeId {
+    async fn run(
+        self: Box<Self>,
+        rpc: &T,
+        skeleton: &mut TransactionSkeleton,
+        log: &mut Log,
+    ) -> Result<()> {
+        let type_script =
+            ScriptEx::new_type(TYPE_ID_CODE_HASH.clone(), self.type_id.as_bytes().to_vec());
+        Box::new(AddCellDepByType {
+            name: self.name,
+            type_script,
+            dep_type: self.dep_type,
+            with_data: self.with_data,
+        })
+        .run(rpc, skeleton, log)
+        .await
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 /// Operation that add secp256k1_sighash_all cell dep to transaction skeleton
 pub struct AddSecp256k1SighashCellDep {}

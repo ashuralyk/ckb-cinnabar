@@ -474,7 +474,9 @@ impl<T: RPC> Operation<T> for AddClusterOutputCell {
 /// Search spore related cells from transaction skeleton and parse the operations' intention to spore actions
 ///
 /// note: this is essential for a historical issue of co-build project
-pub struct AddSporeActions {}
+pub struct AddSporeActions {
+    pub restrict: bool,
+}
 
 impl AddSporeActions {
     fn compare_code_hash(cell: &CellOutputEx, code_hash: &H256) -> Option<(CellOutputEx, H256)> {
@@ -585,7 +587,11 @@ impl<T: RPC> Operation<T> for AddSporeActions {
             }
         }
         if spore_actions.is_empty() {
-            return Err(eyre!("no spore/cluster actions found"));
+            if self.restrict {
+                return Err(eyre!("no spore/cluster actions found"));
+            } else {
+                return Ok(());
+            }
         }
         // add spore actions into skeleton's witness field
         let witness_layout: WitnessLayout = spore_actions.into();

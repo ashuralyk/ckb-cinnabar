@@ -4,7 +4,9 @@ use chrono::prelude::Utc;
 use ckb_cinnabar_calculator::{
     address::Address,
     instruction::{Instruction, TransactionCalculator},
-    re_exports::{ckb_hash::blake2b_256, ckb_jsonrpc_types::OutputsValidator, eyre},
+    re_exports::{
+        ckb_hash::blake2b_256, ckb_jsonrpc_types::OutputsValidator, ckb_types::H256, eyre,
+    },
     rpc::{Network, RpcClient, RPC},
 };
 
@@ -77,6 +79,9 @@ pub async fn send_and_record_transaction<T: RPC>(
         .await?;
     let occupied_capacity = skeleton.outputs[0].occupied_capacity().as_u64();
     let type_id = skeleton.outputs[0].calc_type_hash();
+    let type_id_args = skeleton.outputs[0]
+        .type_script()
+        .map(|s| H256::from_slice(&s.args().raw_data().to_vec()).unwrap());
     let tx_hash = rpc
         .send_transaction(
             skeleton.into_transaction_view().data().into(),
@@ -96,6 +101,7 @@ pub async fn send_and_record_transaction<T: RPC>(
         payer_address: payer_address.into(),
         contract_owner_address: contract_owner_address.into(),
         type_id,
+        type_id_args,
         comment: None,
     };
     save_contract_deployment(tx_path, deployment_record)

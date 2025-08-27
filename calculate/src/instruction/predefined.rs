@@ -134,7 +134,7 @@ pub fn mint_spores(
             authority_mode: authority_mode.clone(),
         }));
     }
-    mint.push(Box::new(AddSporeActions {}));
+    mint.push(Box::new(AddSporeActions { restrict: true }));
     mint
 }
 
@@ -161,7 +161,7 @@ pub fn transfer_spores(from: &Address, spores: Vec<(Address, H256)>) -> DefaultI
                 adjust_capacity: true,
             }));
     }
-    transfer.push(Box::new(AddSporeActions {}));
+    transfer.push(Box::new(AddSporeActions { restrict: true }));
     transfer
 }
 
@@ -178,7 +178,7 @@ pub fn burn_spores(owner: &Address, spores: Vec<H256>) -> DefaultInstruction {
             check_owner: Some(owner.clone().into()),
         }));
     });
-    burn.push(Box::new(AddSporeActions {}));
+    burn.push(Box::new(AddSporeActions { restrict: true }));
     burn
 }
 
@@ -212,7 +212,7 @@ pub fn mint_clusters(minter: &Address, clusters: Vec<Cluster>) -> DefaultInstruc
             description: cluster_description,
         }));
     }
-    mint.push(Box::new(AddSporeActions {}));
+    mint.push(Box::new(AddSporeActions { restrict: true }));
     mint
 }
 
@@ -239,7 +239,7 @@ pub fn transfer_clusters(from: &Address, clusters: Vec<(Address, H256)>) -> Defa
                 adjust_capacity: true,
             }));
     }
-    transfer.push(Box::new(AddSporeActions {}));
+    transfer.push(Box::new(AddSporeActions { restrict: true }));
     transfer
 }
 

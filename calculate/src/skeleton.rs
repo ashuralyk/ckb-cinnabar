@@ -408,7 +408,7 @@ impl CellDepEx {
             .await?
             .cell
             .ok_or(eyre!(
-                "cell not found at ({}:{index})",
+                "cellDep not found at ({}:{index})",
                 hex::encode(&tx_hash)
             ))?;
         let cell_dep = CellDep::new_builder()
