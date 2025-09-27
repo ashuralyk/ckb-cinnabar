@@ -126,7 +126,7 @@ impl<T: RPC> Operation<T> for AddCellDepByType {
 /// Operation that add cell dep to transaction skeleton by type script, which is type id for specific
 pub struct AddCellDepByTypeId {
     pub name: String,
-    pub type_id: H256,
+    pub type_args: H256,
     pub dep_type: DepType,
     pub with_data: bool,
 }
@@ -139,8 +139,10 @@ impl<T: RPC> Operation<T> for AddCellDepByTypeId {
         skeleton: &mut TransactionSkeleton,
         log: &mut Log,
     ) -> Result<()> {
-        let type_script =
-            ScriptEx::new_type(TYPE_ID_CODE_HASH.clone(), self.type_id.as_bytes().to_vec());
+        let type_script = ScriptEx::new_type(
+            TYPE_ID_CODE_HASH.clone(),
+            self.type_args.as_bytes().to_vec(),
+        );
         Box::new(AddCellDepByType {
             name: self.name,
             type_script,
