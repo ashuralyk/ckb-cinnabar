@@ -473,10 +473,10 @@ impl<T: RPC> Operation<T> for AddOutputCell {
         if !self.absolute_capacity {
             let capacity = minimal_capacity + self.capacity;
             output = output.as_builder().capacity(capacity.pack()).build();
-        } else if self.capacity > minimal_capacity {
+        } else if self.capacity >= minimal_capacity {
             output = output.as_builder().capacity(self.capacity.pack()).build();
         } else {
-            return Err(eyre!("capacity not enough"));
+            return Err(eyre!("capacity is less than minimal capacity"));
         }
         let cell_output = CellOutputEx::new(output, self.data);
         skeleton.output(cell_output);
