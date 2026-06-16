@@ -44,17 +44,17 @@ pub fn fake_input() -> CellInput {
 
 pub fn always_success_script(args: Vec<u8>) -> Script {
     Script::new_builder()
-        .code_hash(blake2b_256(ALWAYS_SUCCESS).pack())
-        .hash_type(ScriptHashType::Data1.into())
+        .code_hash(blake2b_256(ALWAYS_SUCCESS))
+        .hash_type(ScriptHashType::Data1)
         .args(args.pack())
         .build()
 }
 
 pub fn fake_header_view(block_number: u64, timestamp: u64, epoch: u64) -> HeaderView {
     let header = RawHeader::new_builder()
-        .number(block_number.pack())
-        .timestamp(timestamp.pack())
-        .epoch(epoch.pack())
+        .number(block_number)
+        .timestamp(timestamp)
+        .epoch(epoch)
         .build();
     Header::new_builder().raw(header).build().into_view()
 }
@@ -82,13 +82,13 @@ impl<T: RPC> Operation<T> for AddFakeContractCelldep {
         let celldep_out_point = fake_outpoint();
         let celldep = CellDep::new_builder()
             .out_point(celldep_out_point)
-            .dep_type(DepType::Code.into())
+            .dep_type(DepType::Code)
             .build();
         let mut output = CellOutput::new_builder();
         if let Some(args) = self.type_id_args {
             let type_script = Script::new_builder()
                 .code_hash(TYPE_ID_CODE_HASH.pack())
-                .hash_type(ScriptHashType::Type.into())
+                .hash_type(ScriptHashType::Type)
                 .args(args.as_bytes().pack())
                 .build();
             output = output.type_(Some(type_script).pack());
@@ -146,7 +146,7 @@ impl<T: RPC> Operation<T> for AddFakeAlwaysSuccessCelldep {
         let always_success_out_point = fake_outpoint();
         let celldep = CellDep::new_builder()
             .out_point(always_success_out_point)
-            .dep_type(DepType::Code.into())
+            .dep_type(DepType::Code)
             .build();
         skeleton.celldep(CellDepEx::new(
             ALWAYS_SUCCESS_NAME.to_string(),
@@ -185,7 +185,7 @@ impl<T: RPC> Operation<T> for AddFakeInputCell {
             CellOutput::new_builder()
                 .lock(primary_script)
                 .type_(second_script.pack())
-                .capacity(self.capacity.pack())
+                .capacity(self.capacity)
                 .build()
         } else {
             let output = CellOutput::new_builder()
@@ -195,7 +195,7 @@ impl<T: RPC> Operation<T> for AddFakeInputCell {
             let minimal_capacity: u64 = output.capacity().unpack();
             output
                 .as_builder()
-                .capacity((minimal_capacity + self.capacity).pack())
+                .capacity(minimal_capacity + self.capacity)
                 .build()
         };
         skeleton

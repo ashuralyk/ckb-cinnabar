@@ -14,52 +14,12 @@ mod casting {
         }
     }
 
-    impl From<TransferSpore> for SporeAction {
-        fn from(value: TransferSpore) -> Self {
-            SporeAction::new_builder()
-                .set(SporeActionUnion::TransferSpore(value))
-                .build()
-        }
-    }
-
-    impl From<MintSpore> for SporeAction {
-        fn from(value: MintSpore) -> Self {
-            SporeAction::new_builder()
-                .set(SporeActionUnion::MintSpore(value))
-                .build()
-        }
-    }
-
-    impl From<BurnSpore> for SporeAction {
-        fn from(value: BurnSpore) -> Self {
-            SporeAction::new_builder()
-                .set(SporeActionUnion::BurnSpore(value))
-                .build()
-        }
-    }
-
-    impl From<MintCluster> for SporeAction {
-        fn from(value: MintCluster) -> Self {
-            SporeAction::new_builder()
-                .set(SporeActionUnion::MintCluster(value))
-                .build()
-        }
-    }
-
-    impl From<TransferCluster> for SporeAction {
-        fn from(value: TransferCluster) -> Self {
-            SporeAction::new_builder()
-                .set(SporeActionUnion::TransferCluster(value))
-                .build()
-        }
-    }
-
     impl From<(Script, SporeAction)> for Action {
         fn from(value: (Script, SporeAction)) -> Self {
             let (script, spore_action) = value;
             Action::new_builder()
                 .script_hash(script.calc_script_hash())
-                .data(spore_action.as_slice().pack())
+                .data(spore_action.as_slice().to_vec())
                 .build()
         }
     }

@@ -345,9 +345,9 @@ pub struct AddSporeOutputCell {
 
 pub fn make_spore_data(content_type: &str, content: &[u8], cluster_id: Option<&H256>) -> Vec<u8> {
     let molecule_spore_data = SporeData::new_builder()
-        .content_type(content_type.as_bytes().pack())
-        .content(content.pack())
-        .cluster_id(cluster_id.map(|v| v.as_bytes().pack()).pack())
+        .content_type(content_type.as_bytes().to_vec())
+        .content(content.to_vec())
+        .cluster_id(cluster_id.map(|v| v.as_bytes().to_vec()).into())
         .build();
     molecule_spore_data.as_bytes().to_vec()
 }
@@ -439,8 +439,8 @@ pub struct AddClusterOutputCell {
 
 pub fn make_cluster_data(name: &str, description: &[u8]) -> Vec<u8> {
     let molecule_cluster_data = ClusterDataV2::new_builder()
-        .name(name.as_bytes().pack())
-        .description(description.pack())
+        .name(name.as_bytes().to_vec())
+        .description(description.to_vec())
         .build();
     molecule_cluster_data.as_bytes().to_vec()
 }
@@ -523,14 +523,14 @@ impl<T: RPC> Operation<T> for AddSporeActions {
                     let transfer_action = TransferSpore::new_builder()
                         .from(input.lock_script().into())
                         .to(output.lock_script().into())
-                        .spore_id(spore_id.pack())
+                        .spore_id(spore_id.into())
                         .build();
                     spore_actions
                         .push((output.type_script().unwrap(), transfer_action.into()).into());
                     spore_output_cells.remove(i);
                 } else {
                     let burn_action = BurnSpore::new_builder()
-                        .spore_id(spore_id.pack())
+                        .spore_id(spore_id.into())
                         .from(input.lock_script().into())
                         .build();
                     spore_actions.push((input.type_script().unwrap(), burn_action.into()).into());
@@ -539,9 +539,9 @@ impl<T: RPC> Operation<T> for AddSporeActions {
             // handle spore mints
             for (output, spore_id) in spore_output_cells {
                 let mint_action = MintSpore::new_builder()
-                    .spore_id(spore_id.pack())
+                    .spore_id(spore_id.into())
                     .to(output.lock_script().into())
-                    .data_hash(output.data_hash().pack())
+                    .data_hash(output.data_hash().into())
                     .build();
                 spore_actions.push((output.type_script().unwrap(), mint_action.into()).into());
             }
@@ -569,7 +569,7 @@ impl<T: RPC> Operation<T> for AddSporeActions {
                     let transfer_action = TransferCluster::new_builder()
                         .from(input.lock_script().into())
                         .to(output.lock_script().into())
-                        .cluster_id(cluster_id.pack())
+                        .cluster_id(cluster_id)
                         .build();
                     spore_actions
                         .push((output.type_script().unwrap(), transfer_action.into()).into());
@@ -579,9 +579,9 @@ impl<T: RPC> Operation<T> for AddSporeActions {
             // handle cluster mints
             for (output, cluster_id) in cluster_output_cells {
                 let mint_action = MintCluster::new_builder()
-                    .cluster_id(cluster_id.pack())
+                    .cluster_id(cluster_id.into())
                     .to(output.lock_script().into())
-                    .data_hash(output.data_hash().pack())
+                    .data_hash(output.data_hash().into())
                     .build();
                 spore_actions.push((output.type_script().unwrap(), mint_action.into()).into());
             }

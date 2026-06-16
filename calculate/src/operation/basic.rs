@@ -4,6 +4,7 @@ use std::{
     collections::HashMap,
     fs,
     io::Write,
+    ops::Add,
     path::PathBuf,
     process::{Command, Stdio},
 };
@@ -472,9 +473,9 @@ impl<T: RPC> Operation<T> for AddOutputCell {
         let minimal_capacity: u64 = output.capacity().unpack();
         if !self.absolute_capacity {
             let capacity = minimal_capacity + self.capacity;
-            output = output.as_builder().capacity(capacity.pack()).build();
+            output = output.as_builder().capacity(capacity).build();
         } else if self.capacity >= minimal_capacity {
-            output = output.as_builder().capacity(self.capacity.pack()).build();
+            output = output.as_builder().capacity(self.capacity).build();
         } else {
             return Err(eyre!("capacity is less than minimal capacity"));
         }
@@ -512,6 +513,15 @@ impl<T: RPC> Operation<T> for AddOutputCellByAddress {
     }
 }
 
+#[derive(Default)]
+pub enum CapacityAdjustment {
+    #[default]
+    Keep,
+    BuildExact,
+    Add(u64),
+    Subtract(u64),
+}
+
 /// Operation that add output cell to transaction skeleton by copying input cell from target position
 ///
 /// # Parameters
@@ -523,7 +533,7 @@ pub struct AddOutputCellByInputIndex {
     pub data: Option<Vec<u8>>,
     pub lock_script: Option<ScriptEx>,
     pub type_script: Option<Option<ScriptEx>>,
-    pub adjust_capacity: bool,
+    pub adjust_capacity: CapacityAdjustment,
 }
 
 #[async_trait(?Send)]
@@ -535,6 +545,7 @@ impl<T: RPC> Operation<T> for AddOutputCellByInputIndex {
         _: &mut Log,
     ) -> Result<()> {
         let cell_input = skeleton.get_input_by_index(self.input_index)?;
+        let capacity = cell_input.output.capacity();
         let mut cell_output = cell_input.output.clone();
         let mut output_builder = cell_output.output.as_builder();
         if let Some(data) = self.data {
@@ -548,13 +559,20 @@ impl<T: RPC> Operation<T> for AddOutputCellByInputIndex {
                 output_builder =
                     output_builder.type_(Some(type_script.to_script(skeleton)?).pack());
             } else {
-                output_builder = output_builder.type_(None.pack());
+                output_builder = output_builder.type_(None);
             }
         }
-        cell_output.output = if self.adjust_capacity {
-            output_builder.build_exact_capacity(Capacity::bytes(cell_output.data.len())?)?
-        } else {
-            output_builder.build()
+        cell_output.output = match self.adjust_capacity {
+            CapacityAdjustment::Keep => output_builder.build(),
+            CapacityAdjustment::BuildExact => {
+                output_builder.build_exact_capacity(Capacity::bytes(cell_output.data.len())?)?
+            }
+            CapacityAdjustment::Add(change_capacity) => output_builder
+                .capacity(capacity.as_u64().add(change_capacity))
+                .build(),
+            CapacityAdjustment::Subtract(change_capacity) => output_builder
+                .capacity(capacity.as_u64().saturating_sub(change_capacity))
+                .build(),
         };
         skeleton.output(cell_output);
         Ok(())

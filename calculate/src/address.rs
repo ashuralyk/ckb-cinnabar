@@ -66,6 +66,7 @@ impl fmt::Debug for AddressPayload {
             ScriptHashType::Data => "data",
             ScriptHashType::Data1 => "data1",
             ScriptHashType::Data2 => "data2",
+            _ => "unknown",
         };
         f.debug_struct("AddressPayload")
             .field("hash_type", &hash_type)
@@ -78,7 +79,7 @@ impl fmt::Debug for AddressPayload {
 impl From<&AddressPayload> for Script {
     fn from(payload: &AddressPayload) -> Script {
         Script::new_builder()
-            .hash_type(payload.hash_type().into())
+            .hash_type(payload.hash_type())
             .code_hash(payload.code_hash())
             .args(payload.args().pack())
             .build()
@@ -125,6 +126,7 @@ impl fmt::Debug for Address {
             ScriptHashType::Data => "data",
             ScriptHashType::Data1 => "data1",
             ScriptHashType::Data2 => "data2",
+            _ => "unknown",
         };
         f.debug_struct("Address")
             .field("network", &self.network)
@@ -138,7 +140,7 @@ impl fmt::Debug for Address {
 impl From<&Address> for Script {
     fn from(addr: &Address) -> Script {
         Script::new_builder()
-            .hash_type(addr.payload.hash_type().into())
+            .hash_type(addr.payload.hash_type())
             .code_hash(addr.payload.code_hash())
             .args(addr.payload.args().pack())
             .build()

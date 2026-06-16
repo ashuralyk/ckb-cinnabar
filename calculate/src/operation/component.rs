@@ -85,7 +85,7 @@ pub mod hardcoded {
                     }
                     .pack(),
                 )
-                .hash_type(ScriptHashType::Data1.into())
+                .hash_type(ScriptHashType::Data1)
                 .args(args.pack())
                 .build()
                 .into(),

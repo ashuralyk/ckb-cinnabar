@@ -229,6 +229,7 @@ impl FakeRpcClient {
                     block_hash: Some(block_hash),
                     block_number: Some(block_number.into()),
                     reason: None,
+                    tx_index: None,
                 },
                 tx,
             ),

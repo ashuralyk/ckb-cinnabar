@@ -1,0 +1,19 @@
+vector Bytes <byte>;
+option BytesOpt (Bytes);
+
+table SporeData {
+    content_type: Bytes,
+    content: Bytes,
+    cluster_id: BytesOpt,
+}
+
+table ClusterData {
+    name: Bytes,
+    description: Bytes,
+}
+
+table ClusterDataV2 {
+    name: Bytes,
+    description: Bytes,
+    mutant_id: BytesOpt,
+}
