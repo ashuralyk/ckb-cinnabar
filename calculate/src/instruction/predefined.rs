@@ -158,7 +158,7 @@ pub fn transfer_spores(from: &Address, spores: Vec<(Address, H256)>) -> DefaultI
                 lock_script: Some(to.into()),
                 type_script: None,
                 data: None,
-                adjust_capacity: true,
+                adjust_capacity: CapacityAdjustment::BuildExact,
             }));
     }
     transfer.push(Box::new(AddSporeActions { restrict: true }));
@@ -236,7 +236,7 @@ pub fn transfer_clusters(from: &Address, clusters: Vec<(Address, H256)>) -> Defa
                 lock_script: Some(to.into()),
                 type_script: None,
                 data: None,
-                adjust_capacity: true,
+                adjust_capacity: CapacityAdjustment::BuildExact,
             }));
     }
     transfer.push(Box::new(AddSporeActions { restrict: true }));

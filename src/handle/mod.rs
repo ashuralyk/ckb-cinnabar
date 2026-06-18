@@ -6,7 +6,7 @@ use ckb_cinnabar_calculator::{
     operation::basic::{
         AddInputCellByAddress, AddInputCellByOutPoint, AddOutputCellByAddress,
         AddOutputCellByInputIndex, AddSecp256k1SighashCellDep,
-        AddSecp256k1SighashSignaturesWithCkbCli, BalanceTransaction,
+        AddSecp256k1SighashSignaturesWithCkbCli, BalanceTransaction, CapacityAdjustment,
     },
     re_exports::eyre,
     rpc::Network,
@@ -113,7 +113,7 @@ pub async fn migrate_contract(
                 data: Some(contract_binary),
                 lock_script: Some(contract_owner_address.clone().into()),
                 type_script: None,
-                adjust_capacity: true,
+                adjust_capacity: CapacityAdjustment::BuildExact,
             }));
         }
         TypeIdMode::Remove => {
@@ -122,7 +122,7 @@ pub async fn migrate_contract(
                 data: Some(contract_binary),
                 lock_script: Some(contract_owner_address.clone().into()),
                 type_script: Some(None),
-                adjust_capacity: true,
+                adjust_capacity: CapacityAdjustment::BuildExact,
             }));
         }
         TypeIdMode::New => {
