@@ -859,6 +859,21 @@ impl TransactionSkeleton {
         self.outputs.pop().ok_or(eyre!("no output to pop"))
     }
 
+    /// Get cell dep by index, which may fail if index out of range
+    ///
+    /// note: if index is `usize::MAX`, return the last cell dep
+    pub fn get_celldep_by_index(&self, celldep_index: usize) -> Result<&CellDepEx> {
+        if celldep_index == usize::MAX {
+            self.celldeps
+                .last()
+                .ok_or(eyre!("transaction celldep empty"))
+        } else {
+            self.celldeps
+                .get(celldep_index)
+                .ok_or(eyre!("transaction celldep index out of range"))
+        }
+    }
+
     /// Push a single cell dep
     pub fn celldep(&mut self, cell_dep: CellDepEx) -> &mut Self {
         if !self.celldeps.contains(&cell_dep) {

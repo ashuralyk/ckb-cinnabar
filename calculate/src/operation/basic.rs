@@ -213,7 +213,7 @@ impl<T: RPC> Operation<T> for AddSecp256k1SighashCellDep {
                 )
                 .await?
             }
-            _ => return Err(eyre!("secp256k1_sighash_all not valid for fake network")),
+            _ => return Ok(()), // secp256k1_sighash_all not valid for fake network, skip
         };
         skeleton.celldep(celldep);
         Ok(())
@@ -281,6 +281,25 @@ impl<T: RPC> Operation<T> for AddHeaderDepByInputIndex {
         let input = skeleton.get_input_by_index(self.input_index)?;
         let cell_outpoint = input.input.previous_output();
         skeleton.headerdep(HeaderDepEx::new_from_outpoint(rpc, cell_outpoint).await?);
+        Ok(())
+    }
+}
+
+/// Operation that add a header dep to transaction by input index, which will link to that input cell
+pub struct AddHeaderDepByCellDepIndex {
+    pub celldep_index: usize,
+}
+
+#[async_trait(?Send)]
+impl<T: RPC> Operation<T> for AddHeaderDepByCellDepIndex {
+    async fn run(
+        self: Box<Self>,
+        rpc: &T,
+        skeleton: &mut TransactionSkeleton,
+        _: &mut Log,
+    ) -> Result<()> {
+        let celldep = &skeleton.get_celldep_by_index(self.celldep_index)?.celldep;
+        skeleton.headerdep(HeaderDepEx::new_from_outpoint(rpc, celldep.out_point()).await?);
         Ok(())
     }
 }
