@@ -10,8 +10,8 @@ use std::{
 };
 
 use ckb_jsonrpc_types::{
-    BlockNumber, BlockView, CellWithStatus, HeaderView, JsonBytes, OutPoint, OutputsValidator,
-    Transaction, TransactionWithStatusResponse, TxPoolInfo, Uint32,
+    BlockNumber, BlockView, CellWithStatus, ChainInfo, HeaderView, JsonBytes, OutPoint,
+    OutputsValidator, Transaction, TransactionWithStatusResponse, TxPoolInfo, Uint32,
 };
 use ckb_types::H256;
 use eyre::{eyre, Error};
@@ -147,6 +147,7 @@ pub trait RPC: Clone + Send + Sync {
         Network::Fake
     }
     fn url(&self) -> (String, String);
+    fn get_blockchain_info(&self) -> Rpc<ChainInfo>;
     fn get_live_cell(&self, out_point: &OutPoint, with_data: bool) -> Rpc<CellWithStatus>;
     fn get_cells(
         &self,
@@ -205,6 +206,16 @@ impl RpcClient {
         rpc.network = Network::Testnet;
         rpc
     }
+
+    pub async fn update_network(&mut self) -> eyre::Result<()> {
+        let chain_info = self.get_blockchain_info().await?;
+        match chain_info.chain.as_str() {
+            "ckb" => self.network = Network::Mainnet,
+            "ckb_testnet" => self.network = Network::Testnet,
+            _ => return Ok(()),
+        };
+        Ok(())
+    }
 }
 
 impl RPC for RpcClient {
@@ -214,6 +225,14 @@ impl RPC for RpcClient {
 
     fn url(&self) -> (String, String) {
         (self.ckb_uri.to_string(), self.indexer_uri.to_string())
+    }
+
+    fn get_blockchain_info(&self) -> Rpc<ChainInfo> {
+        let future = jsonrpc!("get_blockchain_info", Target::CKB, self, ChainInfo);
+        #[cfg(not(target_arch = "wasm32"))]
+        return future.boxed();
+        #[cfg(target_arch = "wasm32")]
+        return future.boxed_local();
     }
 
     fn get_live_cell(&self, out_point: &OutPoint, with_data: bool) -> Rpc<CellWithStatus> {

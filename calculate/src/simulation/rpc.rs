@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use ckb_jsonrpc_types::{
-    BlockNumber, BlockView, CellData, CellInfo, CellWithStatus, HeaderView, JsonBytes, OutPoint,
-    OutputsValidator, ResponseFormat, Status, Transaction, TransactionView,
+    BlockNumber, BlockView, CellData, CellInfo, CellWithStatus, ChainInfo, HeaderView, JsonBytes,
+    OutPoint, OutputsValidator, ResponseFormat, Status, Transaction, TransactionView,
     TransactionWithStatusResponse, TxPoolInfo, TxStatus,
 };
 use ckb_types::{core, packed, prelude::Unpack, H256};
@@ -258,6 +258,10 @@ unsafe impl Sync for FakeRpcClient {}
 impl RPC for FakeRpcClient {
     fn url(&self) -> (String, String) {
         unimplemented!("fake url method")
+    }
+
+    fn get_blockchain_info(&self) -> Rpc<ChainInfo> {
+        unimplemented!("fake get_blockchain_info method")
     }
 
     fn get_live_cell(&self, out_point: &OutPoint, _with_data: bool) -> Rpc<CellWithStatus> {
