@@ -3,22 +3,23 @@ pub use molecule::*;
 
 // Generated types casting for code simplicity
 mod casting {
+    use super::molecule::Script;
     use super::*;
-    use ckb_types::{packed::Script, prelude::*};
+    use ckb_types::prelude::*;
 
-    impl From<Script> for Address {
-        fn from(value: Script) -> Self {
+    impl From<ckb_types::packed::Script> for Address {
+        fn from(value: ckb_types::packed::Script) -> Self {
             Address::new_builder()
-                .set(AddressUnion::Script(value))
+                .set(AddressUnion::Script(Script::new_unchecked(value.as_bytes())))
                 .build()
         }
     }
 
-    impl From<(Script, SporeAction)> for Action {
-        fn from(value: (Script, SporeAction)) -> Self {
+    impl From<(ckb_types::packed::Script, SporeAction)> for Action {
+        fn from(value: (ckb_types::packed::Script, SporeAction)) -> Self {
             let (script, spore_action) = value;
             Action::new_builder()
-                .script_hash(script.calc_script_hash())
+                .script_hash(Byte32::new_unchecked(script.calc_script_hash().as_bytes()))
                 .data(spore_action.as_slice().to_vec())
                 .build()
         }
