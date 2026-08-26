@@ -1,5 +1,6 @@
 pub mod basic;
 pub mod component;
+#[cfg(feature = "spore")]
 pub mod spore;
 pub mod udt;
 pub use common::{Log, Operation};

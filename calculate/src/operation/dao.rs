@@ -319,7 +319,7 @@ impl<T: RPC> Operation<T> for AddDaoWithdrawPhaseTwoCells {
             }
             return Ok(());
         }
-        skeleton.headerdeps.extend(withdraw_headerdeps.into_iter());
+        skeleton.headerdeps.extend(withdraw_headerdeps);
         let transfer_lock_script = if let Some(transfer_to) = self.transfer_to {
             transfer_to.to_script(skeleton)?
         } else {

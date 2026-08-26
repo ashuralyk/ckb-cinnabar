@@ -11,6 +11,10 @@ name = "ckb-cinnabar"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+# Spore operations are WIP; the example cannot compile without them.
+spore = ["ckb-cinnabar-calculator/spore"]
+
 [dependencies]
 chrono = "0.4.38"
 hex = "0.4.3"
@@ -21,3 +25,7 @@ ckb-cinnabar-calculator = { path = "calculate" }
 clap = { version = "4.5.13", features = ["derive"] }
 tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros"] }
 serde = { version = "1.0", features = ["derive"] }
+
+[[example]]
+name = "spore"
+required-features = ["spore"]

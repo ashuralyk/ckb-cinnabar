@@ -876,6 +876,19 @@ impl TransactionSkeleton {
         self.celldeps.iter().find(|celldep| celldep.name == name)
     }
 
+    /// Get cell dep by index (`usize::MAX` = the last pushed cell dep)
+    pub fn get_celldep_by_index(&self, celldep_index: usize) -> Result<&CellDepEx> {
+        if celldep_index == usize::MAX {
+            self.celldeps
+                .last()
+                .ok_or(eyre!("transaction cell dep empty"))
+        } else {
+            self.celldeps
+                .get(celldep_index)
+                .ok_or(eyre!("transaction cell dep index out of range"))
+        }
+    }
+
     /// Push a batch of cell deps
     pub fn celldeps(&mut self, cell_deps: Vec<CellDepEx>) -> &mut Self {
         cell_deps.into_iter().for_each(|v| {

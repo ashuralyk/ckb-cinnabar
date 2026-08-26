@@ -3,6 +3,10 @@ name = "ckb-cinnabar-calculator"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+# NFT/Spore operations are WIP on the ckb-types-1 upgrade; gated off by default.
+spore = []
+
 [dependencies]
 async-trait = "0.1.81"
 bech32 = "0.8.1"

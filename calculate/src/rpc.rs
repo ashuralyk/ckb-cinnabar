@@ -10,8 +10,8 @@ use std::{
 };
 
 use ckb_jsonrpc_types::{
-    BlockNumber, BlockView, CellWithStatus, HeaderView, JsonBytes, OutPoint, OutputsValidator,
-    Transaction, TransactionWithStatusResponse, TxPoolInfo, Uint32,
+    BlockNumber, BlockView, CellWithStatus, ChainInfo, HeaderView, JsonBytes, OutPoint,
+    OutputsValidator, Transaction, TransactionWithStatusResponse, TxPoolInfo, Uint32,
 };
 use ckb_types::H256;
 use eyre::{eyre, Error};
@@ -19,7 +19,7 @@ use futures::FutureExt;
 use reqwest::{Client, Url};
 use serde::Deserialize;
 
-use crate::indexer::{Cell, Order, Pagination, SearchKey};
+use crate::indexer::{Cell, Order, Pagination, SearchKey, Tx};
 
 #[cfg(target_arch = "wasm32")]
 pub type Rpc<T> = Pin<Box<dyn Future<Output = Result<T, Error>>>>;
@@ -154,6 +154,14 @@ pub trait RPC: Clone + Send + Sync {
         limit: u32,
         cursor: Option<JsonBytes>,
     ) -> Rpc<Pagination<Cell>>;
+    /// Indexer transaction search — txs where the script appears as input or
+    /// output, including spent cells (unlike `get_cells`, which is live-only).
+    fn get_transactions(
+        &self,
+        search_key: SearchKey,
+        limit: u32,
+        cursor: Option<JsonBytes>,
+    ) -> Rpc<Pagination<Tx>>;
     fn get_block_by_number(&self, number: BlockNumber) -> Rpc<Option<BlockView>>;
     fn get_block(&self, hash: &H256) -> Rpc<Option<BlockView>>;
     fn get_header(&self, hash: &H256) -> Rpc<Option<HeaderView>>;
@@ -205,6 +213,27 @@ impl RpcClient {
         rpc.network = Network::Testnet;
         rpc
     }
+
+    /// Detect the network from on-chain `get_blockchain_info`, resolving
+    /// `Network::Custom(url)` to `Mainnet`/`Testnet`. No-op for unknown chains.
+    pub async fn update_network(&mut self) -> eyre::Result<()> {
+        let future = jsonrpc!("get_blockchain_info", Target::CKB, self, ChainInfo);
+        #[cfg(not(target_arch = "wasm32"))]
+        let chain_info = future.boxed().await?;
+        #[cfg(target_arch = "wasm32")]
+        let chain_info = future.boxed_local().await?;
+        match chain_info.chain.as_str() {
+            "ckb" => self.network = Network::Mainnet,
+            "ckb_testnet" => self.network = Network::Testnet,
+            _ => return Ok(()),
+        };
+        Ok(())
+    }
+
+    /// Explicitly set the network (e.g. a configured fallback when detection fails).
+    pub fn set_network(&mut self, network: Network) {
+        self.network = network;
+    }
 }
 
 impl RPC for RpcClient {
@@ -245,6 +274,31 @@ impl RPC for RpcClient {
             Target::Indexer,
             self,
             Pagination<Cell>,
+            search_key,
+            order,
+            limit,
+            cursor,
+        );
+        #[cfg(not(target_arch = "wasm32"))]
+        return future.boxed();
+        #[cfg(target_arch = "wasm32")]
+        return future.boxed_local();
+    }
+
+    fn get_transactions(
+        &self,
+        search_key: SearchKey,
+        limit: u32,
+        cursor: Option<JsonBytes>,
+    ) -> Rpc<Pagination<Tx>> {
+        let order = Order::Asc;
+        let limit = Uint32::from(limit);
+
+        let future = jsonrpc!(
+            "get_transactions",
+            Target::Indexer,
+            self,
+            Pagination<Tx>,
             search_key,
             order,
             limit,

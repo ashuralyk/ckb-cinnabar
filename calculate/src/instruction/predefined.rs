@@ -1,14 +1,17 @@
 use std::path::PathBuf;
 
 use ckb_sdk::HumanCapacity;
+#[cfg(feature = "spore")]
 use ckb_types::H256;
 use secp256k1::SecretKey;
 
 use crate::{
     address::Address,
     instruction::DefaultInstruction,
-    operation::{basic::*, dao::*, spore::*},
+    operation::{basic::*, dao::*},
 };
+#[cfg(feature = "spore")]
+use crate::operation::spore::*;
 
 /// Transfer CKB from one address to another
 ///
@@ -89,6 +92,7 @@ pub fn balance_and_sign_with_ckb_cli(
     ])
 }
 
+#[cfg(feature = "spore")]
 pub struct Spore {
     pub owner: Option<Address>, // if None, use minter as owner
     pub content_type: String,
@@ -102,6 +106,7 @@ pub struct Spore {
 /// - `minter`: The address to mint Spore
 /// - `spores`: The Spores to mint
 /// - `cluster_lock_proxy`: Whether to use cluster lock proxy
+#[cfg(feature = "spore")]
 pub fn mint_spores(
     minter: &Address,
     spores: Vec<Spore>,
@@ -145,6 +150,7 @@ pub fn mint_spores(
 /// - `spores`: The Spores to transfer
 ///     - `0`: The address to transfer Spore to
 ///     - `1`: The Spore ID to transfer
+#[cfg(feature = "spore")]
 pub fn transfer_spores(from: &Address, spores: Vec<(Address, H256)>) -> DefaultInstruction {
     let mut transfer = DefaultInstruction::new(vec![Box::new(AddSecp256k1SighashCellDep {})]);
     for (to, spore_id) in spores {
@@ -170,6 +176,7 @@ pub fn transfer_spores(from: &Address, spores: Vec<(Address, H256)>) -> DefaultI
 /// # Parameters
 /// - `owner`: The address to burn Spore from
 /// - `spores`: The Spores to burn
+#[cfg(feature = "spore")]
 pub fn burn_spores(owner: &Address, spores: Vec<H256>) -> DefaultInstruction {
     let mut burn = DefaultInstruction::new(vec![Box::new(AddSecp256k1SighashCellDep {})]);
     spores.into_iter().for_each(|spore_id| {
@@ -182,6 +189,7 @@ pub fn burn_spores(owner: &Address, spores: Vec<H256>) -> DefaultInstruction {
     burn
 }
 
+#[cfg(feature = "spore")]
 pub struct Cluster {
     pub owner: Option<Address>, // if None, use minter as owner
     pub cluster_name: String,
@@ -193,6 +201,7 @@ pub struct Cluster {
 /// # Parameters
 /// - `minter`: The address to mint Cluster
 /// - `clusters`: The Clusters to mint
+#[cfg(feature = "spore")]
 pub fn mint_clusters(minter: &Address, clusters: Vec<Cluster>) -> DefaultInstruction {
     let mut mint = DefaultInstruction::new(vec![
         Box::new(AddSecp256k1SighashCellDep {}),
@@ -221,6 +230,7 @@ pub fn mint_clusters(minter: &Address, clusters: Vec<Cluster>) -> DefaultInstruc
 /// # Parameters
 /// - `from`: The address to transfer Cluster from
 /// - `clusters`: The Clusters to transfer
+#[cfg(feature = "spore")]
 pub fn transfer_clusters(from: &Address, clusters: Vec<(Address, H256)>) -> DefaultInstruction {
     let mut transfer = DefaultInstruction::new(vec![
         Box::new(AddSecp256k1SighashCellDep {}),

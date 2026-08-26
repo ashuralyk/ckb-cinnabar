@@ -150,14 +150,14 @@ impl DeploymentRecord {
         if let Some(type_id) = self.type_id.clone() {
             script = script
                 .code_hash(type_id.0.pack())
-                .hash_type(core::ScriptHashType::Type.into());
+                .hash_type(core::ScriptHashType::Type);
         } else {
             let Some(data_hash) = self.data_hash.clone() else {
                 return Err(eyre::eyre!("contract consumed"));
             };
             script = script
                 .code_hash(data_hash.0.pack())
-                .hash_type(core::ScriptHashType::Data2.into());
+                .hash_type(core::ScriptHashType::Data2);
         }
         Ok(script.build().into())
     }
