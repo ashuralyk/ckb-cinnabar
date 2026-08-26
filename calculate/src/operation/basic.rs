@@ -213,7 +213,9 @@ impl<T: RPC> Operation<T> for AddSecp256k1SighashCellDep {
                 )
                 .await?
             }
-            _ => return Ok(()), // secp256k1_sighash_all not valid for fake network, skip
+            // Fake/unknown networks: skip — offline tests don't need the dep
+            // (and there is no real outpoint to resolve).
+            _ => return Ok(()),
         };
         skeleton.celldep(celldep);
         Ok(())
@@ -285,7 +287,7 @@ impl<T: RPC> Operation<T> for AddHeaderDepByInputIndex {
     }
 }
 
-/// Operation that add a header dep to transaction by input index, which will link to that input cell
+/// Operation that add a header dep to transaction by cell dep index, which will link to that cell dep cell
 pub struct AddHeaderDepByCellDepIndex {
     pub celldep_index: usize,
 }
@@ -298,8 +300,8 @@ impl<T: RPC> Operation<T> for AddHeaderDepByCellDepIndex {
         skeleton: &mut TransactionSkeleton,
         _: &mut Log,
     ) -> Result<()> {
-        let celldep = &skeleton.get_celldep_by_index(self.celldep_index)?.celldep;
-        skeleton.headerdep(HeaderDepEx::new_from_outpoint(rpc, celldep.out_point()).await?);
+        let celldep = skeleton.get_celldep_by_index(self.celldep_index)?;
+        skeleton.headerdep(HeaderDepEx::new_from_outpoint(rpc, celldep.celldep.out_point()).await?);
         Ok(())
     }
 }
@@ -492,9 +494,9 @@ impl<T: RPC> Operation<T> for AddOutputCell {
         let minimal_capacity: u64 = output.capacity().unpack();
         if !self.absolute_capacity {
             let capacity = minimal_capacity + self.capacity;
-            output = output.as_builder().capacity(capacity.pack()).build();
+            output = output.as_builder().capacity(capacity).build();
         } else if self.capacity >= minimal_capacity {
-            output = output.as_builder().capacity(self.capacity.pack()).build();
+            output = output.as_builder().capacity(self.capacity).build();
         } else {
             return Err(eyre!("capacity is less than minimal capacity"));
         }
@@ -578,7 +580,7 @@ impl<T: RPC> Operation<T> for AddOutputCellByInputIndex {
                 output_builder =
                     output_builder.type_(Some(type_script.to_script(skeleton)?).pack());
             } else {
-                output_builder = output_builder.type_(None.pack());
+                output_builder = output_builder.type_(None);
             }
         }
         cell_output.output = match self.adjust_capacity {
@@ -587,10 +589,10 @@ impl<T: RPC> Operation<T> for AddOutputCellByInputIndex {
                 output_builder.build_exact_capacity(Capacity::bytes(cell_output.data.len())?)?
             }
             CapacityAdjustment::Add(change_capacity) => output_builder
-                .capacity(capacity.as_u64().add(change_capacity).pack())
+                .capacity(capacity.as_u64().add(change_capacity))
                 .build(),
             CapacityAdjustment::Subtract(change_capacity) => output_builder
-                .capacity(capacity.as_u64().saturating_sub(change_capacity).pack())
+                .capacity(capacity.as_u64().saturating_sub(change_capacity))
                 .build(),
         };
         skeleton.output(cell_output);

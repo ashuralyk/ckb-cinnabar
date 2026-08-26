@@ -81,7 +81,7 @@ pub async fn send_and_record_transaction<T: RPC>(
     let type_id = skeleton.outputs[0].calc_type_hash();
     let type_id_args = skeleton.outputs[0]
         .type_script()
-        .map(|s| H256::from_slice(&s.args().raw_data().to_vec()).unwrap());
+        .map(|s| H256::from_slice(&s.args().raw_data()).unwrap());
     let tx_hash = rpc
         .send_transaction(
             skeleton.into_transaction_view().data().into(),

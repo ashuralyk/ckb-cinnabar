@@ -11,7 +11,7 @@ use ckb_types::{
         Cycle, HeaderBuilder, HeaderView, TransactionInfo,
     },
     packed::{self, Byte32, OutPoint},
-    prelude::{Pack, Unpack},
+    prelude::Unpack,
     H256,
 };
 use eyre::Result;
@@ -97,7 +97,7 @@ impl Default for TransactionSimulator {
                 ckb2023: CKB2023::new_dev_default(),
             })
             .build();
-        let tip = HeaderBuilder::default().number(0.pack()).build();
+        let tip = HeaderBuilder::default().number(0).build();
         let env = TxVerifyEnv::new_submit(&tip);
         Self {
             consensus,
@@ -168,10 +168,15 @@ impl TransactionSimulator {
         let context = Context::new(resolved_tx.clone(), headers);
         let consensus = Arc::new(self.consensus.clone());
         let env = Arc::new(self.env.clone());
-        let mut verifier = TransactionScriptsVerifier::new(resolved_tx, context, consensus, env);
-        verifier.set_debug_printer(|_id, msg| {
-            println!("[contract debug] {}", msg);
-        });
+        let verifier = TransactionScriptsVerifier::new_with_debug_printer(
+            resolved_tx,
+            context,
+            consensus,
+            env,
+            Arc::new(|_id, msg| {
+                println!("[contract debug] {}", msg);
+            }),
+        );
         Ok(verifier.verify(max_cycles)?)
     }
 }

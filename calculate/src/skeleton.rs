@@ -122,14 +122,14 @@ impl ScriptEx {
             if let Some(celldep_type_hash) = output.calc_type_hash() {
                 script = script
                     .code_hash(celldep_type_hash.pack())
-                    .hash_type(ScriptHashType::Type.into());
+                    .hash_type(ScriptHashType::Type);
             } else {
                 if !value.with_data {
                     return Err(eyre!("celldep without data, cannot calculate data hash"));
                 }
                 script = script
                     .code_hash(output.data_hash().pack())
-                    .hash_type(ScriptHashType::Data1.into());
+                    .hash_type(ScriptHashType::Data1);
             }
             Ok(script.build())
         } else {
@@ -150,7 +150,7 @@ impl TryFrom<ScriptEx> for Script {
         match value {
             ScriptEx::Script(code_hash, hash_type, args) => Ok(Script::new_builder()
                 .code_hash(code_hash.pack())
-                .hash_type(hash_type.into())
+                .hash_type(hash_type)
                 .args(args.pack())
                 .build()),
             ScriptEx::Reference(_, _) => Err(eyre!("reference script")),
@@ -228,7 +228,7 @@ impl CellInputEx {
     ) -> Result<Self> {
         let out_point = OutPoint::new_builder()
             .tx_hash(tx_hash.pack())
-            .index(index.pack())
+            .index(index)
             .build();
         let live_cell = rpc
             .get_live_cell(&out_point.clone().into(), with_data)
@@ -240,7 +240,7 @@ impl CellInputEx {
             ))?;
         let input = CellInput::new_builder()
             .previous_output(out_point)
-            .since(since.unwrap_or(0).pack())
+            .since(since.unwrap_or(0))
             .build();
         let output = live_cell.output.into();
         let data = live_cell.data.map(|v| v.content.into_bytes().to_vec());
@@ -250,8 +250,8 @@ impl CellInputEx {
     /// Initialize a CellInputEx from the ckb-indexer specific cell
     pub fn new_from_indexer_cell(indexer_cell: Cell, since: Option<u64>) -> Self {
         let input = CellInput::new_builder()
-            .previous_output(indexer_cell.out_point.into())
-            .since(since.unwrap_or(0).pack())
+            .previous_output(indexer_cell.out_point)
+            .since(since.unwrap_or(0))
             .build();
         let data = indexer_cell.output_data.map(|v| v.into_bytes().to_vec());
         Self::new(input, indexer_cell.output.into(), data)
@@ -261,7 +261,7 @@ impl CellInputEx {
     pub fn new_from_celldep(celldep: &CellDepEx, since: Option<u64>) -> Self {
         let input = CellInput::new_builder()
             .previous_output(celldep.celldep.out_point())
-            .since(since.unwrap_or(0).pack())
+            .since(since.unwrap_or(0))
             .build();
         let data = if celldep.with_data {
             Some(celldep.output.data.clone())
@@ -401,7 +401,7 @@ impl CellDepEx {
     ) -> Result<Self> {
         let out_point = OutPoint::new_builder()
             .tx_hash(tx_hash.pack())
-            .index(index.pack())
+            .index(index)
             .build();
         let live_cell = rpc
             .get_live_cell(&out_point.clone().into(), with_data)
@@ -413,7 +413,7 @@ impl CellDepEx {
             ))?;
         let cell_dep = CellDep::new_builder()
             .out_point(out_point)
-            .dep_type(dep_type.into())
+            .dep_type(dep_type)
             .build();
         let output = live_cell.output.into();
         let data = live_cell.data.map(|v| v.content.into_bytes().to_vec());
@@ -422,10 +422,9 @@ impl CellDepEx {
 
     /// Initialize a CellDepEx from the ckb-indexer specific cell
     pub fn new_from_indexer_cell(name: String, indexer_cell: Cell, dep_type: DepType) -> Self {
-        let out_point = indexer_cell.out_point.into();
         let cell_dep = CellDep::new_builder()
-            .out_point(out_point)
-            .dep_type(dep_type.into())
+            .out_point(indexer_cell.out_point)
+            .dep_type(dep_type)
             .build();
         let output = indexer_cell.output.into();
         let data = indexer_cell.output_data.map(|v| v.into_bytes().into());

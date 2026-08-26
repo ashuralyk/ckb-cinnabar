@@ -30,7 +30,7 @@ pub async fn main() {
     let rpc = RpcClient::new_testnet();
 
     // build transfer instruction
-    let transfer = secp256k1_sighash_transfer(&from, &to, ckb.into());
+    let transfer = secp256k1_sighash_transfer(&from, &to, ckb);
     let balance_and_sign = if let Some(secret_key) = secret_key {
         balance_and_sign(&from, secret_key, ADDITIONAL_FEE_RATE)
     } else {

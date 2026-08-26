@@ -21,18 +21,13 @@ mod json_stuff {
         pub group_by_transaction: Option<bool>,
     }
 
-    #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq, Hash)]
+    #[derive(Serialize, Deserialize, Default, Clone, Debug, Eq, PartialEq, Hash)]
     #[serde(rename_all = "snake_case")]
     pub enum SearchMode {
+        #[default]
         Prefix,
         Exact,
         Partial,
-    }
-
-    impl Default for SearchMode {
-        fn default() -> Self {
-            Self::Prefix
-        }
     }
 
     #[derive(Serialize, Deserialize, Default, Clone, Debug)]
@@ -144,6 +139,15 @@ mod json_stuff {
     pub enum Tx {
         Ungrouped(TxWithCell),
         Grouped(TxWithCells),
+    }
+
+    impl Tx {
+        pub fn tx_hash(&self) -> H256 {
+            match self {
+                Tx::Ungrouped(tx) => tx.tx_hash.clone(),
+                Tx::Grouped(tx) => tx.tx_hash.clone(),
+            }
+        }
     }
 
     #[derive(Serialize, Deserialize, Clone, Debug)]

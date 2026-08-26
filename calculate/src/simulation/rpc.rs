@@ -9,8 +9,8 @@ use ckb_types::{core, packed, prelude::Unpack, H256};
 use eyre::eyre;
 
 use crate::{
-    indexer::{Cell, Pagination, ScriptType, SearchKey, SearchMode},
-    rpc::{Rpc, RPC},
+    indexer::{Cell, Pagination, ScriptType, SearchKey, SearchMode, Tx},
+    rpc::{Network, Rpc, RPC},
     skeleton::CellOutputEx,
 };
 
@@ -20,6 +20,8 @@ pub struct FakeProvider {
     pub fake_headers: HashMap<H256, HeaderView>,
     pub fake_outpoint_headers: HashMap<OutPoint, core::HeaderView>,
     pub fake_transaction: HashMap<H256, (TxStatus, Transaction)>,
+    /// Indexer `get_transactions` search results (tx hash + io markers).
+    pub fake_txs: Vec<Tx>,
     pub fake_feerate: u64,
     pub fake_tipnumber: u64,
     pub fate_tipheader: HeaderView,
@@ -136,6 +138,9 @@ impl FakeProvider {
                 output: cell.output.clone().into(),
             }),
             status: "live".to_owned(),
+            // Fake cells have no recorded block; newer ckb-jsonrpc-types
+            // requires the field, so leave it unknown.
+            block_hash: None,
         };
         Some(cell_with_status)
     }
@@ -168,15 +173,38 @@ impl FakeProvider {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct FakeRpcClient {
     pub fake_provider: FakeProvider,
+    /// Reported network. Defaults to `Fake`; tests targeting the secp256k1
+    /// sighash cell dep (which needs a real network) can set `Testnet`.
+    pub network: Network,
+}
+
+impl Default for FakeRpcClient {
+    fn default() -> Self {
+        Self {
+            fake_provider: FakeProvider::default(),
+            network: Network::Fake,
+        }
+    }
 }
 
 impl FakeRpcClient {
+    pub fn set_network(&mut self, network: Network) -> &mut Self {
+        self.network = network;
+        self
+    }
+
     pub fn set_fake_tip(&mut self, tip_number: u64, tip_header: HeaderView) -> &mut Self {
         self.fake_provider.fake_tipnumber = tip_number;
         self.fake_provider.fate_tipheader = tip_header;
+        self
+    }
+
+    /// Seed an indexer `get_transactions` search result.
+    pub fn insert_fake_tx(&mut self, tx: Tx) -> &mut Self {
+        self.fake_provider.fake_txs.push(tx);
         self
     }
 
@@ -229,6 +257,7 @@ impl FakeRpcClient {
                     block_hash: Some(block_hash),
                     block_number: Some(block_number.into()),
                     reason: None,
+                    tx_index: None,
                 },
                 tx,
             ),
@@ -256,6 +285,10 @@ unsafe impl Send for FakeRpcClient {}
 unsafe impl Sync for FakeRpcClient {}
 
 impl RPC for FakeRpcClient {
+    fn network(&self) -> Network {
+        self.network.clone()
+    }
+
     fn url(&self) -> (String, String) {
         unimplemented!("fake url method")
     }
@@ -284,6 +317,19 @@ impl RPC for FakeRpcClient {
         let result = Pagination::<Cell> {
             objects: cells,
             last_cursor: JsonBytes::from_vec(cursor.to_le_bytes().to_vec()),
+        };
+        Box::pin(async move { Ok(result) })
+    }
+
+    fn get_transactions(
+        &self,
+        _search_key: SearchKey,
+        _limit: u32,
+        _cursor: Option<JsonBytes>,
+    ) -> Rpc<Pagination<Tx>> {
+        let result = Pagination::<Tx> {
+            objects: self.fake_provider.fake_txs.clone(),
+            last_cursor: JsonBytes::default(),
         };
         Box::pin(async move { Ok(result) })
     }
