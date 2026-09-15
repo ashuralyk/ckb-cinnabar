@@ -1,0 +1,13 @@
+[package]
+name = "{{crate_name}}"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ckb-std = "1.1.0"
+ckb-cinnabar-verifier = { workspace = true }
+
+[features]
+default = ["mainnet"]
+mainnet = []
+testnet = []

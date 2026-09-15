@@ -1,3 +1,10 @@
+//! CKB node + indexer access used by every [`crate::operation::Operation`].
+//!
+//! [`RPC`] is implemented by [`RpcClient`] (HTTP JSON-RPC) and
+//! [`crate::simulation::FakeRpcClient`] (in-memory). [`Network`] selects
+//! hardcoded contract out-points (DAO / xUDT / Spore) or the offline `Fake`
+//! hashes used in simulation.
+
 use std::{
     fmt::Display,
     future::Future,
@@ -24,10 +31,14 @@ use crate::indexer::{Cell, Order, Pagination, SearchKey, Tx};
 #[cfg(target_arch = "wasm32")]
 pub type Rpc<T> = Pin<Box<dyn Future<Output = Result<T, Error>>>>;
 
+/// Boxed RPC future. `Send` on native targets so it can cross `tokio` worker
+/// threads; plain (non-`Send`) on wasm32 where everything is single-threaded.
 #[cfg(not(target_arch = "wasm32"))]
 pub type Rpc<T> = Pin<Box<dyn Future<Output = Result<T, Error>> + Send + 'static>>;
 
+/// Public RPC endpoint of CKB mainnet (also serves the indexer API).
 pub const MAINNET_RPC_URL: &str = "https://mainnet.ckb.dev";
+/// Public RPC endpoint of CKB testnet (also serves the indexer API).
 pub const TESTNET_RPC_URL: &str = "https://testnet.ckbapp.dev";
 
 #[derive(Deserialize)]
@@ -92,11 +103,20 @@ macro_rules! jsonrpc {
     }}
 }
 
+/// The CKB network an [`RPC`] client talks to.
+///
+/// Operations branch on this value to pick hardcoded deployment out-points
+/// (e.g. DAO / xUDT / Spore contracts) or to fall back to fake hashes under
+/// [`Network::Fake`] for offline simulation.
 #[derive(Hash, PartialEq, Eq, Clone, Debug)]
 pub enum Network {
+    /// CKB mainnet (address prefix `ckb`).
     Mainnet,
+    /// CKB testnet (address prefix `ckt`).
     Testnet,
+    /// A self-hosted or dev chain reachable at a custom RPC URL.
     Custom(Url),
+    /// Offline in-memory network used by [`crate::simulation::FakeRpcClient`].
     Fake,
 }
 
@@ -125,6 +145,8 @@ impl FromStr for Network {
 }
 
 impl Network {
+    /// Resolve a network from a bech32(m) address HRP: `ckb` → mainnet,
+    /// `ckt` → testnet, anything else → `None`.
     pub fn from_prefix(prefix: &str) -> Option<Self> {
         match prefix {
             "ckb" => Some(Network::Mainnet),
@@ -133,6 +155,7 @@ impl Network {
         }
     }
 
+    /// Bech32(m) HRP for this network. Everything except mainnet uses `ckt`.
     pub fn to_prefix(&self) -> &'static str {
         match self {
             Network::Mainnet => "ckb",
@@ -141,14 +164,24 @@ impl Network {
     }
 }
 
+/// Chain access abstraction used by every [`crate::operation::Operation`].
+///
+/// Implemented by [`RpcClient`] (real JSON-RPC over HTTP) and
+/// [`crate::simulation::FakeRpcClient`] (in-memory, offline). `Clone + Send +
+/// Sync` so it can be shared across operations inside one instruction.
 #[allow(clippy::upper_case_acronyms)]
 pub trait RPC: Clone + Send + Sync {
+    /// Network this client is connected to; defaults to [`Network::Fake`].
     fn network(&self) -> Network {
         Network::Fake
     }
+    /// `(ckb_node_url, indexer_url)` pair, used e.g. when shelling out to ckb-cli.
     fn url(&self) -> (String, String);
+    /// `get_blockchain_info` — chain identity and sync state.
     fn get_blockchain_info(&self) -> Rpc<ChainInfo>;
+    /// `get_live_cell` — fetch one live cell by out-point.
     fn get_live_cell(&self, out_point: &OutPoint, with_data: bool) -> Rpc<CellWithStatus>;
+    /// Indexer `get_cells` — paginated live-cell search (spent cells excluded).
     fn get_cells(
         &self,
         search_key: SearchKey,
@@ -163,15 +196,25 @@ pub trait RPC: Clone + Send + Sync {
         limit: u32,
         cursor: Option<JsonBytes>,
     ) -> Rpc<Pagination<Tx>>;
+    /// `get_block` by height.
     fn get_block_by_number(&self, number: BlockNumber) -> Rpc<Option<BlockView>>;
+    /// `get_block` by hash.
     fn get_block(&self, hash: &H256) -> Rpc<Option<BlockView>>;
+    /// `get_header` by hash.
     fn get_header(&self, hash: &H256) -> Rpc<Option<HeaderView>>;
+    /// `get_header_by_number`.
     fn get_header_by_number(&self, number: BlockNumber) -> Rpc<Option<HeaderView>>;
+    /// `get_block_hash` by number.
     fn get_block_hash(&self, number: BlockNumber) -> Rpc<Option<H256>>;
+    /// `get_tip_block_number`.
     fn get_tip_block_number(&self) -> Rpc<BlockNumber>;
+    /// `get_tip_header`.
     fn get_tip_header(&self) -> Rpc<HeaderView>;
+    /// `tx_pool_info` — used to derive the minimal fee rate for balancing.
     fn tx_pool_info(&self) -> Rpc<TxPoolInfo>;
+    /// `get_transaction` with its on-chain status.
     fn get_transaction(&self, hash: &H256) -> Rpc<Option<TransactionWithStatusResponse>>;
+    /// `send_transaction`; returns the transaction hash.
     fn send_transaction(
         &self,
         tx: Transaction,
@@ -179,6 +222,8 @@ pub trait RPC: Clone + Send + Sync {
     ) -> Rpc<H256>;
 }
 
+/// JSON-RPC client backed by `reqwest`, talking to a CKB node and (optionally
+/// separate) ckb-indexer endpoint.
 #[derive(Clone)]
 pub struct RpcClient {
     network: Network,
@@ -189,6 +234,11 @@ pub struct RpcClient {
 }
 
 impl RpcClient {
+    /// Create a client for custom endpoints. When `indexer_uri` is `None`, the
+    /// CKB node URL is reused for indexer calls (public nodes serve both).
+    ///
+    /// The initial network is [`Network::Custom`]; call
+    /// [`RpcClient::update_network`] to auto-detect mainnet/testnet.
     pub fn new(ckb_uri: &str, indexer_uri: Option<&str>) -> Self {
         let indexer_uri = Url::parse(indexer_uri.unwrap_or(ckb_uri))
             .expect("ckb uri, e.g. \"http://127.0.0.1:8116\"");
@@ -203,12 +253,14 @@ impl RpcClient {
         }
     }
 
+    /// Client bound to [`MAINNET_RPC_URL`].
     pub fn new_mainnet() -> Self {
         let mut rpc = RpcClient::new(MAINNET_RPC_URL, None);
         rpc.network = Network::Mainnet;
         rpc
     }
 
+    /// Client bound to [`TESTNET_RPC_URL`].
     pub fn new_testnet() -> Self {
         let mut rpc = RpcClient::new(TESTNET_RPC_URL, None);
         rpc.network = Network::Testnet;
@@ -429,6 +481,8 @@ impl RPC for RpcClient {
     }
 }
 
+/// Optional client-side cell filter applied by [`GetCellsIter`] after each
+/// indexer page is fetched.
 pub type Filter = Box<dyn Fn(&Cell) -> bool + Send + Sync>;
 
 /// A wrapper of get_cells rpc call, it will automatically cross over live cells in interation
@@ -440,6 +494,7 @@ pub struct GetCellsIter<'a, T: RPC> {
 }
 
 impl<'a, T: RPC> GetCellsIter<'a, T> {
+    /// Create an iterator over all live cells matching `search_key`.
     pub fn new(rpc: &'a T, search_key: SearchKey) -> Self {
         GetCellsIter {
             rpc,
@@ -449,11 +504,14 @@ impl<'a, T: RPC> GetCellsIter<'a, T> {
         }
     }
 
+    /// Attach an extra client-side filter applied to every fetched page.
     pub fn filter(mut self, filter: Filter) -> Self {
         self.filter = Some(filter);
         self
     }
 
+    /// Fetch the next page of up to `limit` cells. Returns `Ok(None)` once a
+    /// page comes back empty (iterator exhausted).
     pub async fn next_batch(&mut self, limit: u32) -> eyre::Result<Option<Vec<Cell>>> {
         let cells = self
             .rpc
@@ -471,6 +529,7 @@ impl<'a, T: RPC> GetCellsIter<'a, T> {
         Ok(Some(objects))
     }
 
+    /// Fetch the next single cell; `Ok(None)` when exhausted.
     pub async fn next(&mut self) -> eyre::Result<Option<Cell>> {
         Ok(self.next_batch(1).await?.map(|v| v[0].clone()))
     }

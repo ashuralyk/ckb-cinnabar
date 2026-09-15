@@ -1,3 +1,14 @@
+//! Mutable CKB transaction being assembled off-chain.
+//!
+//! [`TransactionSkeleton`] holds the same five fields as a packed
+//! transaction (inputs / outputs / cell deps / witnesses / header deps),
+//! plus enough resolved cell data to compute capacity, type ids, and script
+//! groups. [`ScriptEx::Reference`] defers code-hash resolution until a named
+//! [`CellDepEx`] is present.
+//!
+//! Operations mutate a skeleton; [`TransactionCalculator`] and
+//! [`crate::simulation::TransactionSimulator`] consume it.
+
 use std::{fmt::Display, time::Duration};
 
 use ckb_hash::{blake2b_256, Blake2bBuilder};
@@ -21,6 +32,7 @@ use crate::{
     rpc::{GetCellsIter, Network, RPC},
 };
 
+/// Well-known code hash of the type-id system script (`TYPE_ID` in ASCII).
 pub const TYPE_ID_CODE_HASH: H256 = h256!("0x545950455f4944");
 
 /// A wrapper of packed Script
@@ -28,7 +40,10 @@ pub const TYPE_ID_CODE_HASH: H256 = h256!("0x545950455f4944");
 /// `Reference` branch: point to a celldep in the transaction, if `usize` is MAX, point to the last one
 #[derive(Clone, PartialEq, Eq)]
 pub enum ScriptEx {
+    /// Concrete script triple: code hash, hash type, args.
     Script(H256, ScriptHashType, Vec<u8>),
+    /// Indirect script: resolved at build time from the named cell dep's data
+    /// hash (`Data1`) or type hash (`Type`); second element is the args.
     Reference(String, Vec<u8>),
 }
 
@@ -189,8 +204,11 @@ impl From<(String, Vec<u8>)> for ScriptEx {
 /// CellInput for transaction skeleton, which contains output cell and data
 #[derive(Debug, Clone)]
 pub struct CellInputEx {
+    /// The packed input (out-point + since).
     pub input: CellInput,
+    /// Full content of the consumed cell.
     pub output: CellOutputEx,
+    /// Whether `output.data` was actually fetched (vs. left empty).
     pub with_data: bool,
 }
 
@@ -275,7 +293,9 @@ impl CellInputEx {
 /// CellOutput for transaction skeleton, which contains cell data
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CellOutputEx {
+    /// The packed cell output (capacity + lock + type).
     pub output: CellOutput,
+    /// Cell data (kept separately, like `outputs_data` in a transaction).
     pub data: Vec<u8>,
 }
 
@@ -358,9 +378,13 @@ impl CellOutputEx {
 /// CellDep for transaction skeleton, which contains output cell and data
 #[derive(Debug, Clone)]
 pub struct CellDepEx {
+    /// Unique name, referenced by `ScriptEx::Reference`.
     pub name: String,
+    /// The packed cell dep (out-point + dep type).
     pub celldep: CellDep,
+    /// Full content of the dep cell.
     pub output: CellOutputEx,
+    /// Whether `output.data` was actually fetched.
     pub with_data: bool,
 }
 
@@ -452,10 +476,15 @@ impl CellDepEx {
 /// splited for better composability
 #[derive(Debug, Clone)]
 pub struct WitnessEx {
+    /// All fields empty — serialized as empty bytes, not as WitnessArgs.
     pub empty: bool,
+    /// Serialize as molecule `WitnessArgs` (true) or as raw concatenated bytes (false).
     pub traditional: bool,
+    /// `WitnessArgs.lock` (or the whole payload when non-traditional).
     pub lock: Vec<u8>,
+    /// `WitnessArgs.input_type`.
     pub input_type: Vec<u8>,
+    /// `WitnessArgs.output_type`.
     pub output_type: Vec<u8>,
 }
 
@@ -543,12 +572,16 @@ impl WitnessEx {
 /// A block hash wrapper that contains the link to a cell input
 #[derive(Clone, Debug)]
 pub struct HeaderDepEx {
+    /// Hash of the dep'd block.
     pub block_hash: H256,
+    /// Full header, fetched for off-chain checks (e.g. DAO maturity).
     pub header: HeaderView,
+    /// Out-points of inputs/celldeps committed in this block.
     pub cellinput_outpoints: Vec<OutPoint>,
 }
 
 impl HeaderDepEx {
+    /// Fetch the header for `block_hash` and link it to `outpoints`.
     pub async fn new<T: RPC>(rpc: &T, block_hash: H256, outpoints: Vec<OutPoint>) -> Result<Self> {
         let header = rpc
             .get_header(&block_hash)
@@ -561,6 +594,7 @@ impl HeaderDepEx {
         })
     }
 
+    /// Header dep for the block that committed the transaction containing `outpoint`.
     pub async fn new_from_outpoint<T: RPC>(rpc: &T, outpoint: OutPoint) -> Result<Self> {
         let tx_hash = outpoint.tx_hash();
         let tx_with_status = rpc
@@ -574,6 +608,7 @@ impl HeaderDepEx {
         HeaderDepEx::new(rpc, block_hash, vec![outpoint]).await
     }
 
+    /// Header dep for the block at `block_number`.
     pub async fn new_from_block_number<T: RPC>(rpc: &T, block_number: u64) -> Result<Self> {
         let block_hash = rpc
             .get_block_hash(block_number.into())
@@ -589,13 +624,21 @@ impl PartialEq for HeaderDepEx {
     }
 }
 
-/// TransactionSkeleton for building transaction
+/// Transaction under construction: the five CKB fields plus resolved cell data.
+///
+/// Operations append to these vectors. Input/output/cell-dep helpers treat
+/// `usize::MAX` as "the last item".
 #[derive(Default, Clone, Debug)]
 pub struct TransactionSkeleton {
+    /// Consumed cells (`CellInput` + resolved output/data).
     pub inputs: Vec<CellInputEx>,
+    /// Created cells (`CellOutput` + data).
     pub outputs: Vec<CellOutputEx>,
+    /// Named cell deps; [`ScriptEx::Reference`] resolves against these names.
     pub celldeps: Vec<CellDepEx>,
+    /// Witnesses, typically one per input (secp256k1 lock group uses the first).
     pub witnesses: Vec<WitnessEx>,
+    /// Header deps, optionally linked to the inputs/cell-deps they commit.
     pub headerdeps: Vec<HeaderDepEx>,
 }
 

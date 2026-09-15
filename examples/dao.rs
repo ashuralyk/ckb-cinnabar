@@ -63,7 +63,7 @@ pub async fn main() {
             min_deposit_days,
             to,
         } => {
-            let timestamp = min_deposit_days.map(|day| Utc::now().timestamp() as u64 - day * 3600);
+            let timestamp = min_deposit_days.map(|day| Utc::now().timestamp() as u64 - day * 86400);
             dao_withdraw_phase_one(&cli.operator, max_ckb, timestamp, to.as_ref())
         }
         Commands::Unlock { max_ckb, to } => {

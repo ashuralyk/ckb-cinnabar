@@ -1,5 +1,19 @@
+//! On-chain error types and the [`define_errors!`] helper.
+//!
+//! The script entry point converts [`Error`] to `i8`. Off-chain simulation
+//! surfaces that same code as `CalculatorError::ScriptValidation { exit_code, .. }`.
+
 use ckb_std::error::SysError;
 
+/// Declare a custom contract error enum.
+///
+/// Generates `#[repr(i8)] enum $name` plus `From<$name> for Error`, so
+/// verification nodes can return `Err(MyError::Foo.into())`. Start custom
+/// codes at [`CUSTOM_ERROR_START`] to stay clear of system / framework codes:
+///
+/// ```ignore
+/// define_errors!(MyError, { First = CUSTOM_ERROR_START, Second, });
+/// ```
 #[macro_export]
 macro_rules! define_errors {
     ($name:ident, {$($err:ident $(= $val:ident)? ,)+}) => {
@@ -16,21 +30,30 @@ macro_rules! define_errors {
     };
 }
 
+/// First exit code available to contract-defined errors. Codes 1–5 are
+/// system errors and 10–11 are framework errors.
 pub const CUSTOM_ERROR_START: i8 = 20;
 
+/// Unified on-chain error type; converts into the `i8` exit code returned by
+/// the script entry point.
 pub enum Error {
-    // Errors under 10 are reserved for system errors
+    /// CKB-VM `IndexOutOfBound` (exit `1`).
     IndexOutOfBound,
+    /// CKB-VM `ItemMissing` (exit `2`).
     ItemMissing,
+    /// CKB-VM `LengthNotEnough` (exit `3`).
     LengthNotEnough,
+    /// CKB-VM `Encoding` (exit `4`).
     Encoding,
+    /// Any other CKB-VM [`SysError`] (exit `5`).
     UnknownSystemError,
 
-    // Errors under 20 are reserved for framework errors
+    /// The `"root"` node was not registered with `cinnabar_main!` (exit `10`).
     NotFoundRootVerifier,
+    /// A node returned a next-name that is not registered, or the walk cycled (exit `11`).
     NotFoundBranchVerifier,
 
-    // Custom errors are supposed to be greator than 20
+    /// Contract-defined failure, carrying the raw `i8` from [`define_errors!`] (must be ≥ [`CUSTOM_ERROR_START`]).
     Custom(i8),
 }
 
@@ -61,4 +84,5 @@ impl From<Error> for i8 {
     }
 }
 
+/// On-chain result type used by every [`crate::Verification`] node.
 pub type Result<T> = core::result::Result<T, Error>;

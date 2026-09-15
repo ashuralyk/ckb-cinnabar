@@ -1,3 +1,9 @@
+//! Operations for the `ckb-proxy-locks` component scripts (always-success,
+//! type-burn, lock-proxy, …).
+//!
+//! Deployment out-points live in [`hardcoded`]. See
+//! <https://github.com/ckb-ecofund/ckb-proxy-locks>.
+
 use async_trait::async_trait;
 use ckb_types::{
     core::{DepType, ScriptHashType},
@@ -48,13 +54,20 @@ pub mod hardcoded {
     pub const TYPE_BURN_CODE_HASH: H256 =
         h256!("0xff78bae0abf17d7a404c0be0f9ad9c9185b3f88dcc60403453d5ba8e1f22f53a");
 
+    /// Output index of each component script inside the proxy-locks dep transaction.
     #[repr(u32)]
     pub enum Name {
+        /// Always-success lock (index 0).
         AlwaysSuccess = 0,
+        /// Input-type proxy (index 1).
         InputTypeProxy,
+        /// Output-type proxy (index 2).
         OutputTypeProxy,
+        /// Lock proxy (index 3).
         LockProxy,
+        /// Single-use lock (index 4).
         SingleUse,
+        /// Type-burn lock (index 5).
         TypeBurn,
     }
 
@@ -71,6 +84,8 @@ pub mod hardcoded {
         }
     }
 
+    /// Component script for `network`. Fake/custom networks use a
+    /// `ScriptEx::Reference` resolved from a named cell dep.
     pub fn component_script(network: Network, name: Name, args: &[u8]) -> ScriptEx {
         match network {
             Network::Mainnet | Network::Testnet => Script::new_builder()
@@ -93,6 +108,7 @@ pub mod hardcoded {
         }
     }
 
+    /// Deployment tx hash of the proxy-locks bundle for `network`.
     pub fn component_tx_hash(network: Network) -> H256 {
         match network {
             Network::Mainnet => COMPONENT_MAINNET_TX_HASH,
@@ -102,11 +118,9 @@ pub mod hardcoded {
     }
 }
 
-/// Add `ckb-proxy-locks` celldep
-///
-/// # Parameters
-/// - `name`: component name in `ckb-proxy-locks`
+/// Add the `ckb-proxy-locks` cell dep for `name` (index = `name as u32`).
 pub struct AddComponentCelldep {
+    /// Which component script inside the proxy-locks transaction.
     pub name: hardcoded::Name,
 }
 
@@ -130,15 +144,13 @@ impl<T: RPC> Operation<T> for AddComponentCelldep {
     }
 }
 
-/// Add `type-burn-lock` output cell with or without type script
-///
-/// # Parameters
-/// - `output_index`: reference output index, which is choosed to calculate type hash
-/// - `type_script`: optional type script
-/// - `data`: cell data
+/// Add a type-burn-lock output whose args are the type hash of another output.
 pub struct AddTypeBurnOutputCell {
+    /// Output whose type hash becomes the type-burn lock args.
     pub output_index: usize,
+    /// Optional type script of the new cell.
     pub type_script: Option<ScriptEx>,
+    /// Cell data.
     pub data: Vec<u8>,
 }
 
@@ -177,17 +189,16 @@ impl<T: RPC> Operation<T> for AddTypeBurnOutputCell {
     }
 }
 
-/// Search and add `type-burn-lock` input cell
-///
-/// # Parameters
-/// - `type_hash`: the reference type script hash
-/// - `count`: max number of cells to add
+/// Search and add type-burn-lock input cells whose args equal `type_hash`.
 pub struct AddTypeBurnInputCell {
+    /// Type-script hash encoded as the type-burn lock args.
     pub type_hash: H256,
+    /// Maximum number of matching cells to consume.
     pub count: usize,
 }
 
 impl AddTypeBurnInputCell {
+    /// Indexer search key: type-burn lock args = `type_hash`.
     pub fn search_key(
         &self,
         network: Network,
@@ -231,8 +242,9 @@ impl<T: RPC> Operation<T> for AddTypeBurnInputCell {
     }
 }
 
-/// Add `type-burn-lock` input cell by input index
+/// Consume a type-burn-lock cell whose args are the type hash of `skeleton.inputs[input_index]`.
 pub struct AddTypeBurnInputCellByInputIndex {
+    /// Index of the input whose type hash is searched; `usize::MAX` = last input.
     pub input_index: usize,
 }
 
@@ -263,17 +275,16 @@ impl<T: RPC> Operation<T> for AddTypeBurnInputCellByInputIndex {
     }
 }
 
-/// Add `lock-proxy` output cell with or without type script
-///
-/// # Parameters
-/// - `lock_hash`: the proxied lock hash
-/// - `lock_script`: wether the script is used as lock script, otherwise type script
-/// - `type_script`: optional type script
-/// - `data`: cell data
+/// Add a lock-proxy cell whose args are `lock_hash`.
 pub struct AddLockProxyOutputCell {
+    /// Hash of the lock being proxied.
     pub lock_hash: H256,
+    /// `true`: proxy is the lock script; `false`: proxy is the type script
+    /// (then `second_script` is required as the actual lock).
     pub lock_script: bool,
+    /// The other script on the cell (type when `lock_script`, lock otherwise).
     pub second_script: Option<ScriptEx>,
+    /// Cell data.
     pub data: Vec<u8>,
 }
 
@@ -321,19 +332,18 @@ impl<T: RPC> Operation<T> for AddLockProxyOutputCell {
     }
 }
 
-/// Search and add `lock-proxy` input cell (fake supported)
-///
-/// # Parameters
-/// - `lock_hash`: the proxied lock hash
-/// - `lock_script`: wether the script is used as lock script, otherwise type script
-/// - `count`: max number of cells to add
+/// Search and consume lock-proxy cells whose args equal `lock_hash`.
 pub struct AddLockProxyInputCell {
+    /// Hash of the lock being proxied.
     pub lock_hash: H256,
+    /// `true` search as lock script; `false` search as type script.
     pub lock_script: bool,
+    /// Maximum number of matching cells to consume.
     pub count: usize,
 }
 
 impl AddLockProxyInputCell {
+    /// Indexer search key: lock-proxy args = `lock_hash`, as lock or type.
     pub fn search_key(
         &self,
         network: Network,

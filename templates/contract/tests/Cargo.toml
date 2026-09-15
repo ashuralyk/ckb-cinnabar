@@ -1,0 +1,10 @@
+[package]
+name = "{{crate_name}}-tests"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ckb-cinnabar-calculator = { workspace = true }
+{{crate_name}}-calculator = { path = "../calculator" }
+ckb-always-success-script = "0.0.1"
+tokio = { version = "1", features = ["macros", "rt"] }

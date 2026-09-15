@@ -1,0 +1,38 @@
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: riscv64imac-unknown-none-elf
+          components: rustfmt
+      - name: Formatting
+        run: cargo fmt --all -- --check
+      - name: Native tests
+        run: cargo test --workspace --exclude ckb-cinnabar-verifier
+      - name: Verifier RISC-V check
+        run: cargo check -p ckb-cinnabar-verifier --target riscv64imac-unknown-none-elf
+        env:
+          CARGO_TERM_COLOR: always
+          TARGET_CC: clang
+      - name: Install cargo-generate
+        run: cargo install cargo-generate --version 0.20.0 --locked
+      - name: Generated contract end-to-end
+        run: |
+          cargo generate \
+            --path templates/contract \
+            --name agent-smoke \
+            --destination /tmp \
+            --define use_local_cinnabar=true \
+            --define cinnabar_path="$GITHUB_WORKSPACE" \
+            --silent
+          cargo generate-lockfile --manifest-path /tmp/agent-smoke/Cargo.toml
+          make -C /tmp/agent-smoke build test CARGO_ARGS=--locked

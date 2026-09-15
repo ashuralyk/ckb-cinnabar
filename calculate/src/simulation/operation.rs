@@ -1,3 +1,8 @@
+//! Fake-chain operations for offline tests: inject contract binaries, always-
+//! success locks, and input cells into a [`TransactionSkeleton`] without a node.
+//!
+//! Combine with [`crate::simulation::FakeRpcClient`] and `assert_verify!`.
+
 use std::{fs, path::PathBuf};
 
 use async_trait::async_trait;
@@ -23,6 +28,7 @@ use ckb_types::{
 };
 use rand::Rng;
 
+/// 32 bytes of randomness, used to derive fake hashes / out-points.
 pub fn random_hash() -> [u8; 32] {
     let mut rng = rand::thread_rng();
     let mut buf = [0u8; 32];
@@ -30,6 +36,7 @@ pub fn random_hash() -> [u8; 32] {
     buf
 }
 
+/// Random out-point (random tx hash, index derived from its first 4 bytes).
 pub fn fake_outpoint() -> OutPoint {
     let tx_hash = random_hash();
     OutPoint::new(
@@ -38,10 +45,12 @@ pub fn fake_outpoint() -> OutPoint {
     )
 }
 
+/// Input pointing at a [`fake_outpoint`] with `since = 0`.
 pub fn fake_input() -> CellInput {
     CellInput::new(fake_outpoint(), 0)
 }
 
+/// Lock script referencing the bundled always-success binary by `Data1` hash.
 pub fn always_success_script(args: Vec<u8>) -> Script {
     Script::new_builder()
         .code_hash(blake2b_256(ALWAYS_SUCCESS))
@@ -50,6 +59,8 @@ pub fn always_success_script(args: Vec<u8>) -> Script {
         .build()
 }
 
+/// Minimal header view with the given number/timestamp/epoch (everything else
+/// zeroed) — enough for `since`-based logic in simulation.
 pub fn fake_header_view(block_number: u64, timestamp: u64, epoch: u64) -> HeaderView {
     let header = RawHeader::new_builder()
         .number(block_number)
@@ -59,12 +70,17 @@ pub fn fake_header_view(block_number: u64, timestamp: u64, epoch: u64) -> Header
     Header::new_builder().raw(header).build().into_view()
 }
 
+/// Cell-dep name used for the bundled always-success script.
 pub const ALWAYS_SUCCESS_NAME: &str = "always_success";
 
 /// Add a custom contract celldep to the transaction skeleton
 pub struct AddFakeContractCelldep {
+    /// Unique name in the skeleton; `ScriptEx::Reference` scripts resolve to this dep.
     pub name: String,
+    /// Compiled RISC-V binary contents.
     pub contract_data: Vec<u8>,
+    /// Attach a type-id type script to the dep cell when set (so contracts can
+    /// be referenced by `ScriptHashType::Type`).
     pub type_id_args: Option<H256>,
 }
 
@@ -105,8 +121,11 @@ impl<T: RPC> Operation<T> for AddFakeContractCelldep {
 
 /// Add a custom contract celldep to the transaction skeleton by loading compiled native contract
 pub struct AddFakeContractCelldepByName {
+    /// Binary file name inside `contract_binary_path` (also the dep name).
     pub contract: String,
+    /// Optional type-id type script for the dep cell.
     pub type_id_args: Option<H256>,
+    /// Directory holding compiled binaries (template default: `build/release`).
     pub contract_binary_path: String,
 }
 
@@ -160,10 +179,16 @@ impl<T: RPC> Operation<T> for AddFakeAlwaysSuccessCelldep {
 
 /// Add a custom cell input to the transaction skeleton, which has primary and second scripts
 pub struct AddFakeInputCell {
+    /// Lock script of the fake input (often the contract under test).
     pub lock_script: ScriptEx,
+    /// Optional type script of the fake input.
     pub type_script: Option<ScriptEx>,
+    /// Cell data.
     pub data: Vec<u8>,
+    /// Capacity in shannons; absolute when `absolute_capacity` is true,
+    /// otherwise added on top of the minimal occupied capacity.
     pub capacity: u64,
+    /// Treat `capacity` as the final value instead of an extra over occupied.
     pub absolute_capacity: bool,
 }
 

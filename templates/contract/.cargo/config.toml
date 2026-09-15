@@ -1,0 +1,5 @@
+[alias]
+deploy = "run -- deploy"
+migrate = "run -- migrate"
+consume = "run -- consume"
+list = "run -- list"

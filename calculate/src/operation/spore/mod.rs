@@ -1,3 +1,9 @@
+//! Spore / Cluster cell operations. **Experimental** (`--features spore`).
+//!
+//! After the ckb-types-1 upgrade these helpers are feature-gated. Do not
+//! enable them unless the user asked. Pair mint/transfer/burn with
+//! [`crate::intent::MINT`] / [`crate::intent::TRANSFER`] / [`crate::intent::BURN`].
+
 use async_trait::async_trait;
 use ckb_types::{
     core::DepType,
@@ -62,6 +68,7 @@ pub mod hardcoded {
         pub static ref CLUSTER_FAKENET_TX_HASH: H256 = random_hash().into();
     }
 
+    /// Latest Spore deployment tx hash for `network` (random under fake networks).
     pub fn spore_tx_hash(network: Network) -> H256 {
         match network {
             Network::Mainnet => SPORE_MAINNET_TX_HASH,
@@ -70,6 +77,7 @@ pub mod hardcoded {
         }
     }
 
+    /// Spore type script for `network`; fake/custom use `ScriptEx::Reference("spore", args)`.
     pub fn spore_script(network: Network, args: Vec<u8>) -> ScriptEx {
         match network {
             Network::Mainnet => ScriptEx::new_code(SPORE_MAINNET_CODE_HASH, args),
@@ -78,6 +86,7 @@ pub mod hardcoded {
         }
     }
 
+    /// Latest Cluster deployment tx hash for `network` (random under fake networks).
     pub fn cluster_tx_hash(network: Network) -> H256 {
         match network {
             Network::Mainnet => CLUSTER_MAINNET_TX_HASH,
@@ -86,6 +95,7 @@ pub mod hardcoded {
         }
     }
 
+    /// Cluster type script for `network`; fake/custom use `ScriptEx::Reference("cluster", args)`.
     pub fn cluster_script(network: Network, args: Vec<u8>) -> ScriptEx {
         match network {
             Network::Mainnet => ScriptEx::new_code(CLUSTER_MAINNET_CODE_HASH, args),
@@ -96,13 +106,7 @@ pub mod hardcoded {
 }
 
 pub mod hookkey {
-    /// The owner lock script of cluster cell that put in transaction's Inputs and Outputs field, which means it
-    /// should have matched signature in Witnesses
-    pub const CLUSTER_CELL_OWNER_LOCK: &str = "CLUSTER_CELL_OWNER_LOCK";
-    /// The new generated cluster unique id when creating new cluster cell in Outputs field
-    pub const NEW_CLUSTER_ID: &str = "NEW_CLUSTER_ID";
-    /// The new generated spore unique id when creating new spore cell in Outputs field
-    pub const NEW_SPORE_ID: &str = "NEW_SPORE_ID";
+    pub use crate::intent::log::{CLUSTER_CELL_OWNER_LOCK, NEW_CLUSTER_ID, NEW_SPORE_ID};
 }
 
 /// Add the lastest Spore deployment cell into transaction skeleton according to the network type.
@@ -151,10 +155,14 @@ impl<T: RPC> Operation<T> for AddClusterCelldep {
     }
 }
 
+/// How a Spore mint proves cluster authority.
 #[derive(Clone)]
 pub enum ClusterAuthorityMode {
+    /// Put a lock-proxy of the cluster owner into cell deps.
     LockProxy,
+    /// Put the cluster cell itself into cell deps (and consume it as input if needed).
     ClusterCell,
+    /// Do not attach cluster authority (standalone spore, or already present).
     Skip,
 }
 
@@ -164,7 +172,9 @@ pub enum ClusterAuthorityMode {
 /// - `cluster_id`: The unique identifier of the cluster cell
 /// - `authority_mode`: Indicate how to provide cluster authority while operating Spore
 pub struct AddClusterCelldepByClusterId {
+    /// Cluster type-script args (unique cluster id).
     pub cluster_id: H256,
+    /// How the cluster owner proves authority for a Spore operation.
     pub authority_mode: ClusterAuthorityMode,
 }
 
@@ -244,8 +254,11 @@ impl<T: RPC> Operation<T> for AddClusterCelldepByClusterId {
 /// - `cluster_id`: The unique identifier of the cluster cell
 /// - `count`: The number of spore cells to search and add
 pub struct AddSporeInputCellByClusterId {
+    /// Owner lock of the spores to consume.
     pub lock_script: ScriptEx,
+    /// Parent cluster id encoded in spore data.
     pub cluster_id: H256,
+    /// Maximum number of matching spore cells to consume.
     pub count: usize,
 }
 
@@ -296,7 +309,9 @@ impl<T: RPC> Operation<T> for AddSporeInputCellByClusterId {
 /// - `spore_id`: The unique identifier of the spore cell
 /// - `check_owner`: The owner lock script to check if the spore cell is owned by the passed owner
 pub struct AddSporeInputCellBySporeId {
+    /// Spore type-script args (unique spore id).
     pub spore_id: H256,
+    /// When set, fail if the cell's lock is not this script.
     pub check_owner: Option<ScriptEx>,
 }
 
@@ -346,13 +361,19 @@ impl<T: RPC> Operation<T> for AddSporeInputCellBySporeId {
 /// - `cluster_id`: The unique identifier of the cluster cell to create from
 /// - `authority_mode`: The cluster authority mode
 pub struct AddSporeOutputCell {
+    /// Holder lock of the new spore.
     pub lock_script: ScriptEx,
+    /// MIME-like content type, e.g. `"text/plain"`.
     pub content_type: std::string::String,
+    /// Spore content bytes.
     pub content: Vec<u8>,
+    /// Parent cluster; `None` mints a standalone spore.
     pub cluster_id: Option<H256>,
+    /// How to attach cluster authority when `cluster_id` is set.
     pub authority_mode: ClusterAuthorityMode,
 }
 
+/// Encode SporeData molecule bytes (content type, content, optional cluster id).
 pub fn make_spore_data(content_type: &str, content: &[u8], cluster_id: Option<&H256>) -> Vec<u8> {
     let cluster_id = cluster_id.map(|v| Bytes::new_unchecked(v.as_bytes().to_vec().into()));
     let molecule_spore_data = SporeData::new_builder()
@@ -403,6 +424,7 @@ impl<T: RPC> Operation<T> for AddSporeOutputCell {
 /// # Parameters
 /// - `input_index`: The index of input cell in transaction skeleton
 pub struct AddClusterInputCellByClusterId {
+    /// Cluster type-script args (unique cluster id).
     pub cluster_id: H256,
 }
 
@@ -443,11 +465,15 @@ impl<T: RPC> Operation<T> for AddClusterInputCellByClusterId {
 /// - `description`: The description of the cluster
 /// - `cluster_id_collector`: The callback function to collect the generated cluster id
 pub struct AddClusterOutputCell {
+    /// Holder lock of the new cluster.
     pub lock_script: ScriptEx,
+    /// Cluster display name.
     pub name: std::string::String,
+    /// Cluster description bytes.
     pub description: Vec<u8>,
 }
 
+/// Encode ClusterDataV2 molecule bytes (name + description).
 pub fn make_cluster_data(name: &str, description: &[u8]) -> Vec<u8> {
     let molecule_cluster_data = ClusterDataV2::new_builder()
         .name(name.as_bytes().to_vec())
@@ -486,6 +512,7 @@ impl<T: RPC> Operation<T> for AddClusterOutputCell {
 ///
 /// note: this is essential for a historical issue of co-build project
 pub struct AddSporeActions {
+    /// When true, fail if no spore/cluster action could be inferred.
     pub restrict: bool,
 }
 

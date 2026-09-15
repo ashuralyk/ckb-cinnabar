@@ -1,3 +1,11 @@
+//! Ready-made [`crate::instruction::Instruction`] recipes for common CKB flows.
+//!
+//! Each function returns an instruction tagged with a [`crate::intent`]
+//! constant (`TRANSFER`, `DEPOSIT`, `MINT`, …) so it lines up with the
+//! matching Verify-tree node. Native only (not compiled for wasm).
+//!
+//! Spore helpers require `--features spore` and remain experimental.
+
 use std::path::PathBuf;
 
 use ckb_sdk::HumanCapacity;
@@ -5,13 +13,14 @@ use ckb_sdk::HumanCapacity;
 use ckb_types::H256;
 use secp256k1::SecretKey;
 
+#[cfg(feature = "spore")]
+use crate::operation::spore::*;
 use crate::{
     address::Address,
     instruction::DefaultInstruction,
-    operation::{basic::*, dao::*},
+    intent,
+    operation::{basic::*, dao::*, udt::*},
 };
-#[cfg(feature = "spore")]
-use crate::operation::spore::*;
 
 /// Transfer CKB from one address to another
 ///
@@ -27,20 +36,23 @@ pub fn secp256k1_sighash_transfer(
     to: &Address,
     ckb: HumanCapacity,
 ) -> DefaultInstruction {
-    DefaultInstruction::new(vec![
-        Box::new(AddSecp256k1SighashCellDep {}),
-        Box::new(AddInputCellByAddress {
-            address: from.clone(),
-        }),
-        Box::new(AddOutputCell {
-            lock_script: to.payload().into(),
-            type_script: None,
-            data: Vec::new(),
-            capacity: ckb.into(),
-            absolute_capacity: true,
-            type_id: false,
-        }),
-    ])
+    DefaultInstruction::named(
+        intent::TRANSFER,
+        vec![
+            Box::new(AddSecp256k1SighashCellDep {}),
+            Box::new(AddInputCellByAddress {
+                address: from.clone(),
+            }),
+            Box::new(AddOutputCell {
+                lock_script: to.payload().into(),
+                type_script: None,
+                data: Vec::new(),
+                capacity: ckb.into(),
+                absolute_capacity: true,
+                type_id: false,
+            }),
+        ],
+    )
 }
 
 /// Balance transaction with capacity and then sign it
@@ -93,10 +105,16 @@ pub fn balance_and_sign_with_ckb_cli(
 }
 
 #[cfg(feature = "spore")]
+/// One Spore to mint: owner (defaults to the minter), MIME-like content type,
+/// payload bytes, and optional parent cluster.
 pub struct Spore {
-    pub owner: Option<Address>, // if None, use minter as owner
+    /// Holder lock; `None` uses the minter address.
+    pub owner: Option<Address>,
+    /// Spore content type, e.g. `"text/plain"`.
     pub content_type: String,
+    /// Spore content bytes.
     pub content: Vec<u8>,
+    /// Parent cluster id when minting into a cluster.
     pub cluster_id: Option<H256>,
 }
 
@@ -112,13 +130,15 @@ pub fn mint_spores(
     spores: Vec<Spore>,
     cluster_lock_proxy: bool,
 ) -> DefaultInstruction {
-    let mut mint = DefaultInstruction::new(vec![
-        Box::new(AddSecp256k1SighashCellDep {}),
-        // Used to calculate the spore unique id
-        Box::new(AddInputCellByAddress {
-            address: minter.clone(),
-        }),
-    ]);
+    let mut mint = DefaultInstruction::named(
+        intent::MINT,
+        vec![
+            Box::new(AddSecp256k1SighashCellDep {}),
+            Box::new(AddInputCellByAddress {
+                address: minter.clone(),
+            }),
+        ],
+    );
     let authority_mode = if cluster_lock_proxy {
         ClusterAuthorityMode::LockProxy
     } else {
@@ -152,7 +172,10 @@ pub fn mint_spores(
 ///     - `1`: The Spore ID to transfer
 #[cfg(feature = "spore")]
 pub fn transfer_spores(from: &Address, spores: Vec<(Address, H256)>) -> DefaultInstruction {
-    let mut transfer = DefaultInstruction::new(vec![Box::new(AddSecp256k1SighashCellDep {})]);
+    let mut transfer = DefaultInstruction::named(
+        intent::TRANSFER,
+        vec![Box::new(AddSecp256k1SighashCellDep {})],
+    );
     for (to, spore_id) in spores {
         transfer
             .push(Box::new(AddSporeInputCellBySporeId {
@@ -178,7 +201,8 @@ pub fn transfer_spores(from: &Address, spores: Vec<(Address, H256)>) -> DefaultI
 /// - `spores`: The Spores to burn
 #[cfg(feature = "spore")]
 pub fn burn_spores(owner: &Address, spores: Vec<H256>) -> DefaultInstruction {
-    let mut burn = DefaultInstruction::new(vec![Box::new(AddSecp256k1SighashCellDep {})]);
+    let mut burn =
+        DefaultInstruction::named(intent::BURN, vec![Box::new(AddSecp256k1SighashCellDep {})]);
     spores.into_iter().for_each(|spore_id| {
         burn.push(Box::new(AddSporeInputCellBySporeId {
             spore_id,
@@ -190,9 +214,13 @@ pub fn burn_spores(owner: &Address, spores: Vec<H256>) -> DefaultInstruction {
 }
 
 #[cfg(feature = "spore")]
+/// One Cluster to mint: owner (defaults to the minter), name, and description.
 pub struct Cluster {
-    pub owner: Option<Address>, // if None, use minter as owner
+    /// Holder lock; `None` uses the minter address.
+    pub owner: Option<Address>,
+    /// Cluster display name.
     pub cluster_name: String,
+    /// Cluster description bytes.
     pub cluster_description: Vec<u8>,
 }
 
@@ -203,12 +231,15 @@ pub struct Cluster {
 /// - `clusters`: The Clusters to mint
 #[cfg(feature = "spore")]
 pub fn mint_clusters(minter: &Address, clusters: Vec<Cluster>) -> DefaultInstruction {
-    let mut mint = DefaultInstruction::new(vec![
-        Box::new(AddSecp256k1SighashCellDep {}),
-        Box::new(AddInputCellByAddress {
-            address: minter.clone(),
-        }),
-    ]);
+    let mut mint = DefaultInstruction::named(
+        intent::MINT,
+        vec![
+            Box::new(AddSecp256k1SighashCellDep {}),
+            Box::new(AddInputCellByAddress {
+                address: minter.clone(),
+            }),
+        ],
+    );
     for Cluster {
         owner,
         cluster_name,
@@ -232,12 +263,15 @@ pub fn mint_clusters(minter: &Address, clusters: Vec<Cluster>) -> DefaultInstruc
 /// - `clusters`: The Clusters to transfer
 #[cfg(feature = "spore")]
 pub fn transfer_clusters(from: &Address, clusters: Vec<(Address, H256)>) -> DefaultInstruction {
-    let mut transfer = DefaultInstruction::new(vec![
-        Box::new(AddSecp256k1SighashCellDep {}),
-        Box::new(AddInputCellByAddress {
-            address: from.clone(),
-        }),
-    ]);
+    let mut transfer = DefaultInstruction::named(
+        intent::TRANSFER,
+        vec![
+            Box::new(AddSecp256k1SighashCellDep {}),
+            Box::new(AddInputCellByAddress {
+                address: from.clone(),
+            }),
+        ],
+    );
     for (to, cluster_id) in clusters {
         transfer
             .push(Box::new(AddClusterInputCellByClusterId { cluster_id }))
@@ -259,13 +293,16 @@ pub fn transfer_clusters(from: &Address, clusters: Vec<(Address, H256)>) -> Defa
 /// - `depositer`: The address to deposit capacity
 /// - `ckb`: The amount of CKB to deposit, e.g. "100.5 CKB"
 pub fn dao_deposit(depositer: &Address, ckb: HumanCapacity) -> DefaultInstruction {
-    DefaultInstruction::new(vec![
-        Box::new(AddSecp256k1SighashCellDep {}),
-        Box::new(AddDaoDepositOutputCell {
-            owner: depositer.clone().into(),
-            deposit_capacity: ckb.into(),
-        }),
-    ])
+    DefaultInstruction::named(
+        intent::DEPOSIT,
+        vec![
+            Box::new(AddSecp256k1SighashCellDep {}),
+            Box::new(AddDaoDepositOutputCell {
+                owner: depositer.clone().into(),
+                deposit_capacity: ckb.into(),
+            }),
+        ],
+    )
 }
 
 /// Withdraw capacity from Nervos DAO, which only makes a mark as phase one
@@ -281,16 +318,19 @@ pub fn dao_withdraw_phase_one(
     upperbound_timestamp: Option<u64>,
     transfer_to: Option<&Address>,
 ) -> DefaultInstruction {
-    DefaultInstruction::new(vec![
-        Box::new(AddSecp256k1SighashCellDep {}),
-        Box::new(AddDaoWithdrawPhaseOneCells {
-            maximal_withdraw_capacity: upperbound_capacity.map(Into::into).unwrap_or(u64::MAX),
-            upperbound_timesamp: upperbound_timestamp.unwrap_or(u64::MAX),
-            owner: depositer.clone().into(),
-            transfer_to: transfer_to.map(|v| v.clone().into()),
-            throw_if_no_avaliable: true,
-        }),
-    ])
+    DefaultInstruction::named(
+        intent::WITHDRAW,
+        vec![
+            Box::new(AddSecp256k1SighashCellDep {}),
+            Box::new(AddDaoWithdrawPhaseOneCells {
+                maximal_withdraw_capacity: upperbound_capacity.map(Into::into).unwrap_or(u64::MAX),
+                upperbound_timestamp: upperbound_timestamp.unwrap_or(u64::MAX),
+                owner: depositer.clone().into(),
+                transfer_to: transfer_to.map(|v| v.clone().into()),
+                throw_if_no_available: true,
+            }),
+        ],
+    )
 }
 
 /// Withdraw capacity from Nervos DAO, which actually withdraws the capacity
@@ -304,15 +344,67 @@ pub fn dao_withdraw_phase_two(
     upperbound_capacity: Option<HumanCapacity>,
     transfer_to: Option<&Address>,
 ) -> DefaultInstruction {
-    DefaultInstruction::new(vec![
-        Box::new(AddSecp256k1SighashCellDep {}),
-        Box::new(AddDaoWithdrawPhaseTwoCells {
-            maximal_withdraw_capacity: upperbound_capacity.map(Into::into).unwrap_or(u64::MAX),
-            owner: withdrawer.clone().into(),
-            transfer_to: transfer_to.map(|v| v.clone().into()),
-            throw_if_no_avaliable: true,
-        }),
-    ])
+    DefaultInstruction::named(
+        intent::WITHDRAW,
+        vec![
+            Box::new(AddSecp256k1SighashCellDep {}),
+            Box::new(AddDaoWithdrawPhaseTwoCells {
+                maximal_withdraw_capacity: upperbound_capacity.map(Into::into).unwrap_or(u64::MAX),
+                owner: withdrawer.clone().into(),
+                transfer_to: transfer_to.map(|v| v.clone().into()),
+                throw_if_no_available: true,
+            }),
+        ],
+    )
 }
 
-// TODO: Add more predefined instructions here, e.g. xUDT
+/// Mint an xUDT cell. Type-script args are `issuer` lock hash (+ optional extra).
+///
+/// The instruction is named [`intent::MINT`].
+pub fn mint_xudt(
+    issuer: &Address,
+    holder: &Address,
+    amount: u128,
+    extra_args: Vec<u8>,
+) -> DefaultInstruction {
+    DefaultInstruction::named(
+        intent::MINT,
+        vec![
+            Box::new(AddSecp256k1SighashCellDep {}),
+            Box::new(AddXudtCelldep {}),
+            Box::new(AddXudtOutputCell {
+                lock_script: holder.clone().into(),
+                issuer: issuer.clone().into(),
+                amount,
+                extra_args,
+            }),
+        ],
+    )
+}
+
+/// Transfer `amount` of an xUDT issued by `issuer` from `from` to `to`.
+///
+/// The instruction is named [`intent::TRANSFER`]. Change stays with `from`.
+pub fn transfer_xudt(
+    from: &Address,
+    to: &Address,
+    issuer: &Address,
+    amount: u128,
+    extra_args: Vec<u8>,
+) -> DefaultInstruction {
+    DefaultInstruction::named(
+        intent::TRANSFER,
+        vec![
+            Box::new(AddSecp256k1SighashCellDep {}),
+            Box::new(AddXudtCelldep {}),
+            Box::new(AddXudtTransferCells {
+                from: from.clone().into(),
+                to: to.clone().into(),
+                issuer: issuer.clone().into(),
+                amount,
+                extra_args,
+                throw_if_no_available: true,
+            }),
+        ],
+    )
+}

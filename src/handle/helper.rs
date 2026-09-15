@@ -1,17 +1,24 @@
+//! Filesystem helpers for `deployment/<network>/<contract>.json` records.
+
 use std::{fs, path::PathBuf};
 
 use chrono::prelude::Utc;
 use ckb_cinnabar_calculator::{
     address::Address,
+    error::CalculatorError,
     instruction::{Instruction, TransactionCalculator},
     re_exports::{
-        ckb_hash::blake2b_256, ckb_jsonrpc_types::OutputsValidator, ckb_types::H256, eyre,
+        ckb_hash::blake2b_256,
+        ckb_jsonrpc_types::OutputsValidator,
+        ckb_types::{prelude::Unpack, H256},
+        eyre,
     },
     rpc::{Network, RpcClient, RPC},
 };
 
 use crate::object::*;
 
+/// Path of the JSON record file for `contract_name` on `network`.
 pub fn generate_contract_deployment_path(
     network: &Network,
     contract_name: &str,
@@ -23,6 +30,9 @@ pub fn generate_contract_deployment_path(
         .join(format!("{contract_name}.json"))
 }
 
+/// Load one record: a specific `version`, or the last record if `version` is `None`.
+///
+/// Returns `Ok(None)` when the file does not exist.
 pub fn load_contract_deployment(
     network: &Network,
     contract_name: &str,
@@ -43,6 +53,45 @@ pub fn load_contract_deployment(
     }
 }
 
+/// Load every JSON record in the network directory, optionally filtered by name and [`ListMode`].
+pub fn load_all_deployments(
+    network: &Network,
+    deployment_path: &str,
+    contract_name: Option<&str>,
+    mode: ListMode,
+) -> eyre::Result<Vec<DeploymentRecord>> {
+    let dir = PathBuf::new()
+        .join(deployment_path)
+        .join(network.to_string());
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut records = Vec::new();
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        if let Some(name) = contract_name {
+            if path.file_stem().and_then(|s| s.to_str()) != Some(name) {
+                continue;
+            }
+        }
+        let file = fs::File::open(&path)?;
+        let deployments: Vec<DeploymentRecord> = serde_json::from_reader(file)?;
+        records.extend(deployments);
+    }
+    records.retain(|r| match mode {
+        ListMode::All => true,
+        ListMode::Deployed => r.operation != "consume",
+        ListMode::Consumed => r.operation == "consume",
+    });
+    Ok(records)
+}
+
+/// Read a compiled RISC-V binary from `binary_path/<contract_name>` and return
+/// `(bytes, blake2b_256)`.
 pub fn load_contract_binary(
     contract_name: &str,
     binary_path: &str,
@@ -54,6 +103,8 @@ pub fn load_contract_binary(
     Ok((contract_binary, contract_hash))
 }
 
+/// JSON-RPC client for `network`. [`Network::Fake`] is rejected — use
+/// `FakeRpcClient` in tests instead of the CLI.
 pub fn create_rpc_from_network(network: &Network) -> eyre::Result<RpcClient> {
     match network {
         Network::Mainnet => Ok(RpcClient::new_mainnet()),
@@ -63,6 +114,29 @@ pub fn create_rpc_from_network(network: &Network) -> eyre::Result<RpcClient> {
     }
 }
 
+/// Print a [`CliResponse`]: pretty JSON when `json` is set, otherwise a one-line
+/// hash, a TSV list, or an `kind: message` error on stderr.
+pub fn print_response(json: bool, response: &CliResponse) {
+    if json {
+        println!("{}", serde_json::to_string_pretty(response).expect("json"));
+    } else if let Some(hash) = &response.transaction_hash {
+        println!("Transaction hash: {hash:#x}");
+    } else if let Some(records) = &response.records {
+        for r in records {
+            println!(
+                "{}\t{}\t{}\t{:#x}",
+                r.name, r.version, r.operation, r.tx_hash
+            );
+        }
+    } else if let Some(err) = &response.error {
+        eprintln!("{}: {}", err.kind, err.message);
+    }
+}
+
+/// Assemble `instructions`, optionally send, and persist a [`DeploymentRecord`].
+///
+/// `--dry-run` still returns a (unsigned, local) transaction hash and record
+/// in the JSON envelope but does not write the file or broadcast.
 pub async fn send_and_record_transaction<T: RPC>(
     rpc: T,
     instructions: Vec<Instruction<T>>,
@@ -73,6 +147,8 @@ pub async fn send_and_record_transaction<T: RPC>(
     contract_hash: Option<[u8; 32]>,
     payer_address: Address,
     contract_owner_address: Option<Address>,
+    dry_run: bool,
+    json: bool,
 ) -> eyre::Result<()> {
     let (skeleton, _) = TransactionCalculator::new(instructions)
         .new_skeleton(&rpc)
@@ -82,19 +158,20 @@ pub async fn send_and_record_transaction<T: RPC>(
     let type_id_args = skeleton.outputs[0]
         .type_script()
         .map(|s| H256::from_slice(&s.args().raw_data()).unwrap());
-    let tx_hash = rpc
-        .send_transaction(
-            skeleton.into_transaction_view().data().into(),
-            Some(OutputsValidator::Passthrough),
-        )
-        .await?;
-    println!("Transaction hash: {}", tx_hash);
+    let tx_view = skeleton.clone().into_transaction_view();
+    let tx_hash = if dry_run {
+        tx_view.hash().unpack()
+    } else {
+        rpc.send_transaction(tx_view.data().into(), Some(OutputsValidator::Passthrough))
+            .await
+            .map_err(CalculatorError::from)?
+    };
     let deployment_record = DeploymentRecord {
         name: contract_name,
         date: Utc::now().to_rfc3339(),
         operation: operation.to_string(),
         version,
-        tx_hash,
+        tx_hash: tx_hash.clone(),
         out_index: 0,
         data_hash: contract_hash.map(Into::into),
         occupied_capacity,
@@ -104,7 +181,14 @@ pub async fn send_and_record_transaction<T: RPC>(
         type_id_args,
         comment: None,
     };
-    save_contract_deployment(tx_path, deployment_record)
+    if !dry_run {
+        save_contract_deployment(tx_path, deployment_record.clone())?;
+    }
+    let mut response = CliResponse::ok(operation, dry_run);
+    response.transaction_hash = Some(tx_hash);
+    response.record = Some(deployment_record);
+    print_response(json, &response);
+    Ok(())
 }
 
 fn save_contract_deployment(path: PathBuf, record: DeploymentRecord) -> eyre::Result<()> {

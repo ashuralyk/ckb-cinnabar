@@ -1,0 +1,7 @@
+[package]
+name = "{{crate_name}}-calculator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ckb-cinnabar-calculator = { workspace = true }

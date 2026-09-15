@@ -336,6 +336,7 @@ dependencies = [
  "bech32",
  "ckb-always-success-script",
  "ckb-chain-spec",
+ "ckb-cinnabar-core",
  "ckb-hash",
  "ckb-jsonrpc-types",
  "ckb-script",
@@ -358,10 +359,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ckb-cinnabar-core"
+version = "0.1.0"
+
+[[package]]
 name = "ckb-cinnabar-verifier"
 version = "0.1.0"
 dependencies = [
  "blake2b-ref",
+ "ckb-cinnabar-core",
  "ckb-std",
 ]
 

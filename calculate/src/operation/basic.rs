@@ -1,3 +1,9 @@
+//! Generic cell / witness / signature operations used by every instruction.
+//!
+//! These fill Inputs, Outputs, CellDeps, HeaderDeps, and Witnesses without
+//! assuming a particular type script. Prefer `ByAddress` / `ByOutPoint`
+//! helpers unless you need the full indexer query.
+
 #![allow(clippy::mutable_key_type)]
 
 use std::{
@@ -50,10 +56,16 @@ use crate::rpc::Network;
 
 /// Operation that add cell dep to transaction skeleton by tx hash with index
 pub struct AddCellDep {
+    /// Unique name in the skeleton; later `ScriptEx::Reference` lookups use it.
     pub name: String,
+    /// Hash of the transaction containing the dep cell.
     pub tx_hash: H256,
+    /// Output index inside `tx_hash`.
     pub index: u32,
+    /// `DepType::Code` or `DepType::DepGroup`.
     pub dep_type: DepType,
+    /// Fetch and keep the cell data (needed when a script references the dep
+    /// by `Data1` code hash).
     pub with_data: bool,
 }
 
@@ -83,9 +95,13 @@ impl<T: RPC> Operation<T> for AddCellDep {
 
 /// Operation that add cell dep to transaction skeleton by type script, which is type id for specific
 pub struct AddCellDepByType {
+    /// Unique name in the skeleton.
     pub name: String,
+    /// Type script the dep cell must carry (matched exactly).
     pub type_script: ScriptEx,
+    /// `DepType::Code` or `DepType::DepGroup`.
     pub dep_type: DepType,
+    /// Fetch and keep the cell data.
     pub with_data: bool,
 }
 
@@ -109,14 +125,14 @@ impl<T: RPC> Operation<T> for AddCellDepByType {
         _: &mut Log,
     ) -> Result<()> {
         if skeleton.get_celldep_by_name(&self.name).is_none() {
-            let mut find_avaliable = false;
+            let mut find_available = false;
             let mut iter = GetCellsIter::new(rpc, self.search_key(skeleton)?);
             if let Some(cell) = iter.next().await? {
                 let cell_dep = CellDepEx::new_from_indexer_cell(self.name, cell, self.dep_type);
-                find_avaliable = true;
+                find_available = true;
                 skeleton.celldep(cell_dep);
             }
-            if !find_avaliable {
+            if !find_available {
                 return Err(eyre!("cell dep not found"));
             }
         }
@@ -126,9 +142,13 @@ impl<T: RPC> Operation<T> for AddCellDepByType {
 
 /// Operation that add cell dep to transaction skeleton by type script, which is type id for specific
 pub struct AddCellDepByTypeId {
+    /// Unique name in the skeleton.
     pub name: String,
+    /// Type-ID args of the dep cell's type script.
     pub type_args: H256,
+    /// `DepType::Code` or `DepType::DepGroup`.
     pub dep_type: DepType,
+    /// Fetch and keep the cell data.
     pub with_data: bool,
 }
 
@@ -224,6 +244,7 @@ impl<T: RPC> Operation<T> for AddSecp256k1SighashCellDep {
 
 /// Operation that add a standalone header dep to transaction without linking to any input cell
 pub struct AddHeaderDep {
+    /// Hash of the block whose header is added.
     pub block_hash: H256,
 }
 
@@ -243,6 +264,7 @@ impl<T: RPC> Operation<T> for AddHeaderDep {
 
 /// Operation that add a header dep to transaction by block number
 pub struct AddHeaderDepByBlockNumber {
+    /// Height of the block whose header is added.
     pub block_number: u64,
 }
 
@@ -269,6 +291,8 @@ impl<T: RPC> Operation<T> for AddHeaderDepByBlockNumber {
 
 /// Operation that add a header dep to transaction by input index, which will link to that input cell
 pub struct AddHeaderDepByInputIndex {
+    /// Index into `skeleton.inputs`; the dep is the header of the block that
+    /// committed the input's creating transaction.
     pub input_index: usize,
 }
 
@@ -289,6 +313,7 @@ impl<T: RPC> Operation<T> for AddHeaderDepByInputIndex {
 
 /// Operation that add a header dep to transaction by cell dep index, which will link to that cell dep cell
 pub struct AddHeaderDepByCellDepIndex {
+    /// Index into `skeleton.celldeps`.
     pub celldep_index: usize,
 }
 
@@ -311,10 +336,16 @@ impl<T: RPC> Operation<T> for AddHeaderDepByCellDepIndex {
 /// # Parameters
 /// - `count`: u32, the count of input cells to add that searching coming out of ckb-indexer
 pub struct AddInputCell {
+    /// Lock script cells must carry.
     pub lock_script: ScriptEx,
+    /// `Some(Some(t))` requires type script `t`; `Some(None)` requires *no*
+    /// type script; `None` ignores the type script.
     pub type_script: Option<Option<ScriptEx>>,
+    /// Page size when iterating the indexer (max cells added per batch).
     pub count: u32,
+    /// Only match cells with empty data.
     pub skip_data: bool,
+    /// How the indexer matches script args (exact / prefix / partial).
     pub search_mode: SearchMode,
 }
 
@@ -346,16 +377,16 @@ impl<T: RPC> Operation<T> for AddInputCell {
         _: &mut Log,
     ) -> Result<()> {
         let mut iter = GetCellsIter::new(rpc, self.search_key(skeleton)?);
-        let mut find_avaliable = false;
+        let mut find_available = false;
         while let Some(cells) = iter.next_batch(self.count).await? {
             cells.into_iter().try_for_each(|cell| {
                 let cell_input = CellInputEx::new_from_indexer_cell(cell, None);
-                find_avaliable = true;
+                find_available = true;
                 skeleton.input(cell_input)?.witness(Default::default());
                 Result::<()>::Ok(())
             })?;
         }
-        if !find_avaliable {
+        if !find_available {
             return Err(eyre!("input cell not found"));
         }
         Ok(())
@@ -364,8 +395,11 @@ impl<T: RPC> Operation<T> for AddInputCell {
 
 /// Operation that add input cell to transaction skeleton by out point directly
 pub struct AddInputCellByOutPoint {
+    /// Hash of the transaction that created the cell.
     pub tx_hash: H256,
+    /// Output index inside `tx_hash`.
     pub index: u32,
+    /// Optional `since` constraint placed on the input.
     pub since: Option<u64>,
 }
 
@@ -386,6 +420,8 @@ impl<T: RPC> Operation<T> for AddInputCellByOutPoint {
 
 /// Operation that add input cell to transaction skeleton by user address
 pub struct AddInputCellByAddress {
+    /// Address whose lock script is searched; only plain capacity cells
+    /// (no type script, empty data) are picked.
     pub address: Address,
 }
 
@@ -407,8 +443,11 @@ impl<T: RPC> Operation<T> for AddInputCellByAddress {
 
 /// Operation that add input cell to transaction skeleton by type script
 pub struct AddInputCellByType {
+    /// Type script the cells must carry.
     pub type_script: ScriptEx,
+    /// Page size when iterating the indexer.
     pub count: u32,
+    /// How the indexer matches script args.
     pub search_mode: SearchMode,
 }
 
@@ -430,16 +469,16 @@ impl<T: RPC> Operation<T> for AddInputCellByType {
         _: &mut Log,
     ) -> Result<()> {
         let mut iter = GetCellsIter::new(rpc, self.search_key(skeleton)?);
-        let mut find_avaliable = false;
+        let mut find_available = false;
         while let Some(cells) = iter.next_batch(self.count).await? {
             cells.into_iter().try_for_each(|cell| {
                 let cell_input = CellInputEx::new_from_indexer_cell(cell, None);
-                find_avaliable = true;
+                find_available = true;
                 skeleton.input(cell_input)?.witness(Default::default());
                 Result::<()>::Ok(())
             })?;
         }
-        if !find_avaliable {
+        if !find_available {
             return Err(eyre!("input cell not found"));
         }
         Ok(())
@@ -453,11 +492,19 @@ impl<T: RPC> Operation<T> for AddInputCellByType {
 /// - `type_id`: bool, if true, calculate type id and override into type script if provided
 #[derive(Default)]
 pub struct AddOutputCell {
+    /// Lock script of the new cell.
     pub lock_script: ScriptEx,
+    /// Optional type script of the new cell.
     pub type_script: Option<ScriptEx>,
+    /// Capacity in shannons; absolute value when `absolute_capacity` is true,
+    /// otherwise added on top of the cell's minimal occupied capacity.
     pub capacity: u64,
+    /// Cell data.
     pub data: Vec<u8>,
+    /// Treat `capacity` as the final value instead of an extra over occupied.
     pub absolute_capacity: bool,
+    /// Compute a type id from the first input + this output's index and use it
+    /// as the type script args.
     pub type_id: bool,
 }
 
@@ -508,8 +555,11 @@ impl<T: RPC> Operation<T> for AddOutputCell {
 
 /// Operation that add output cell to transaction skeleton by address
 pub struct AddOutputCellByAddress {
+    /// Receiver address; used as the lock script.
     pub address: Address,
+    /// Cell data.
     pub data: Vec<u8>,
+    /// Attach a freshly computed type id as the type script.
     pub add_type_id: bool,
 }
 
@@ -534,12 +584,17 @@ impl<T: RPC> Operation<T> for AddOutputCellByAddress {
     }
 }
 
+/// How [`AddOutputCellByInputIndex`] rewrites the copied cell's capacity.
 #[derive(Default)]
 pub enum CapacityAdjustment {
+    /// Keep the input cell's capacity unchanged.
     #[default]
     Keep,
+    /// Rebuild with the exact occupied capacity for the (possibly new) data.
     BuildExact,
+    /// Add shannons to the input cell's capacity.
     Add(u64),
+    /// Subtract shannons from the input cell's capacity (saturating at 0).
     Subtract(u64),
 }
 
@@ -550,10 +605,16 @@ pub enum CapacityAdjustment {
 /// - `adjust_capacity`: bool, if true, adjust the capacity if `data` provided
 #[derive(Default)]
 pub struct AddOutputCellByInputIndex {
+    /// Index into `skeleton.inputs`; `usize::MAX` copies the last input.
     pub input_index: usize,
+    /// Replace the copied cell's data when set.
     pub data: Option<Vec<u8>>,
+    /// Replace the copied cell's lock script when set.
     pub lock_script: Option<ScriptEx>,
+    /// `Some(Some(t))` sets type script `t`; `Some(None)` removes the type
+    /// script; `None` keeps the input's type script.
     pub type_script: Option<Option<ScriptEx>>,
+    /// How to adjust the capacity of the copied cell.
     pub adjust_capacity: CapacityAdjustment,
 }
 
@@ -604,9 +665,13 @@ impl<T: RPC> Operation<T> for AddOutputCellByInputIndex {
 ///
 /// `witness_index`: Option<usize>, the index of witness to update, if None, add a new witness
 pub struct AddWitnessArgs {
+    /// Index of an existing witness to overwrite; `None` appends a new one.
     pub witness_index: Option<usize>,
+    /// `WitnessArgs.lock` field (e.g. a signature).
     pub lock: Vec<u8>,
+    /// `WitnessArgs.input_type` field.
     pub input_type: Vec<u8>,
+    /// `WitnessArgs.output_type` field.
     pub output_type: Vec<u8>,
 }
 
@@ -637,7 +702,9 @@ impl<T: RPC> Operation<T> for AddWitnessArgs {
 #[cfg(not(target_arch = "wasm32"))]
 /// Operation that sign and add secp256k1_sighash_all signatures to transaction skeleton
 pub struct AddSecp256k1SighashSignatures {
+    /// Lock scripts to group inputs/outputs by; one signature per script group.
     pub user_lock_scripts: Vec<ScriptEx>,
+    /// Private keys corresponding to the sighash args in `user_lock_scripts`.
     pub user_private_keys: Vec<SecretKey>,
 }
 
@@ -671,19 +738,27 @@ impl<T: RPC> Operation<T> for AddSecp256k1SighashSignatures {
     }
 }
 
-/// Copy from https://github.com/nervosnetwork/ckb-cli/blob/develop/src/subcommands/tx.rs#L783
+/// Multisig config section of a ckb-cli tx file (JSON mirror).
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct ReprMultisigConfig {
+    /// Sighash addresses that participate in the multisig.
     pub sighash_addresses: Vec<String>,
+    /// First N addresses that must always sign.
     pub require_first_n: u8,
+    /// Signature threshold.
     pub threshold: u8,
 }
 
+/// ckb-cli `tx` file format used to hand a transaction over for signing.
+///
 /// Copy from https://github.com/nervosnetwork/ckb-cli/blob/develop/src/subcommands/tx.rs#L710
 #[derive(serde::Serialize, serde::Deserialize, Default)]
 pub struct ReprTxHelper {
+    /// Packed transaction body in JSON-RPC form.
     pub transaction: Transaction,
+    /// Multisig configs keyed by the sighash address hash160.
     pub multisig_configs: HashMap<H160, ReprMultisigConfig>,
+    /// Collected signatures keyed by lock-script hash.
     pub signatures: HashMap<JsonBytes, Vec<JsonBytes>>,
 }
 
@@ -691,8 +766,11 @@ pub struct ReprTxHelper {
 ///
 /// note: this operation requires `ckb-cli` installed and available in PATH, refer to https://github.com/nervosnetwork/ckb-cli
 pub struct AddSecp256k1SighashSignaturesWithCkbCli {
+    /// Address that pays/unlocks; the first input group with its lock is signed.
     pub signer_address: Address,
+    /// Directory where the intermediate tx JSON file is written.
     pub cache_path: PathBuf,
+    /// Keep the intermediate tx file after signing (useful for debugging).
     pub keep_cache_file: bool,
 }
 
@@ -786,8 +864,12 @@ impl<T: RPC> Operation<T> for AddSecp256k1SighashSignaturesWithCkbCli {
 
 /// Operation that balance transaction skeleton
 pub struct BalanceTransaction {
+    /// Lock script used to search for extra capacity input cells.
     pub balancer: ScriptEx,
+    /// Where the change capacity goes (new cell by address/script, or an
+    /// existing output index).
     pub change_receiver: ChangeReceiver,
+    /// Extra fee rate (shannons/byte) added on top of the node's min fee rate.
     pub additional_fee_rate: u64,
 }
 

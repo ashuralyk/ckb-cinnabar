@@ -3,6 +3,7 @@ resolver = "2"
 
 members = [
     "calculate",
+    "core",
     "verify",
 ]
 
@@ -12,7 +13,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-# Spore operations are WIP; the example cannot compile without them.
+# Spore operations are experimental; the example cannot compile without them.
 spore = ["ckb-cinnabar-calculator/spore"]
 
 [dependencies]

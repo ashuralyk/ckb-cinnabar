@@ -1,3 +1,8 @@
+//! CKB 2021 full addresses (bech32m): a lock script bound to a [`Network`].
+//!
+//! [`Address`] parses `ckb1…` / `ckt1…` strings and converts to/from packed
+//! [`Script`]. [`AddressPayload`] is the lock-script triple without the HRP.
+
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
 use std::str::FromStr;
@@ -12,6 +17,10 @@ use ckb_types::{
 
 use crate::rpc::Network;
 
+/// Payload of a CKB full address (ckb2021 format): the lock script triple.
+///
+/// Encoded as `0x00 | code_hash | hash_type | args` under bech32m; see
+/// [RFC-0021](https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0021-ckb-address-format/0021-ckb-address-format.md).
 #[derive(Hash, Eq, PartialEq, Clone)]
 pub struct AddressPayload {
     hash_type: ScriptHashType,
@@ -20,6 +29,7 @@ pub struct AddressPayload {
 }
 
 impl AddressPayload {
+    /// Build a payload from the three lock-script components.
     pub fn new_full(hash_type: ScriptHashType, code_hash: Byte32, args: Bytes) -> AddressPayload {
         Self {
             hash_type,
@@ -28,18 +38,22 @@ impl AddressPayload {
         }
     }
 
+    /// Lock script hash type (`Data`, `Type`, `Data1`, `Data2`).
     pub fn hash_type(&self) -> ScriptHashType {
         self.hash_type
     }
 
+    /// Lock script code hash.
     pub fn code_hash(&self) -> Byte32 {
         self.code_hash.clone()
     }
 
+    /// Lock script args.
     pub fn args(&self) -> Bytes {
         self.args.clone()
     }
 
+    /// Bech32m-encode this payload for the given network (`ckb1...` / `ckt1...`).
     pub fn display_with_network(&self, network: &Network) -> String {
         // payload = 0x00 | code_hash | hash_type | args
         let code_hash = self.code_hash();
@@ -99,6 +113,10 @@ impl From<Script> for AddressPayload {
     }
 }
 
+/// A CKB address: an [`AddressPayload`] bound to a [`Network`].
+///
+/// Parses from / formats to the ckb2021 bech32m full-address string via
+/// [`FromStr`] / [`fmt::Display`]. Convertible to/from [`Script`] (lock only).
 #[derive(Hash, Eq, PartialEq, Clone)]
 pub struct Address {
     network: Network,
@@ -106,14 +124,17 @@ pub struct Address {
 }
 
 impl Address {
+    /// Bind a payload to a network.
     pub fn new(network: Network, payload: AddressPayload) -> Address {
         Address { network, payload }
     }
 
+    /// Network this address belongs to (decides the bech32m HRP).
     pub fn network(&self) -> &Network {
         &self.network
     }
 
+    /// The lock-script payload carried by this address.
     pub fn payload(&self) -> &AddressPayload {
         &self.payload
     }

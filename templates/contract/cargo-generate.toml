@@ -1,0 +1,12 @@
+[template]
+cargo_generate_version = ">=0.19.0"
+
+[placeholders.use_local_cinnabar]
+type = "bool"
+prompt = "Depend on a local cinnabar checkout?"
+default = true
+
+[placeholders.cinnabar_path]
+type = "string"
+prompt = "Path to local cinnabar (if use_local_cinnabar)"
+default = "../cinnabar"

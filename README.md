@@ -4,7 +4,9 @@
 
 Cinnabar is a framework that aims to find a most reasonable way to bring CKB a better programming experience.
 
-In a short, Cinnabar takes advantage of `Calculate` and `Verify` separation design, which is the core concept of CKB Cell model, to fill in the missing parts of existing CKB programming. 
+In a short, Cinnabar takes advantage of `Calculate` and `Verify` separation design, which is the core concept of CKB Cell model, to fill in the missing parts of existing CKB programming.
+
+**AI / coding agents:** start at [AGENTS.md](AGENTS.md). Scaffold a contract project with `cargo generate --path templates/contract`.
 
 ## Background
 
@@ -121,7 +123,7 @@ use ckb_std::debug;
 define_errors!(
     SporeError,
     {
-        InvalidSporeId = CUSTOM_ERROR_START 
+        InvalidSporeId = CUSTOM_ERROR_START,
         NoClusterOwnerExists,
         NoClusterProxyExists,
         NoClusterProxyOwnerExists,
@@ -219,6 +221,7 @@ Commands:
   deploy   Upload contract to CKB
   migrate  Update on-chain contract from old version to new version
   consume  Consume on-chain contract to release the capacity
+  list     List deployment records
   help     Print this message or the help of the given subcommand(s)
 
 Options:
@@ -228,15 +231,29 @@ Options:
           Directory of the contract deployment information [default: deployment]
       --contract-path <CONTRACT_PATH>
           Directory of the compiled contract binary [default: build/release]
+      --json
+          Print a JSON object (agents should always pass this)
+      --dry-run
+          Assemble without sending
+      --privkey-env <VAR>
+          Hex secp256k1 key in this environment variable (headless signing)
   -h, --help
           Print help
   -V, --version
           Print version
 ```
 
+With `--json`, both success and failure are emitted as one JSON object on
+stdout. Failures keep stderr empty, set `ok` to `false`, include a stable
+`error.kind` and `error.message` (plus `error.exit_code` for contract
+validation failures), and return a non-zero process status.
+
 Examples:
 
 ```bash
+# dry-run a deploy (no send, JSON, env key)
+$ ckb-cinnabar --json --dry-run --privkey-env CINNABAR_PRIVKEY deploy --contract-name my_contract --tag v0.1.1 --payer-address ckt1... --type-id
+
 # deploy a new compiled contract with type_id
 $ ckb-cinnabar deploy --contract-name my_contract --tag v0.1.1 --payer-address ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq28phxutezqvjgfv5q38gn5kwek4m9km3cmajeqs --type-id
 

@@ -10,7 +10,9 @@ mod casting {
     impl From<ckb_types::packed::Script> for Address {
         fn from(value: ckb_types::packed::Script) -> Self {
             Address::new_builder()
-                .set(AddressUnion::Script(Script::new_unchecked(value.as_bytes())))
+                .set(AddressUnion::Script(Script::new_unchecked(
+                    value.as_bytes(),
+                )))
                 .build()
         }
     }
