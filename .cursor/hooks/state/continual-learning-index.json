@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "updatedAtMs": 1789528213478,
+  "transcripts": {
+    "/Users/vimchain/.cursor/projects/Users-vimchain-Freelancer-ckb-cinnabar-cinnabar/agent-transcripts/1cd150e5-a702-440c-9437-418b2d5962d3/1cd150e5-a702-440c-9437-418b2d5962d3.jsonl": {
+      "mtimeMs": 1789436006832
+    },
+    "/Users/vimchain/.cursor/projects/Users-vimchain-Freelancer-ckb-cinnabar-cinnabar/agent-transcripts/1cd150e5-a702-440c-9437-418b2d5962d3/subagents/3c4cfd2c-d607-4d62-8290-da44a261a122.jsonl": {
+      "mtimeMs": 1789432841606
+    },
+    "/Users/vimchain/.cursor/projects/Users-vimchain-Freelancer-ckb-cinnabar-cinnabar/agent-transcripts/1cd150e5-a702-440c-9437-418b2d5962d3/subagents/8b5010e5-7c49-45b3-b2f1-99f4efedaf6c.jsonl": {
+      "mtimeMs": 1789432827989
+    },
+    "/Users/vimchain/.cursor/projects/Users-vimchain-Freelancer-ckb-cinnabar-cinnabar/agent-transcripts/2febd80f-44a5-448b-a764-16ee7eeaaa0f/2febd80f-44a5-448b-a764-16ee7eeaaa0f.jsonl": {
+      "mtimeMs": 1789527980844
+    },
+    "/Users/vimchain/.cursor/projects/Users-vimchain-Freelancer-ckb-cinnabar-cinnabar/agent-transcripts/2febd80f-44a5-448b-a764-16ee7eeaaa0f/subagents/0ee7690d-8d19-4643-8851-660fdf57baf2.jsonl": {
+      "mtimeMs": 1789528044491
+    },
+    "/Users/vimchain/.cursor/projects/Users-vimchain-Freelancer-ckb-cinnabar-cinnabar/agent-transcripts/2febd80f-44a5-448b-a764-16ee7eeaaa0f/subagents/1054c4ea-f312-4293-a05f-ca7d8d429af6.jsonl": {
+      "mtimeMs": 1789490903937
+    },
+    "/Users/vimchain/.cursor/projects/Users-vimchain-Freelancer-ckb-cinnabar-cinnabar/agent-transcripts/95461b18-5f02-4856-95a2-397889edbe77/95461b18-5f02-4856-95a2-397889edbe77.jsonl": {
+      "mtimeMs": 1789462918378
+    },
+    "/Users/vimchain/.cursor/projects/Users-vimchain-Freelancer-ckb-cinnabar-cinnabar/agent-transcripts/95461b18-5f02-4856-95a2-397889edbe77/subagents/d98d7a3f-fa81-42f4-8965-bd38f3de00e4.jsonl": {
+      "mtimeMs": 1789462436132
+    }
+  }
+}

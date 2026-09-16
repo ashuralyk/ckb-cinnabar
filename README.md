@@ -6,7 +6,99 @@ Cinnabar is a framework that aims to find a most reasonable way to bring CKB a b
 
 In a short, Cinnabar takes advantage of `Calculate` and `Verify` separation design, which is the core concept of CKB Cell model, to fill in the missing parts of existing CKB programming.
 
-**AI / coding agents:** start at [AGENTS.md](AGENTS.md). Scaffold a contract project with `cargo generate --path templates/contract`.
+## AI-agent friendly
+
+Cinnabar is now built so coding agents can generate, test, and deploy a CKB contract without a TTY, without scraping logs, and without inventing a Capsule / `deployment.toml` flow.
+
+The golden path lives in [AGENTS.md](AGENTS.md). Isolated skill (no framework
+checkout): after this tree is on GitHub,
+
+```bash
+npx skills add ashuralyk/ckb-cinnabar -g -a cursor -s cinnabar-agent -y
+```
+
+From a local clone: `npx skills add /path/to/cinnabar -g -a cursor -s cinnabar-agent -y`.
+Details: [skills/cinnabar-agent/INSTALL.md](skills/cinnabar-agent/INSTALL.md).
+A prompt like “write a CKB lock script” should then load Cinnabar even in an
+empty folder. Humans and agents follow the same recipe: split CKB plus the
+contract into **minimal modules**, relate them, put shared results in
+**Context**, then implement Verify + Calculate and FakeRpc tests.
+
+```
+modules + relations + Context
+    → Verify hops (intent::* when morphology = business; else domain names)
+    → Instruction pipelines (named only on that shortcut)
+    → FakeRpc + TransactionSimulator
+    → ckb-cinnabar --json --dry-run deploy
+```
+
+### Shared layout, optional intent shortcut
+
+Coupling is the byte layout (args/data) and the transition table, not a forced
+name match. `ckb-cinnabar-core` still owns `intent::*` for the common case where
+each hop **is** Create/Transfer/Burn/Mint/Deposit/Withdraw:
+
+```rust
+Instruction::named(intent::TRANSFER, /* operations */)
+// equals
+cinnabar_main!(Context, (TREE_ROOT, Root), (intent::TRANSFER, Transfer), /* ... */);
+```
+
+Multi-identity protocols register domain hop strings instead. Custom on-chain
+errors start at `CUSTOM_ERROR_START` (20); system codes are 1–5 and framework
+codes 10–11.
+
+### Contract project template
+
+Scaffold with cargo-generate (or copy `templates/contract` and replace placeholders):
+
+```bash
+cargo generate --path templates/contract --name my-lock
+cd my-lock
+make prepare   # rustup target add riscv64imac-unknown-none-elf
+make build     # writes build/release/<crate>
+make test
+```
+
+Agents treating a generated or edited contract as done must have both
+`make build` and the full `make test` suite exit 0.
+
+| Path | Role |
+|------|------|
+| `contracts/<name>/` | `no_std` Verify script (`cinnabar_main!`) |
+| `calculator/` | Off-chain `Instruction` helpers |
+| `tests/` | `FakeRpcClient` + `assert_verify!` |
+| `deployment/` | JSON records from `ckb-cinnabar` |
+| `build/release/` | RISC-V binaries (`--contract-path` default) |
+
+The template Makefile comes from ckb-script-templates. Agents should not hand-write RISC-V linker scripts.
+
+### Offline simulation
+
+`FakeRpcClient` is an in-memory chain. Tests inject a compiled binary with `AddFakeContractCelldepByName`, then assert the CKB-VM exit code — no node, no faucet:
+
+```rust
+assert_verify!(&rpc, vec![prepare, transfer_ix], 0).unwrap();
+```
+
+`0` means success. Non-zero is the on-chain `i8` from `define_errors!`. Script rejections are `CalculatorError::ScriptValidation`; branch on `script_exit_code()`, do not parse the display string.
+
+### Structured errors and headless CLI
+
+`CalculatorError::kind()` is a stable string (`cell_dep_not_found`, `script_validation`, …) for JSON / agent branching.
+
+The `ckb-cinnabar` CLI is usable from a script or agent:
+
+- `--json` — success and failure both print **one** JSON object on stdout. Failures set `ok: false`, include `error.kind` / `error.message`, keep stderr empty, and exit non-zero. Contract validation failures also include `error.exit_code`.
+- `--dry-run` — assemble (and optionally sign) without sending, and skip interactive `ckb-cli`.
+- `--privkey-env VAR` — hex secp256k1 key from an environment variable. Without it, live send still prompts `ckb-cli`.
+
+```bash
+ckb-cinnabar --json --dry-run --privkey-env CINNABAR_PRIVKEY \
+  deploy --contract-name my_lock --tag v0.1.0 --payer-address ckt1...
+```
+
+Root crate re-exports the types agents typically need: `Address`, `Instruction`, `TransactionCalculator`, `TransactionSkeleton`, `Network`, `RpcClient`, `CalculatorError`, `intent`.
 
 ## Background
 

@@ -4,15 +4,26 @@ Cinnabar is a CKB contract framework: **Calculate** assembles transactions off-c
 
 ## Mental model
 
+Split CKB physics and the user’s rules into **minimal modules**, design how those
+modules **relate** (identities, legal transitions, auth, neighbors, time), then
+fold shared parse/compute **outputs into `Context`**. Verify is that flowchart
+on-chain; Calculate is an `Operation` pipeline that lands on one relation.
+**Show the split and agree Verify / Calculate / FakeRpc shape and reachable
+scope with the user before generating or coding** (`skills/cinnabar-agent/confirm.md`).
+
 ```
-intent (create | transfer | burn | mint | deposit | withdraw)
-    → Verify tree node (same string)
-    → Calculate Instruction::named(intent, operations)
+modules + relations + Context
+    → user confirms pack (verifier / calculator / tests + scope)
+    → cinnabar_main! hops (intent::* only when morphology = business)
+    → Instruction::new (or named on that shortcut)
     → FakeRpc + TransactionSimulator
+    → make build && make test (hard accept; every change)
     → ckb-cinnabar deploy --json --dry-run
 ```
 
-`Instruction` ≈ an account-model contract method. `Operation` fills Inputs / Outputs / CellDeps / Witnesses.
+`Instruction` is a pipeline of `Operation`s (Inputs / Outputs / CellDeps / Headers /
+Witnesses). Coupling is the shared byte layout and the transition table, not a
+mandatory name match. Full method: `skills/cinnabar-agent/SKILL.md`.
 
 ## Generate a project
 
@@ -23,6 +34,9 @@ make prepare   # rustup target add riscv64imac-unknown-none-elf
 make build     # writes build/release/<crate>
 make test
 ```
+
+Hard accept: after generate and after every later change, `make build` and
+`make test` (full suite) must both exit 0 before the work is done.
 
 Or copy `templates/contract` and replace `{{placeholders}}`.
 
@@ -40,9 +54,9 @@ Layout:
 
 1. `#![no_std] #![no_main]` crate depending on `ckb-cinnabar-verifier`.
 2. `define_errors!(MyError, { First = CUSTOM_ERROR_START, Second, });`
-3. `#[derive(Default)] struct Context { ... }`
-4. One struct per node, `impl Verification<Context>`. Return `Ok(Some(intent::TRANSFER))` or `Ok(None)` or `Err(...)`.
-5. Register with matching **intent constants** (never invent parallel strings):
+3. `#[derive(Default)] struct Context { ... }` — Root fills shared parses; children read it.
+4. One struct per node, `impl Verification<Context>`. Return `Ok(Some("hop"))` or `Ok(None)` or `Err(...)`.
+5. Register Root plus every hop. Use `intent::*` when each hop is exactly Create/Transfer/Burn of this script; otherwise domain strings from the transition table:
 
 ```rust
 use ckb_cinnabar_verifier::{
@@ -59,7 +73,7 @@ cinnabar_main!(
 );
 ```
 
-Dispatch with `this_script_pattern(ScriptPlace::Lock)` or `ScriptPlace::Type`.
+Morphology-scale Root dispatches with `this_script_pattern(ScriptPlace::Lock)` or `ScriptPlace::Type`. Protocol-scale Root parses identity from args/data into `Context` first.
 
 Error budget: sys 1–5, framework 10–11, custom ≥ 20 (`CUSTOM_ERROR_START`).
 
@@ -72,7 +86,7 @@ use ckb_cinnabar_calculator::{
 
 pub fn transfer<T: RPC>(from: Address, to: Address, ckb: u64) -> Instruction<T> {
     Instruction::named(
-        intent::TRANSFER, // MUST equal the Verify node name
+        intent::TRANSFER, // morphology-scale only; protocol-scale uses Instruction::new
         vec![
             Box::new(AddInputCellByAddress { address: from }),
             Box::new(AddOutputCell { /* ... */ }),
@@ -140,3 +154,19 @@ exit non-zero. Contract validation failures also include `error.exit_code`.
 - `ckb-cinnabar` — deploy / migrate / consume / list CLI.
 
 Root re-exports: `Address`, `Instruction`, `TransactionCalculator`, `TransactionSkeleton`, `Network`, `RpcClient`, `CalculatorError`, `intent`.
+
+## Learned User Preferences
+
+- Prefer developer-facing rustdoc that explains both types and functions/behavior, not agent-only comments.
+- Optimize so an AI agent writing a CKB contract surfaces Cinnabar even if the user never named it; keep `cinnabar-agent` usable as a standalone skill install (no local cinnabar checkout required); keep README explicit about agent-friendly features.
+- Prefer Chinese for product and strategy discussion; implementation tasks may be in English.
+- Keep agent-readiness work in this repository; treat `cinnabar-examples` as reference only. Breaking public API, error types, and CLI output is acceptable for that goal.
+- Before generating or coding a contract, show the module split and interactively agree Verify / Calculate / FakeRpc shape and reachable scope with the user.
+
+## Learned Workspace Facts
+
+- `cinnabar-examples` is a sibling of this repo (upstream `ashuralyk/cinnabar-examples`); use it as a pattern source, not as delivery scope.
+- After `AGENTS.md`, agents should follow `skills/cinnabar-agent/SKILL.md`; do not invent a Capsule/`deployment.toml` flow.
+- In-repo `examples/` (`secp256k1_transfer`, `dao`, `spore`) are CLI demos; generate full contract projects from `templates/contract`.
+- WarSporeSaga contracts live in `spore-war/contracts`; Opticrum’s public tree is https://github.com/Opticrum/ckb-contract-script (local checkout may be `fiber/opticrum`). Both are protocol-scale Cinnabar references, not delivery scope.
+- `skills/cinnabar-agent/binaries/` (`spore`, `cluster`, `xudt`, `type_burn`) came from WarSporeSaga FakeRpc tests; load them as cell deps when composition with those protocols must run for real before on-chain submit.
