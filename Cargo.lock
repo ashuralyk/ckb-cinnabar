@@ -348,13 +348,13 @@ dependencies = [
  "getrandom 0.2.17",
  "hex",
  "lazy_static",
- "molecule",
  "rand 0.8.6",
  "reqwest",
  "rpassword",
  "secp256k1",
  "serde",
  "serde_json",
+ "serde_molecule",
  "tokio",
 ]
 
@@ -2800,6 +2800,15 @@ dependencies = [
  "serde",
  "serde_core",
  "zmij",
+]
+
+[[package]]
+name = "serde_molecule"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2bc06f0c67a492a3969744eb47ce58a86529140fba6b395c83b9dea432032503"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

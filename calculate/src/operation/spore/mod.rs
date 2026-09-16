@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use ckb_types::{
     core::DepType,
     h256,
-    prelude::{Builder, Entity, Unpack},
+    prelude::{Entity, Unpack},
     H256,
 };
 use eyre::{eyre, Result};
@@ -20,20 +20,14 @@ use crate::{
     skeleton::{CellDepEx, CellInputEx, CellOutputEx, ScriptEx, TransactionSkeleton, WitnessEx},
 };
 
-pub mod generated;
-use generated::*;
+/// Molecule tables/unions for Spore, Cluster, and cobuild witnesses.
+pub mod schema;
+use schema::{
+    encode, Action, BurnSpore, ClusterDataV2, Message, MintCluster, MintSpore, SighashAll,
+    SporeAction, SporeData, TransferCluster, TransferSpore, WitnessLayout,
+};
 
 use super::basic::AddCellDep;
-
-/// Convert a ckb-types `H256` into the spore molecule `Byte32`
-fn byte32(value: H256) -> Byte32 {
-    Byte32::from(value.0)
-}
-
-/// Convert a ckb-types `Script` into the spore molecule `Address`
-fn address(value: ckb_types::packed::Script) -> Address {
-    Address::from(value)
-}
 
 /// The latest Spore and Cluster contract version
 ///
@@ -286,11 +280,8 @@ impl<T: RPC> Operation<T> for AddSporeInputCellByClusterId {
         let mut iter = GetCellsIter::new(rpc, search_key);
         while let Some(indexer_cell) = iter.next().await? {
             let spore_cell = CellInputEx::new_from_indexer_cell(indexer_cell, None);
-            let cluster_id = SporeData::from_compatible_slice(&spore_cell.output.data)?
-                .cluster_id()
-                .to_opt()
-                .map(|v| v.raw_data().to_vec());
-            if cluster_id != Some(self.cluster_id.as_bytes().to_vec()) {
+            let spore_data: SporeData = schema::decode(&spore_cell.output.data)?;
+            if spore_data.cluster_id.as_deref() != Some(self.cluster_id.as_bytes()) {
                 continue;
             }
             skeleton.input(spore_cell)?.witness(Default::default());
@@ -373,15 +364,14 @@ pub struct AddSporeOutputCell {
     pub authority_mode: ClusterAuthorityMode,
 }
 
-/// Encode SporeData molecule bytes (content type, content, optional cluster id).
+/// Encode `SporeData` molecule bytes (content type, content, optional cluster id).
 pub fn make_spore_data(content_type: &str, content: &[u8], cluster_id: Option<&H256>) -> Vec<u8> {
-    let cluster_id = cluster_id.map(|v| Bytes::from(v.as_bytes().to_vec()));
-    let molecule_spore_data = SporeData::new_builder()
-        .content_type(content_type.as_bytes().to_vec())
-        .content(content.to_vec())
-        .cluster_id(BytesOpt::new_builder().set(cluster_id).build())
-        .build();
-    molecule_spore_data.as_bytes().to_vec()
+    encode(&SporeData {
+        content_type: content_type.as_bytes().to_vec(),
+        content: content.to_vec(),
+        cluster_id: cluster_id.map(|id| id.as_bytes().to_vec()),
+    })
+    .expect("SporeData is always encodable")
 }
 
 #[async_trait(?Send)]
@@ -473,13 +463,14 @@ pub struct AddClusterOutputCell {
     pub description: Vec<u8>,
 }
 
-/// Encode ClusterDataV2 molecule bytes (name + description).
+/// Encode `ClusterDataV2` molecule bytes (name + description, empty mutant id).
 pub fn make_cluster_data(name: &str, description: &[u8]) -> Vec<u8> {
-    let molecule_cluster_data = ClusterDataV2::new_builder()
-        .name(name.as_bytes().to_vec())
-        .description(description.to_vec())
-        .build();
-    molecule_cluster_data.as_bytes().to_vec()
+    encode(&ClusterDataV2 {
+        name: name.as_bytes().to_vec(),
+        description: description.to_vec(),
+        mutant_id: None,
+    })
+    .expect("ClusterDataV2 is always encodable")
 }
 
 #[async_trait(?Send)]
@@ -558,30 +549,32 @@ impl<T: RPC> Operation<T> for AddSporeActions {
                     .enumerate()
                     .find(|(_, (output, _))| output.type_script() == input.type_script())
                 {
-                    let transfer_action = TransferSpore::new_builder()
-                        .from(address(input.lock_script()))
-                        .to(address(output.lock_script()))
-                        .spore_id(byte32(spore_id))
-                        .build();
-                    spore_actions
-                        .push((output.type_script().unwrap(), transfer_action.into()).into());
+                    let transfer_action = SporeAction::TransferSpore(TransferSpore {
+                        from: input.lock_script().into(),
+                        to: output.lock_script().into(),
+                        spore_id: spore_id.0,
+                    });
+                    spore_actions.push(Action::spore(
+                        &output.type_script().unwrap(),
+                        &transfer_action,
+                    )?);
                     spore_output_cells.remove(i);
                 } else {
-                    let burn_action = BurnSpore::new_builder()
-                        .spore_id(byte32(spore_id))
-                        .from(address(input.lock_script()))
-                        .build();
-                    spore_actions.push((input.type_script().unwrap(), burn_action.into()).into());
+                    let burn_action = SporeAction::BurnSpore(BurnSpore {
+                        spore_id: spore_id.0,
+                        from: input.lock_script().into(),
+                    });
+                    spore_actions.push(Action::spore(&input.type_script().unwrap(), &burn_action)?);
                 }
             }
             // handle spore mints
             for (output, spore_id) in spore_output_cells {
-                let mint_action = MintSpore::new_builder()
-                    .spore_id(byte32(spore_id))
-                    .to(address(output.lock_script()))
-                    .data_hash(byte32(output.data_hash()))
-                    .build();
-                spore_actions.push((output.type_script().unwrap(), mint_action.into()).into());
+                let mint_action = SporeAction::MintSpore(MintSpore {
+                    spore_id: spore_id.0,
+                    to: output.lock_script().into(),
+                    data_hash: output.data_hash().0,
+                });
+                spore_actions.push(Action::spore(&output.type_script().unwrap(), &mint_action)?);
             }
         }
         // prepare cluster related action parameters
@@ -604,24 +597,26 @@ impl<T: RPC> Operation<T> for AddSporeActions {
                     .enumerate()
                     .find(|(_, (output, _))| output.type_script() == input.type_script())
                 {
-                    let transfer_action = TransferCluster::new_builder()
-                        .from(address(input.lock_script()))
-                        .to(address(output.lock_script()))
-                        .cluster_id(byte32(cluster_id))
-                        .build();
-                    spore_actions
-                        .push((output.type_script().unwrap(), transfer_action.into()).into());
+                    let transfer_action = SporeAction::TransferCluster(TransferCluster {
+                        from: input.lock_script().into(),
+                        to: output.lock_script().into(),
+                        cluster_id: cluster_id.0,
+                    });
+                    spore_actions.push(Action::spore(
+                        &output.type_script().unwrap(),
+                        &transfer_action,
+                    )?);
                     cluster_output_cells.remove(i);
                 }
             }
             // handle cluster mints
             for (output, cluster_id) in cluster_output_cells {
-                let mint_action = MintCluster::new_builder()
-                    .cluster_id(byte32(cluster_id))
-                    .to(address(output.lock_script()))
-                    .data_hash(byte32(output.data_hash()))
-                    .build();
-                spore_actions.push((output.type_script().unwrap(), mint_action.into()).into());
+                let mint_action = SporeAction::MintCluster(MintCluster {
+                    cluster_id: cluster_id.0,
+                    to: output.lock_script().into(),
+                    data_hash: output.data_hash().0,
+                });
+                spore_actions.push(Action::spore(&output.type_script().unwrap(), &mint_action)?);
             }
         }
         if spore_actions.is_empty() {
@@ -631,9 +626,13 @@ impl<T: RPC> Operation<T> for AddSporeActions {
                 return Ok(());
             }
         }
-        // add spore actions into skeleton's witness field
-        let witness_layout: WitnessLayout = spore_actions.into();
-        skeleton.witness(WitnessEx::new_plain(witness_layout.as_slice().to_vec()));
+        let witness_layout = WitnessLayout::SighashAll(SighashAll {
+            seal: Vec::new(),
+            message: Message {
+                actions: spore_actions,
+            },
+        });
+        skeleton.witness(WitnessEx::new_plain(encode(&witness_layout)?));
         Ok(())
     }
 }

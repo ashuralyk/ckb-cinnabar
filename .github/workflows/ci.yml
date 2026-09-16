@@ -18,6 +18,8 @@ jobs:
         run: cargo fmt --all -- --check
       - name: Native tests
         run: cargo test --workspace --exclude ckb-cinnabar-verifier
+      - name: Spore feature tests
+        run: cargo test -p ckb-cinnabar-calculator --features spore
       - name: Verifier RISC-V check
         run: cargo check -p ckb-cinnabar-verifier --target riscv64imac-unknown-none-elf
         env:
