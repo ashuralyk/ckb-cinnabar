@@ -25,9 +25,6 @@ use ckb_types::{
 /// Default cycle cap for [`TransactionSimulator::verify`] (10M, ~ CKB testnet
 /// per-transaction limit).
 pub const DEFAULT_MAX_CYCLES: u64 = 10_000_000;
-/// Deprecated typo alias. Use [`DEFAULT_MAX_CYCLES`].
-#[deprecated(note = "typo: use DEFAULT_MAX_CYCLES")]
-pub const DEFUALT_MAX_CYCLES: u64 = DEFAULT_MAX_CYCLES;
 
 /// Context for a self-custody resolved transaction
 #[derive(Clone)]

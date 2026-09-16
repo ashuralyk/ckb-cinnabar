@@ -10521,22 +10521,23 @@ impl molecule::prelude::Builder for SighashAllBuilder {
     const NAME: &'static str = "SighashAllBuilder";
     fn expected_length(&self) -> usize {
         molecule::NUMBER_SIZE * (Self::FIELD_COUNT + 1)
-            + self.message.as_slice().len()
             + self.seal.as_slice().len()
+            + self.message.as_slice().len()
     }
     fn write<W: molecule::io::Write>(&self, writer: &mut W) -> molecule::io::Result<()> {
+        // cobuild-poc / deployed spore: field 0 = seal, field 1 = message
         let mut total_size = molecule::NUMBER_SIZE * (Self::FIELD_COUNT + 1);
         let mut offsets = Vec::with_capacity(Self::FIELD_COUNT);
         offsets.push(total_size);
-        total_size += self.message.as_slice().len();
-        offsets.push(total_size);
         total_size += self.seal.as_slice().len();
+        offsets.push(total_size);
+        total_size += self.message.as_slice().len();
         writer.write_all(&molecule::pack_number(total_size as molecule::Number))?;
         for offset in offsets.into_iter() {
             writer.write_all(&molecule::pack_number(offset as molecule::Number))?;
         }
-        writer.write_all(self.message.as_slice())?;
         writer.write_all(self.seal.as_slice())?;
+        writer.write_all(self.message.as_slice())?;
         Ok(())
     }
     fn build(&self) -> Self::Entity {

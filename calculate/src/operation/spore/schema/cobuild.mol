@@ -50,8 +50,9 @@ union BuildingPacket {
 }
 
 table SighashAll {
-    message: Message,
+    // Deployed spore/cluster binaries (cobuild-poc) serialize seal first.
     seal: Bytes,
+    message: Message,
 }
 
 table SighashAllOnly {

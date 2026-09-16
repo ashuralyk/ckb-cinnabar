@@ -375,7 +375,7 @@ pub struct AddSporeOutputCell {
 
 /// Encode SporeData molecule bytes (content type, content, optional cluster id).
 pub fn make_spore_data(content_type: &str, content: &[u8], cluster_id: Option<&H256>) -> Vec<u8> {
-    let cluster_id = cluster_id.map(|v| Bytes::new_unchecked(v.as_bytes().to_vec().into()));
+    let cluster_id = cluster_id.map(|v| Bytes::from(v.as_bytes().to_vec()));
     let molecule_spore_data = SporeData::new_builder()
         .content_type(content_type.as_bytes().to_vec())
         .content(content.to_vec())
