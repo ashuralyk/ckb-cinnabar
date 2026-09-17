@@ -24,9 +24,7 @@ pub fn transfer<T: RPC>(from: Address, to: Address, capacity: u64) -> Instructio
     Instruction::named(
         intent::TRANSFER,
         vec![
-            Box::new(AddInputCellByAddress {
-                address: from,
-            }),
+            Box::new(AddInputCellByAddress { address: from }),
             Box::new(AddOutputCell {
                 lock_script: to.into(),
                 type_script: None,

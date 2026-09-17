@@ -624,10 +624,30 @@ impl PartialEq for HeaderDepEx {
     }
 }
 
+/// Decode a 0-based get index, including Lua-style negatives encoded as
+/// `(-n) as usize`: `-1` (also `usize::MAX`) is last, `-2` second-to-last.
+///
+/// Returns `(Some(at), _)` on success. On failure returns `(None, empty)`
+/// where `empty` is `true` when `len == 0`.
+fn resolve_get_index(index: usize, len: usize) -> (Option<usize>, bool) {
+    let empty = len == 0;
+    let signed = index as isize;
+    let resolved = if signed >= 0 {
+        Some(index)
+    } else {
+        len.checked_sub(signed.unsigned_abs())
+    };
+    match resolved {
+        Some(at) if at < len => (Some(at), false),
+        _ => (None, empty),
+    }
+}
+
 /// Transaction under construction: the five CKB fields plus resolved cell data.
 ///
-/// Operations append to these vectors. Input/output/cell-dep helpers treat
-/// `usize::MAX` as "the last item".
+/// Operations append to these vectors. Input/output/cell-dep getters accept a
+/// 0-based index, or a Lua-style relative index encoded as `(-n) as usize`:
+/// `-1` (also `usize::MAX`) is the last item, `-2` the second-to-last.
 #[derive(Default, Clone, Debug)]
 pub struct TransactionSkeleton {
     /// Consumed cells (`CellInput` + resolved output/data).
@@ -760,14 +780,13 @@ impl TransactionSkeleton {
 
     /// Get input cell by index, which may fail if index out of range
     ///
-    /// note: if index is `usize::MAX`, return the last input cell
+    /// `index` is 0-based, or a Lua-style relative value: `-1` (also
+    /// `usize::MAX`) is the last input, `-2` the second-to-last.
     pub fn get_input_by_index(&self, input_index: usize) -> Result<&CellInputEx> {
-        if input_index == usize::MAX {
-            self.inputs.last().ok_or(eyre!("transaction input empty"))
-        } else {
-            self.inputs
-                .get(input_index)
-                .ok_or(eyre!("transaction input index out of range"))
+        match resolve_get_index(input_index, self.inputs.len()) {
+            (Some(at), _) => Ok(&self.inputs[at]),
+            (None, true) => Err(eyre!("transaction input empty")),
+            (None, false) => Err(eyre!("transaction input index out of range")),
         }
     }
 
@@ -847,14 +866,13 @@ impl TransactionSkeleton {
 
     /// Get output cell by index, which may fail if index out of range
     ///
-    /// note: if index is `usize::MAX`, return the last output cell
+    /// `index` is 0-based, or a Lua-style relative value: `-1` (also
+    /// `usize::MAX`) is the last output, `-2` the second-to-last.
     pub fn get_output_by_index(&self, output_index: usize) -> Result<&CellOutputEx> {
-        if output_index == usize::MAX {
-            self.outputs.last().ok_or(eyre!("no output"))
-        } else {
-            self.outputs
-                .get(output_index)
-                .ok_or(eyre!("output index out of range"))
+        match resolve_get_index(output_index, self.outputs.len()) {
+            (Some(at), _) => Ok(&self.outputs[at]),
+            (None, true) => Err(eyre!("no output")),
+            (None, false) => Err(eyre!("output index out of range")),
         }
     }
 
@@ -903,16 +921,13 @@ impl TransactionSkeleton {
 
     /// Get cell dep by index, which may fail if index out of range
     ///
-    /// note: if index is `usize::MAX`, return the last cell dep
+    /// `index` is 0-based, or a Lua-style relative value: `-1` (also
+    /// `usize::MAX`) is the last cell dep, `-2` the second-to-last.
     pub fn get_celldep_by_index(&self, celldep_index: usize) -> Result<&CellDepEx> {
-        if celldep_index == usize::MAX {
-            self.celldeps
-                .last()
-                .ok_or(eyre!("transaction celldep empty"))
-        } else {
-            self.celldeps
-                .get(celldep_index)
-                .ok_or(eyre!("transaction celldep index out of range"))
+        match resolve_get_index(celldep_index, self.celldeps.len()) {
+            (Some(at), _) => Ok(&self.celldeps[at]),
+            (None, true) => Err(eyre!("transaction celldep empty")),
+            (None, false) => Err(eyre!("transaction celldep index out of range")),
         }
     }
 

@@ -42,13 +42,13 @@ Or copy `templates/contract` and replace `{{placeholders}}`.
 
 Layout:
 
-| Path | Role |
-|------|------|
-| `contracts/<name>/` | `no_std` Verify script (`cinnabar_main!`) |
-| `calculator/` | Off-chain `Instruction` helpers |
-| `tests/` | `FakeRpcClient` + `assert_verify!` |
-| `deployment/` | JSON records from `ckb-cinnabar` |
-| `build/release/` | RISC-V binaries (`--contract-path` default) |
+| Path                | Role                                        |
+| ------------------- | ------------------------------------------- |
+| `contracts/<name>/` | `no_std` Verify script (`cinnabar_main!`)   |
+| `calculator/`       | Off-chain `Instruction` helpers             |
+| `tests/`            | `FakeRpcClient` + `assert_verify!`          |
+| `deployment/`       | JSON records from `ckb-cinnabar`            |
+| `build/release/`    | RISC-V binaries (`--contract-path` default) |
 
 ## Write the on-chain script
 

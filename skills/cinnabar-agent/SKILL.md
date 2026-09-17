@@ -16,7 +16,7 @@ Self-contained. Do **not** require a local `ckb-cinnabar` checkout or workspace
 `AGENTS.md`. If this folder was copied to `~/.cursor/skills/cinnabar-agent/`
 (or Claude `~/.claude/skills/`), that is enough.
 
-If a Cinnabar repo *is* open (`AGENTS.md` + `templates/contract` present), use
+If a Cinnabar repo _is_ open (`AGENTS.md` + `templates/contract` present), use
 that checkout for scaffolding, but still follow **this** design method.
 
 Do not invent a Capsule / `deployment.toml` flow.
@@ -97,21 +97,21 @@ the pack.
 The eight knobs below are filled **inside** that pack, not after coding starts.
 Details: [verify-tree.md](verify-tree.md), [calculate.md](calculate.md).
 
-| Knob | What to decide |
-|------|----------------|
-| **Place** | Lock (who spends), Type (asset/mint/conservation), or **one binary both** via an args discriminator |
-| **Identity** | How args (flag, length, type-id…) distinguish cell roles. Note: a **lock script does not run on Create** (cell only in outputs) |
+| Knob            | What to decide                                                                                                                                |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Place**       | Lock (who spends), Type (asset/mint/conservation), or **one binary both** via an args discriminator                                           |
+| **Identity**    | How args (flag, length, type-id…) distinguish cell roles. Note: a **lock script does not run on Create** (cell only in outputs)               |
 | **Transitions** | Legal `(old instance → new instance)` → hop name. CKB Create/Transfer/Burn is only “is this script in inputs/outputs?”, not the business name |
-| **Context** | Parsed args/data, amounts, capacity, auth flags, header clocks — filled once, usually in Root |
-| **Predicates** | One Verify node per independently fail-able check; tiny `if`s stay in the hop |
-| **Layout** | Shared `no_std` types both sides encode/decode. Dual-written constants (timeouts, code hashes) marked as must-stay-in-sync |
-| **Recipes** | One `Instruction` per user action that realizes exactly one table cell |
-| **Universe** | FakeRpc: always-success for **user** locks; **this** contract binary; **real** binaries for every foreign script Verify will execute |
+| **Context**     | Parsed args/data, amounts, capacity, auth flags, header clocks — filled once, usually in Root                                                 |
+| **Predicates**  | One Verify node per independently fail-able check; tiny `if`s stay in the hop                                                                 |
+| **Layout**      | Shared `no_std` types both sides encode/decode. Dual-written constants (timeouts, code hashes) marked as must-stay-in-sync                    |
+| **Recipes**     | One `Instruction` per user action that realizes exactly one table cell                                                                        |
+| **Universe**    | FakeRpc: always-success for **user** locks; **this** contract binary; **real** binaries for every foreign script Verify will execute          |
 
 **Scale shortcut:** if every legal hop is exactly this script’s Create, Transfer,
 or Burn, use `intent::*` and `Instruction::named`. If one morphology maps to
 several businesses (or identity is more than “this script present”), use
-**domain hop names** and `Instruction::new`. Do not invent a second *intent*
+**domain hop names** and `Instruction::new`. Do not invent a second _intent_
 vocabulary; domain names are the primary names at protocol scale.
 
 ## Real-world reference (load when needed)
@@ -125,13 +125,13 @@ https://github.com/Opticrum/ckb-contract-script
 
 Clone or browse the tree; start here:
 
-| Path | Pattern |
-|------|---------|
-| `contracts/opticrum/` | `cinnabar_main!`; Root parses args/data into `Context`; domain hops |
-| `opticrum-protocol/` | Shared `no_std` byte layout (Calculate ↔ Verify coupling) |
-| `calculator/opticrum/` | `Instruction::new` recipes; assembler does not re-validate |
-| `tests/` | FakeRpc + `TransactionSimulator`; always-success user locks |
-| root `runner` | `ckb_cinnabar::dispatch()` for deploy/migrate/consume |
+| Path                   | Pattern                                                             |
+| ---------------------- | ------------------------------------------------------------------- |
+| `contracts/opticrum/`  | `cinnabar_main!`; Root parses args/data into `Context`; domain hops |
+| `opticrum-protocol/`   | Shared `no_std` byte layout (Calculate ↔ Verify coupling)           |
+| `calculator/opticrum/` | `Instruction::new` recipes; assembler does not re-validate          |
+| `tests/`               | FakeRpc + `TransactionSimulator`; always-success user locks         |
+| root `runner`          | `ckb_cinnabar::dispatch()` for deploy/migrate/consume               |
 
 Morphology-scale work stays on `templates/contract`. Opticrum is a **reference**,
 not a git dependency of generated projects.
@@ -159,16 +159,16 @@ The generate template is the **morphology-scale** skeleton (one contract). For
 several identities, several contracts, or a shared layout crate, keep that
 layout and add:
 
-| Path | Role |
-|------|------|
-| `protocol/` or `core/common/` | Shared byte types (`no_std`) |
-| `contracts/<name>/` | `no_std` Verify (`cinnabar_main!`) |
-| `calculator/` | Off-chain `Instruction` + custom `Operation`s |
-| `tests/` | FakeRpc universe + VM |
-| `tests/binaries/` or `tests/fixtures/` | Foreign protocol RISC-V (copy from this skill’s `binaries/`) |
-| `deployment/` | CLI JSON records |
-| `build/release/` | This contract’s RISC-V (`--contract-path` default) |
-| root `runner` | Optional `ckb_cinnabar::dispatch()` for deploy/migrate/consume |
+| Path                                   | Role                                                           |
+| -------------------------------------- | -------------------------------------------------------------- |
+| `protocol/` or `core/common/`          | Shared byte types (`no_std`)                                   |
+| `contracts/<name>/`                    | `no_std` Verify (`cinnabar_main!`)                             |
+| `calculator/`                          | Off-chain `Instruction` + custom `Operation`s                  |
+| `tests/`                               | FakeRpc universe + VM                                          |
+| `tests/binaries/` or `tests/fixtures/` | Foreign protocol RISC-V (copy from this skill’s `binaries/`)   |
+| `deployment/`                          | CLI JSON records                                               |
+| `build/release/`                       | This contract’s RISC-V (`--contract-path` default)             |
+| root `runner`                          | Optional `ckb_cinnabar::dispatch()` for deploy/migrate/consume |
 
 Do not hand-write RISC-V linker scripts.
 

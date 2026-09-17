@@ -63,13 +63,13 @@ make test
 Agents treating a generated or edited contract as done must have both
 `make build` and the full `make test` suite exit 0.
 
-| Path | Role |
-|------|------|
-| `contracts/<name>/` | `no_std` Verify script (`cinnabar_main!`) |
-| `calculator/` | Off-chain `Instruction` helpers |
-| `tests/` | `FakeRpcClient` + `assert_verify!` |
-| `deployment/` | JSON records from `ckb-cinnabar` |
-| `build/release/` | RISC-V binaries (`--contract-path` default) |
+| Path                | Role                                        |
+| ------------------- | ------------------------------------------- |
+| `contracts/<name>/` | `no_std` Verify script (`cinnabar_main!`)   |
+| `calculator/`       | Off-chain `Instruction` helpers             |
+| `tests/`            | `FakeRpcClient` + `assert_verify!`          |
+| `deployment/`       | JSON records from `ckb-cinnabar`            |
+| `build/release/`    | RISC-V binaries (`--contract-path` default) |
 
 The template Makefile comes from ckb-script-templates. Agents should not hand-write RISC-V linker scripts.
 
@@ -108,7 +108,7 @@ In contrast of Account model based block chains, like Ethereum and Solana, `Calc
 
 However, CKB is an UTXO based block chain, which `Calculate` and `Verify` are separated here, and only put `Verify` part on-chain, so the contract only takes the responsibility of verification but throws the responsibility of calculation out off-chain. For most programmers, this is counterintuitive.
 
-For above reason, transaction of CKB has high cognitive cost, it's not as simple as a container of multiple commands or intentions, but the `RESULT` of off-chain calculation, this is the core barrier for most programmers to understand CKB programming. 
+For above reason, transaction of CKB has high cognitive cost, it's not as simple as a container of multiple commands or intentions, but the `RESULT` of off-chain calculation, this is the core barrier for most programmers to understand CKB programming.
 
 ### Turn Counter-intuitive into Intuitive
 
@@ -122,13 +122,14 @@ However, like Bitcoin UTXO model, the advanced CKB Cell model allows a transacti
 
 Current toolchains and SDKs in CKB ecosystem lack simplicity, for instance, writting and deploying CKB contracts are always challenging for most newcommers, and it's a nightmare testing contracts as well.
 
-## Modules in Cinnabar 
+## Modules in Cinnabar
 
 Cinnabar framework provides `Calculate` module and `Verify` module, in addition, contract deployment related commands are also integrated, known as `Deployment` module.
 
 ### Calculate Module
 
 CKB transaction contains few fields, they are:
+
 - CellDeps
 - HeaderDeps
 - Inputs
@@ -139,22 +140,22 @@ The calculation is to assembly transaction with a set of instructions about fulf
 
 A transaction can contain multiple instructions, like creating Spore DOBs or transfering xUDT assets, they are totally settled by a batch of transaction fields fullfill operations. So, a complete process of transaction assembly can be parsed into below format:
 
-* Transaction calculation
-  * Instruction 1: create one Spore DOB asset for user A
-    * Operation 1: add an existing cell owned by user A into "Inputs" field
-    * Operation 2: add a Spore DOB cell into "Outputs" field
-    * Operation 3: add the existing Spore Cluster cell into "Inputs" and "Outputs" fields
-    * Operation 4: add Spore and Cluster contract cells into "CellDeps" field
-  * Instruction 2: transfer xUDT asset from user A to user B
-    * Operation 1: add an existing xUDT cells from user A into "Inputs" field
-    * Operation 2: add a xUDT cell of user B into "Outputs" field
-    * Operation 3: add xUDT contract cell into "CellDeps" field
-  * Instruction 3: balance transaction
-    * Operation 1: add existing cells of user A into "Inputs" field
-    * Operation 2: add change cell of user A into "Outputs" field
-  * Instruction 4: sign transaction
-    * Operation 1: sign transaction with user A
-    * Operation 2: put signature into "Witnesses" field
+- Transaction calculation
+  - Instruction 1: create one Spore DOB asset for user A
+    - Operation 1: add an existing cell owned by user A into "Inputs" field
+    - Operation 2: add a Spore DOB cell into "Outputs" field
+    - Operation 3: add the existing Spore Cluster cell into "Inputs" and "Outputs" fields
+    - Operation 4: add Spore and Cluster contract cells into "CellDeps" field
+  - Instruction 2: transfer xUDT asset from user A to user B
+    - Operation 1: add an existing xUDT cells from user A into "Inputs" field
+    - Operation 2: add a xUDT cell of user B into "Outputs" field
+    - Operation 3: add xUDT contract cell into "CellDeps" field
+  - Instruction 3: balance transaction
+    - Operation 1: add existing cells of user A into "Inputs" field
+    - Operation 2: add change cell of user A into "Outputs" field
+  - Instruction 4: sign transaction
+    - Operation 1: sign transaction with user A
+    - Operation 2: put signature into "Witnesses" field
 
 As shown above, the calculation of a transaction is a set of instructions, and an instruction is a set of operations, finally, an operation indicates how to fullfill transaciton's fields.
 
@@ -165,6 +166,7 @@ A diagram of Calculate module design:
 ![alt text](assets/calculate.png)
 
 Run [tranfer](examples/secp256k1_transfer.rs) example:
+
 ```bash
 $ cargo run --example secp256k1_transfer ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqfqmf4hphl9jkrw3934mwe6m3a2nx88rzgdlw820 ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqtz32u8mgzk57zdtt6n62z4y2zyh8egkdcahyxk3 1000.0 <secret_key>
 
@@ -172,6 +174,7 @@ $ cargo run --example secp256k1_transfer ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49
 ```
 
 Run [spore](examples/spore.rs) example:
+
 ```bash
 $ cargo run --example spore -- spore mint --minter ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqfqmf4hphl9jkrw3934mwe6m3a2nx88rzgdlw820 --content-type "text/plain" --content "hello, cinnabar"
 
@@ -180,6 +183,7 @@ $ cargo run --example spore
 ```
 
 Run DAO example:
+
 ```bash
 $ cargo run --example dao -- --operator ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqfqmf4hphl9jkrw3934mwe6m3a2nx88rzgdlw820 deposit --ckb 1000.0
 
@@ -283,7 +287,7 @@ cinnabar_main!(
 )
 ```
 
-It's very easy to distinguish how a CKB contract works because of the clear modular design. 
+It's very easy to distinguish how a CKB contract works because of the clear modular design.
 
 ## Deployment Module
 

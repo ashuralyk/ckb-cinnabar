@@ -126,11 +126,11 @@ filtered `cargo test <name>` is not acceptance.
 
 This skill ships RISC-V next to `SKILL.md`:
 
-| File | Protocol |
-|------|----------|
-| `binaries/spore` | Spore |
-| `binaries/cluster` | Cluster |
-| `binaries/xudt` | xUDT |
+| File                 | Protocol                    |
+| -------------------- | --------------------------- |
+| `binaries/spore`     | Spore                       |
+| `binaries/cluster`   | Cluster                     |
+| `binaries/xudt`      | xUDT                        |
 | `binaries/type_burn` | `ckb-proxy-locks` type-burn |
 
 They were used to finish FakeRpc cases for **WarSporeSaga**, an on-chain game
