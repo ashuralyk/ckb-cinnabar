@@ -188,7 +188,6 @@ pub async fn main() {
     let (mut skeleton, log) = TransactionCalculator::default()
         .instruction(spore)
         .new_skeleton(&rpc)
-        .await
         .expect("spore calculate");
     for (key, value) in log {
         match key {
@@ -211,7 +210,6 @@ pub async fn main() {
         .collect::<Vec<_>>();
     TransactionCalculator::new(signs)
         .apply_skeleton(&rpc, &mut skeleton)
-        .await
         .expect("sign calculate");
 
     // send transaction without any block confirmations

@@ -4,37 +4,69 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
+default = ["std"]
+# Shell (`calculate/src/shell`): std host on top of the always-on no_std kernel.
+std = [
+    "dep:async-trait",
+    "dep:bech32",
+    "dep:ckb-always-success-script",
+    "dep:ckb-types",
+    "dep:ckb-jsonrpc-types",
+    "dep:eyre",
+    "dep:futures",
+    "dep:hex",
+    "dep:serde_json",
+    "dep:rand",
+    "dep:lazy_static",
+    "dep:getrandom",
+    "dep:serde",
+    "serde/std",
+    "dep:secp256k1",
+    "dep:tokio",
+    "dep:reqwest",
+    "dep:ckb-chain-spec",
+    "dep:ckb-traits",
+    "dep:ckb-script",
+    "dep:ckb-sdk",
+    "dep:rpassword",
+]
 # NFT/Spore operations are experimental after the ckb-types-1 upgrade; gated off by default.
-spore = ["dep:serde_molecule"]
+# Molecule schema uses serde_molecule (alloc, no_std-capable).
+spore = ["dep:serde_molecule", "dep:serde", "serde/alloc"]
 
 [dependencies]
-async-trait = "0.1.81"
-bech32 = "0.8.1"
-ckb-always-success-script = "0.0.1"
-ckb-types = "1.1.0"
-ckb-jsonrpc-types = "1.1.0"
-eyre = "0.6.12"
-futures = "0.3.30"
-hex = "0.4.3"
-serde_json = "1.0"
-rand = "0.8.5"
-lazy_static = "1.5.0"
-serde_molecule = { version = "1.1", optional = true }
 ckb-cinnabar-core = { version = "0.1.0", path = "../core" }
+ckb-hash = { version = "1.1.0", default-features = false, features = ["ckb-contract"] }
+ckb-gen-types = { version = "1.1.0", default-features = false, features = ["calc-hash"] }
 
-ckb-hash = { version = "1.1.0", features = ["ckb-contract"] }
-getrandom = { version = "0.2", features = ["js"] }
-serde = { version = "1.0", features = ["derive"] }
-secp256k1 = { version = "0.30", features = ["recovery"] }
-tokio = { version = "1.43.0", default-features = false, features = ["rt", "macros", "time"] }
+async-trait = { version = "0.1.81", optional = true }
+bech32 = { version = "0.8.1", optional = true }
+ckb-always-success-script = { version = "0.0.1", optional = true }
+ckb-types = { version = "1.1.0", optional = true }
+ckb-jsonrpc-types = { version = "1.1.0", optional = true }
+eyre = { version = "0.6.12", optional = true }
+futures = { version = "0.3.30", optional = true }
+hex = { version = "0.4.3", optional = true }
+serde_json = { version = "1.0", optional = true }
+rand = { version = "0.8.5", optional = true }
+lazy_static = { version = "1.5.0", optional = true }
+serde_molecule = { version = "1.1", optional = true, default-features = false, features = ["alloc"] }
+getrandom = { version = "0.2", optional = true, features = ["js"] }
+serde = { version = "1.0", optional = true, default-features = false, features = ["derive"] }
+secp256k1 = { version = "0.30", optional = true, features = ["recovery"] }
+tokio = { version = "1.43.0", optional = true, default-features = false, features = ["rt", "rt-multi-thread", "macros", "time"] }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-ckb-chain-spec = "1.1.0"
-ckb-traits = "1.1.0"
-ckb-script = "1.1.0"
-ckb-sdk = "5.1.0"
-rpassword = "7.3.1"
-reqwest = { version = "0.12.5", features = ["json", "native-tls"] }
+ckb-chain-spec = { version = "1.1.0", optional = true }
+ckb-traits = { version = "1.1.0", optional = true }
+ckb-script = { version = "1.1.0", optional = true }
+ckb-sdk = { version = "5.1.0", optional = true }
+rpassword = { version = "7.3.1", optional = true }
+reqwest = { version = "0.12.5", optional = true, features = ["json", "native-tls"] }
 
 [target.'cfg(target_family = "wasm")'.dependencies]
-reqwest = { version = "0.12.5", default-features = false, features = ["json", "rustls-tls-webpki-roots"] }
+reqwest = { version = "0.12.5", optional = true, default-features = false, features = ["json", "rustls-tls-webpki-roots"] }
+
+[[test]]
+name = "agent_sim"
+required-features = ["std"]

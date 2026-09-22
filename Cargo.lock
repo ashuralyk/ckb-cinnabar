@@ -337,6 +337,7 @@ dependencies = [
  "ckb-always-success-script",
  "ckb-chain-spec",
  "ckb-cinnabar-core",
+ "ckb-gen-types",
  "ckb-hash",
  "ckb-jsonrpc-types",
  "ckb-script",

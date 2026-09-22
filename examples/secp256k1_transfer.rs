@@ -42,7 +42,6 @@ pub async fn main() {
         .instruction(transfer)
         .instruction(balance_and_sign)
         .new_skeleton(&rpc)
-        .await
         .expect("calculate");
 
     // send transaction without any block confirmations

@@ -1,15 +1,12 @@
-//! CKB node + indexer access used by every [`crate::operation::Operation`].
+//! HTTP adapter for the kernel [`RPC`](crate::kernel::rpc::RPC) surface.
 //!
-//! [`RPC`] is implemented by [`RpcClient`] (HTTP JSON-RPC) and
-//! [`crate::simulation::FakeRpcClient`] (in-memory). [`Network`] selects
-//! hardcoded contract out-points (DAO / xUDT / Spore) or the offline `Fake`
-//! hashes used in simulation.
+//! [`RpcClient`] talks JSON-RPC over reqwest. Each kernel method `block_on`s
+//! one async HTTP region. Host-only methods (send, full blocks, chain info)
+//! live on [`Host`].
 
 use std::{
-    fmt::Display,
     future::Future,
     pin::Pin,
-    str::FromStr,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -22,11 +19,29 @@ use ckb_jsonrpc_types::{
 };
 use ckb_types::H256;
 use eyre::{eyre, Error};
+#[cfg(not(target_arch = "wasm32"))]
+use futures::executor::block_on as block_on_future;
 use futures::FutureExt;
 use reqwest::{Client, Url};
 use serde::Deserialize;
 
-use crate::indexer::{Cell, Order, Pagination, SearchKey, Tx};
+#[cfg(not(target_arch = "wasm32"))]
+use tokio::{
+    runtime::{Builder, Handle, RuntimeFlavor},
+    task::block_in_place,
+};
+
+use crate::{
+    error::{self, CalculatorError},
+    indexer::{
+        json::{self, Order},
+        Indexer, LiveCell, Pagination, SearchKey, Tx,
+    },
+    types::{h256_to_hash, hash_to_h256, packed, Hash256},
+};
+
+pub use crate::kernel::rpc::{Node, RPC};
+pub use crate::network::Network;
 
 #[cfg(target_arch = "wasm32")]
 pub type Rpc<T> = Pin<Box<dyn Future<Output = Result<T, Error>>>>;
@@ -103,115 +118,19 @@ macro_rules! jsonrpc {
     }}
 }
 
-/// The CKB network an [`RPC`] client talks to.
+/// Host-only JSON-RPC methods (submit, full blocks, chain identity).
 ///
-/// Operations branch on this value to pick hardcoded deployment out-points
-/// (e.g. DAO / xUDT / Spore contracts) or to fall back to fake hashes under
-/// [`Network::Fake`] for offline simulation.
-#[derive(Hash, PartialEq, Eq, Clone, Debug)]
-pub enum Network {
-    /// CKB mainnet (address prefix `ckb`).
-    Mainnet,
-    /// CKB testnet (address prefix `ckt`).
-    Testnet,
-    /// A self-hosted or dev chain reachable at a custom RPC URL.
-    Custom(Url),
-    /// Offline in-memory network used by [`crate::simulation::FakeRpcClient`].
-    Fake,
-}
-
-impl Display for Network {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Network::Mainnet => write!(f, "mainnet"),
-            Network::Testnet => write!(f, "testnet"),
-            Network::Fake => write!(f, "fake"),
-            Network::Custom(url) => write!(f, "{}", url),
-        }
-    }
-}
-
-impl FromStr for Network {
-    type Err = eyre::Error;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value {
-            "mainnet" => Ok(Network::Mainnet),
-            "testnet" => Ok(Network::Testnet),
-            "fake" => Ok(Network::Fake),
-            _ => Ok(Network::Custom(value.parse()?)),
-        }
-    }
-}
-
-impl Network {
-    /// Resolve a network from a bech32(m) address HRP: `ckb` → mainnet,
-    /// `ckt` → testnet, anything else → `None`.
-    pub fn from_prefix(prefix: &str) -> Option<Self> {
-        match prefix {
-            "ckb" => Some(Network::Mainnet),
-            "ckt" => Some(Network::Testnet),
-            _ => None,
-        }
-    }
-
-    /// Bech32(m) HRP for this network. Everything except mainnet uses `ckt`.
-    pub fn to_prefix(&self) -> &'static str {
-        match self {
-            Network::Mainnet => "ckb",
-            _ => "ckt",
-        }
-    }
-}
-
-/// Chain access abstraction used by every [`crate::operation::Operation`].
-///
-/// Implemented by [`RpcClient`] (real JSON-RPC over HTTP) and
-/// [`crate::simulation::FakeRpcClient`] (in-memory, offline). `Clone + Send +
-/// Sync` so it can be shared across operations inside one instruction.
-#[allow(clippy::upper_case_acronyms)]
-pub trait RPC: Clone + Send + Sync {
-    /// Network this client is connected to; defaults to [`Network::Fake`].
-    fn network(&self) -> Network {
-        Network::Fake
-    }
+/// Assembly uses [`RPC`]. These stay async because send/wait and genesis
+/// walks are HTTP-only.
+pub trait Host {
     /// `(ckb_node_url, indexer_url)` pair, used e.g. when shelling out to ckb-cli.
     fn url(&self) -> (String, String);
     /// `get_blockchain_info` — chain identity and sync state.
     fn get_blockchain_info(&self) -> Rpc<ChainInfo>;
-    /// `get_live_cell` — fetch one live cell by out-point.
-    fn get_live_cell(&self, out_point: &OutPoint, with_data: bool) -> Rpc<CellWithStatus>;
-    /// Indexer `get_cells` — paginated live-cell search (spent cells excluded).
-    fn get_cells(
-        &self,
-        search_key: SearchKey,
-        limit: u32,
-        cursor: Option<JsonBytes>,
-    ) -> Rpc<Pagination<Cell>>;
-    /// Indexer transaction search — txs where the script appears as input or
-    /// output, including spent cells (unlike `get_cells`, which is live-only).
-    fn get_transactions(
-        &self,
-        search_key: SearchKey,
-        limit: u32,
-        cursor: Option<JsonBytes>,
-    ) -> Rpc<Pagination<Tx>>;
     /// `get_block` by height.
     fn get_block_by_number(&self, number: BlockNumber) -> Rpc<Option<BlockView>>;
     /// `get_block` by hash.
     fn get_block(&self, hash: &H256) -> Rpc<Option<BlockView>>;
-    /// `get_header` by hash.
-    fn get_header(&self, hash: &H256) -> Rpc<Option<HeaderView>>;
-    /// `get_header_by_number`.
-    fn get_header_by_number(&self, number: BlockNumber) -> Rpc<Option<HeaderView>>;
-    /// `get_block_hash` by number.
-    fn get_block_hash(&self, number: BlockNumber) -> Rpc<Option<H256>>;
-    /// `get_tip_block_number`.
-    fn get_tip_block_number(&self) -> Rpc<BlockNumber>;
-    /// `get_tip_header`.
-    fn get_tip_header(&self) -> Rpc<HeaderView>;
-    /// `tx_pool_info` — used to derive the minimal fee rate for balancing.
-    fn tx_pool_info(&self) -> Rpc<TxPoolInfo>;
     /// `get_transaction` with its on-chain status.
     fn get_transaction(&self, hash: &H256) -> Rpc<Option<TransactionWithStatusResponse>>;
     /// `send_transaction`; returns the transaction hash.
@@ -270,11 +189,7 @@ impl RpcClient {
     /// Detect the network from on-chain `get_blockchain_info`, resolving
     /// `Network::Custom(url)` to `Mainnet`/`Testnet`. No-op for unknown chains.
     pub async fn update_network(&mut self) -> eyre::Result<()> {
-        let future = jsonrpc!("get_blockchain_info", Target::CKB, self, ChainInfo);
-        #[cfg(not(target_arch = "wasm32"))]
-        let chain_info = future.boxed().await?;
-        #[cfg(target_arch = "wasm32")]
-        let chain_info = future.boxed_local().await?;
+        let chain_info = self.get_blockchain_info().await?;
         match chain_info.chain.as_str() {
             "ckb" => self.network = Network::Mainnet,
             "ckb_testnet" => self.network = Network::Testnet,
@@ -287,26 +202,8 @@ impl RpcClient {
     pub fn set_network(&mut self, network: Network) {
         self.network = network;
     }
-}
 
-impl RPC for RpcClient {
-    fn network(&self) -> Network {
-        self.network.clone()
-    }
-
-    fn url(&self) -> (String, String) {
-        (self.ckb_uri.to_string(), self.indexer_uri.to_string())
-    }
-
-    fn get_blockchain_info(&self) -> Rpc<ChainInfo> {
-        let future = jsonrpc!("get_blockchain_info", Target::CKB, self, ChainInfo);
-        #[cfg(not(target_arch = "wasm32"))]
-        return future.boxed();
-        #[cfg(target_arch = "wasm32")]
-        return future.boxed_local();
-    }
-
-    fn get_live_cell(&self, out_point: &OutPoint, with_data: bool) -> Rpc<CellWithStatus> {
+    fn request_live_cell(&self, out_point: &OutPoint, with_data: bool) -> Rpc<CellWithStatus> {
         let future = jsonrpc!(
             "get_live_cell",
             Target::CKB,
@@ -321,20 +218,19 @@ impl RPC for RpcClient {
         return future.boxed_local();
     }
 
-    fn get_cells(
+    fn request_cells(
         &self,
-        search_key: SearchKey,
+        search_key: json::SearchKey,
         limit: u32,
         cursor: Option<JsonBytes>,
-    ) -> Rpc<Pagination<Cell>> {
+    ) -> Rpc<json::Pagination<json::Cell>> {
         let order = Order::Asc;
         let limit = Uint32::from(limit);
-
         let future = jsonrpc!(
             "get_cells",
             Target::Indexer,
             self,
-            Pagination<Cell>,
+            json::Pagination<json::Cell>,
             search_key,
             order,
             limit,
@@ -346,25 +242,106 @@ impl RPC for RpcClient {
         return future.boxed_local();
     }
 
-    fn get_transactions(
+    fn request_transactions(
         &self,
-        search_key: SearchKey,
+        search_key: json::SearchKey,
         limit: u32,
         cursor: Option<JsonBytes>,
-    ) -> Rpc<Pagination<Tx>> {
+    ) -> Rpc<json::Pagination<json::Tx>> {
         let order = Order::Asc;
         let limit = Uint32::from(limit);
-
         let future = jsonrpc!(
             "get_transactions",
             Target::Indexer,
             self,
-            Pagination<Tx>,
+            json::Pagination<json::Tx>,
             search_key,
             order,
             limit,
             cursor,
         );
+        #[cfg(not(target_arch = "wasm32"))]
+        return future.boxed();
+        #[cfg(target_arch = "wasm32")]
+        return future.boxed_local();
+    }
+
+    fn request_header(&self, hash: &H256) -> Rpc<Option<HeaderView>> {
+        let future = jsonrpc!("get_header", Target::CKB, self, Option<HeaderView>, hash);
+        #[cfg(not(target_arch = "wasm32"))]
+        return future.boxed();
+        #[cfg(target_arch = "wasm32")]
+        return future.boxed_local();
+    }
+
+    fn request_header_by_number(&self, number: BlockNumber) -> Rpc<Option<HeaderView>> {
+        let future = jsonrpc!(
+            "get_header_by_number",
+            Target::CKB,
+            self,
+            Option<HeaderView>,
+            number
+        );
+        #[cfg(not(target_arch = "wasm32"))]
+        return future.boxed();
+        #[cfg(target_arch = "wasm32")]
+        return future.boxed_local();
+    }
+
+    fn request_block_hash(&self, number: BlockNumber) -> Rpc<Option<H256>> {
+        let future = jsonrpc!("get_block_hash", Target::CKB, self, Option<H256>, number);
+        #[cfg(not(target_arch = "wasm32"))]
+        return future.boxed();
+        #[cfg(target_arch = "wasm32")]
+        return future.boxed_local();
+    }
+
+    fn request_tip_block_number(&self) -> Rpc<BlockNumber> {
+        let future = jsonrpc!("get_tip_block_number", Target::CKB, self, BlockNumber);
+        #[cfg(not(target_arch = "wasm32"))]
+        return future.boxed();
+        #[cfg(target_arch = "wasm32")]
+        return future.boxed_local();
+    }
+
+    fn request_tip_header(&self) -> Rpc<HeaderView> {
+        let future = jsonrpc!("get_tip_header", Target::CKB, self, HeaderView);
+        #[cfg(not(target_arch = "wasm32"))]
+        return future.boxed();
+        #[cfg(target_arch = "wasm32")]
+        return future.boxed_local();
+    }
+
+    fn request_tx_pool_info(&self) -> Rpc<TxPoolInfo> {
+        let future = jsonrpc!("tx_pool_info", Target::CKB, self, TxPoolInfo);
+        #[cfg(not(target_arch = "wasm32"))]
+        return future.boxed();
+        #[cfg(target_arch = "wasm32")]
+        return future.boxed_local();
+    }
+
+    fn request_transaction(&self, hash: &H256) -> Rpc<Option<TransactionWithStatusResponse>> {
+        let future = jsonrpc!(
+            "get_transaction",
+            Target::CKB,
+            self,
+            Option<TransactionWithStatusResponse>,
+            hash
+        );
+        #[cfg(not(target_arch = "wasm32"))]
+        return future.boxed();
+        #[cfg(target_arch = "wasm32")]
+        return future.boxed_local();
+    }
+}
+
+impl Host for RpcClient {
+    fn url(&self) -> (String, String) {
+        (self.ckb_uri.to_string(), self.indexer_uri.to_string())
+    }
+
+    fn get_blockchain_info(&self) -> Rpc<ChainInfo> {
+        let future = jsonrpc!("get_blockchain_info", Target::CKB, self, ChainInfo);
         #[cfg(not(target_arch = "wasm32"))]
         return future.boxed();
         #[cfg(target_arch = "wasm32")]
@@ -393,72 +370,8 @@ impl RPC for RpcClient {
         return future.boxed_local();
     }
 
-    fn get_header(&self, hash: &H256) -> Rpc<Option<HeaderView>> {
-        let future = jsonrpc!("get_header", Target::CKB, self, Option<HeaderView>, hash);
-        #[cfg(not(target_arch = "wasm32"))]
-        return future.boxed();
-        #[cfg(target_arch = "wasm32")]
-        return future.boxed_local();
-    }
-
-    fn get_header_by_number(&self, number: BlockNumber) -> Rpc<Option<HeaderView>> {
-        let future = jsonrpc!(
-            "get_header_by_number",
-            Target::CKB,
-            self,
-            Option<HeaderView>,
-            number
-        );
-        #[cfg(not(target_arch = "wasm32"))]
-        return future.boxed();
-        #[cfg(target_arch = "wasm32")]
-        return future.boxed_local();
-    }
-
-    fn get_block_hash(&self, number: BlockNumber) -> Rpc<Option<H256>> {
-        let future = jsonrpc!("get_block_hash", Target::CKB, self, Option<H256>, number);
-        #[cfg(not(target_arch = "wasm32"))]
-        return future.boxed();
-        #[cfg(target_arch = "wasm32")]
-        return future.boxed_local();
-    }
-
-    fn get_tip_block_number(&self) -> Rpc<BlockNumber> {
-        let future = jsonrpc!("get_tip_block_number", Target::CKB, self, BlockNumber);
-        #[cfg(not(target_arch = "wasm32"))]
-        return future.boxed();
-        #[cfg(target_arch = "wasm32")]
-        return future.boxed_local();
-    }
-
-    fn get_tip_header(&self) -> Rpc<HeaderView> {
-        let future = jsonrpc!("get_tip_header", Target::CKB, self, HeaderView);
-        #[cfg(not(target_arch = "wasm32"))]
-        return future.boxed();
-        #[cfg(target_arch = "wasm32")]
-        return future.boxed_local();
-    }
-
-    fn tx_pool_info(&self) -> Rpc<TxPoolInfo> {
-        let future = jsonrpc!("tx_pool_info", Target::CKB, self, TxPoolInfo);
-        #[cfg(not(target_arch = "wasm32"))]
-        return future.boxed();
-        #[cfg(target_arch = "wasm32")]
-        return future.boxed_local();
-    }
-
     fn get_transaction(&self, hash: &H256) -> Rpc<Option<TransactionWithStatusResponse>> {
-        let future = jsonrpc!(
-            "get_transaction",
-            Target::CKB,
-            self,
-            Option<TransactionWithStatusResponse>,
-            hash
-        );
-        #[cfg(not(target_arch = "wasm32"))]
-        return future.boxed();
-        #[cfg(target_arch = "wasm32")]
-        return future.boxed_local();
+        self.request_transaction(hash)
     }
 
     fn send_transaction(
@@ -481,56 +394,137 @@ impl RPC for RpcClient {
     }
 }
 
-/// Optional client-side cell filter applied by [`GetCellsIter`] after each
-/// indexer page is fetched.
-pub type Filter = Box<dyn Fn(&Cell) -> bool + Send + Sync>;
-
-/// A wrapper of get_cells rpc call, it will automatically cross over live cells in interation
-pub struct GetCellsIter<'a, T: RPC> {
-    rpc: &'a T,
-    search_key: SearchKey,
-    cursor: Option<JsonBytes>,
-    filter: Option<Filter>,
-}
-
-impl<'a, T: RPC> GetCellsIter<'a, T> {
-    /// Create an iterator over all live cells matching `search_key`.
-    pub fn new(rpc: &'a T, search_key: SearchKey) -> Self {
-        GetCellsIter {
-            rpc,
-            search_key,
-            cursor: None,
-            filter: None,
-        }
-    }
-
-    /// Attach an extra client-side filter applied to every fetched page.
-    pub fn filter(mut self, filter: Filter) -> Self {
-        self.filter = Some(filter);
-        self
-    }
-
-    /// Fetch the next page of up to `limit` cells. Returns `Ok(None)` once a
-    /// page comes back empty (iterator exhausted).
-    pub async fn next_batch(&mut self, limit: u32) -> eyre::Result<Option<Vec<Cell>>> {
-        let cells = self
-            .rpc
-            .get_cells(self.search_key.clone(), limit, self.cursor.clone())
-            .await?;
-        let objects = if let Some(filter) = &self.filter {
-            cells.objects.into_iter().filter(filter).collect()
-        } else {
-            cells.objects
+/// Run one async RPC region to completion from a sync facade.
+///
+/// Multi-thread tokio: `block_in_place` + `Handle::block_on`. Current-thread
+/// / tests: `futures::executor::block_on`. No runtime: build a current-thread
+/// runtime.
+pub fn block_on_rpc<T>(fut: impl Future<Output = eyre::Result<T>>) -> error::Result<T> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let result = match Handle::try_current() {
+            Ok(handle) if handle.runtime_flavor() == RuntimeFlavor::MultiThread => {
+                block_in_place(|| handle.block_on(fut))
+            }
+            Ok(_) => block_on_future(fut),
+            Err(_) => Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| CalculatorError::Other(e.to_string()))?
+                .block_on(fut),
         };
-        if objects.is_empty() {
-            return Ok(None);
-        }
-        self.cursor = Some(cells.last_cursor);
-        Ok(Some(objects))
+        result.map_err(CalculatorError::from)
     }
-
-    /// Fetch the next single cell; `Ok(None)` when exhausted.
-    pub async fn next(&mut self) -> eyre::Result<Option<Cell>> {
-        Ok(self.next_batch(1).await?.map(|v| v[0].clone()))
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = fut;
+        Err(CalculatorError::SourceUnavailable(
+            "RpcClient sync methods are not available on wasm32".into(),
+        ))
     }
 }
+
+fn packed_header(header: HeaderView) -> packed::Header {
+    header.inner.into()
+}
+
+impl Node for RpcClient {
+    fn network(&self) -> Network {
+        self.network.clone()
+    }
+
+    fn get_live_cell(
+        &self,
+        out_point: &packed::OutPoint,
+        with_data: bool,
+    ) -> error::Result<LiveCell> {
+        let json_op: OutPoint = out_point.clone().into();
+        let live = block_on_rpc(self.request_live_cell(&json_op, with_data))?;
+        let cell = live
+            .cell
+            .ok_or_else(|| CalculatorError::InputCellNotFound("live cell not found".into()))?;
+        Ok(LiveCell {
+            output: cell.output.into(),
+            output_data: cell
+                .data
+                .map(|d| d.content.into_bytes().to_vec())
+                .unwrap_or_default(),
+            out_point: out_point.clone(),
+            block_number: 0,
+            tx_index: 0,
+        })
+    }
+
+    fn get_header(&self, hash: &Hash256) -> error::Result<Option<packed::Header>> {
+        let header = block_on_rpc(self.request_header(&hash_to_h256(hash)))?;
+        Ok(header.map(packed_header))
+    }
+
+    fn get_header_by_number(&self, number: u64) -> error::Result<Option<packed::Header>> {
+        let header = block_on_rpc(self.request_header_by_number(number.into()))?;
+        Ok(header.map(packed_header))
+    }
+
+    fn get_tip_header(&self) -> error::Result<packed::Header> {
+        Ok(packed_header(block_on_rpc(self.request_tip_header())?))
+    }
+
+    fn get_block_hash(&self, number: u64) -> error::Result<Option<Hash256>> {
+        Ok(block_on_rpc(self.request_block_hash(number.into()))?.map(|h| h256_to_hash(&h)))
+    }
+
+    fn get_tip_block_number(&self) -> error::Result<u64> {
+        Ok(u64::from(block_on_rpc(self.request_tip_block_number())?))
+    }
+
+    fn get_transaction_block_hash(&self, tx_hash: &Hash256) -> error::Result<Option<Hash256>> {
+        let tx = block_on_rpc(self.request_transaction(&hash_to_h256(tx_hash)))?;
+        Ok(tx
+            .and_then(|t| t.tx_status.block_hash)
+            .map(|h| h256_to_hash(&h)))
+    }
+
+    fn min_fee_rate(&self) -> error::Result<u64> {
+        Ok(u64::from(
+            block_on_rpc(self.request_tx_pool_info())?.min_fee_rate,
+        ))
+    }
+}
+
+impl Indexer for RpcClient {
+    fn get_cells(
+        &self,
+        search_key: &SearchKey,
+        limit: u32,
+        cursor: Option<&[u8]>,
+    ) -> error::Result<Pagination<LiveCell>> {
+        let json_key: json::SearchKey = search_key.clone().into();
+        let cursor = cursor.map(|c| JsonBytes::from_vec(c.to_vec()));
+        let page = block_on_rpc(self.request_cells(json_key, limit, cursor))?;
+        Ok(Pagination {
+            objects: page.objects.into_iter().map(Into::into).collect(),
+            last_cursor: page.last_cursor.into_bytes().to_vec(),
+        })
+    }
+
+    fn get_transactions(
+        &self,
+        search_key: &SearchKey,
+        limit: u32,
+        cursor: Option<&[u8]>,
+    ) -> error::Result<Pagination<Tx>> {
+        let json_key: json::SearchKey = search_key.clone().into();
+        let cursor = cursor.map(|c| JsonBytes::from_vec(c.to_vec()));
+        let page = block_on_rpc(self.request_transactions(json_key, limit, cursor))?;
+        Ok(Pagination {
+            objects: page
+                .objects
+                .into_iter()
+                .map(json::Tx::into_kernel)
+                .collect(),
+            last_cursor: page.last_cursor.into_bytes().to_vec(),
+        })
+    }
+}
+
+impl RPC for RpcClient {}

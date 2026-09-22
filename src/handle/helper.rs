@@ -13,7 +13,7 @@ use ckb_cinnabar_calculator::{
         ckb_types::{prelude::Unpack, H256},
         eyre,
     },
-    rpc::{Network, RpcClient, RPC},
+    rpc::{Host, Network, RpcClient, RPC},
 };
 
 use crate::object::*;
@@ -137,7 +137,7 @@ pub fn print_response(json: bool, response: &CliResponse) {
 ///
 /// `--dry-run` still returns a (unsigned, local) transaction hash and record
 /// in the JSON envelope but does not write the file or broadcast.
-pub async fn send_and_record_transaction<T: RPC>(
+pub async fn send_and_record_transaction<T: RPC + Host>(
     rpc: T,
     instructions: Vec<Instruction<T>>,
     tx_path: PathBuf,
@@ -150,9 +150,7 @@ pub async fn send_and_record_transaction<T: RPC>(
     dry_run: bool,
     json: bool,
 ) -> eyre::Result<()> {
-    let (skeleton, _) = TransactionCalculator::new(instructions)
-        .new_skeleton(&rpc)
-        .await?;
+    let (skeleton, _) = TransactionCalculator::new(instructions).new_skeleton(&rpc)?;
     let occupied_capacity = skeleton.outputs[0].occupied_capacity().as_u64();
     let type_id = skeleton.outputs[0].calc_type_hash();
     let type_id_args = skeleton.outputs[0]
@@ -177,7 +175,7 @@ pub async fn send_and_record_transaction<T: RPC>(
         occupied_capacity,
         payer_address: payer_address.into(),
         contract_owner_address: contract_owner_address.into(),
-        type_id,
+        type_id: type_id.map(Into::into),
         type_id_args,
         comment: None,
     };

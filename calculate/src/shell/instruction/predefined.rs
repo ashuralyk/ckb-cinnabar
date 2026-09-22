@@ -144,6 +144,7 @@ pub fn mint_spores(
     } else {
         ClusterAuthorityMode::ClusterCell
     };
+    mint.push(Box::new(AddSporeCelldep {}));
     for Spore {
         owner,
         content_type,
@@ -151,12 +152,18 @@ pub fn mint_spores(
         cluster_id,
     } in spores
     {
+        if let Some(cluster_id) = cluster_id.clone() {
+            mint.push(Box::new(AddClusterCelldepByClusterId {
+                cluster_id: cluster_id.0,
+                authority_mode: authority_mode.clone(),
+            }));
+        }
         mint.push(Box::new(AddSporeOutputCell {
             lock_script: owner.unwrap_or_else(|| minter.clone()).into(),
             content_type,
             content,
-            cluster_id,
-            authority_mode: authority_mode.clone(),
+            cluster_id: cluster_id.map(|id| id.0),
+            network: minter.network().clone(),
         }));
     }
     mint.push(Box::new(AddSporeActions { restrict: true }));
@@ -179,7 +186,7 @@ pub fn transfer_spores(from: &Address, spores: Vec<(Address, H256)>) -> DefaultI
     for (to, spore_id) in spores {
         transfer
             .push(Box::new(AddSporeInputCellBySporeId {
-                spore_id,
+                spore_id: spore_id.0,
                 check_owner: Some(from.clone().into()),
             }))
             .push(Box::new(AddOutputCellByInputIndex {
@@ -205,7 +212,7 @@ pub fn burn_spores(owner: &Address, spores: Vec<H256>) -> DefaultInstruction {
         DefaultInstruction::named(intent::BURN, vec![Box::new(AddSecp256k1SighashCellDep {})]);
     spores.into_iter().for_each(|spore_id| {
         burn.push(Box::new(AddSporeInputCellBySporeId {
-            spore_id,
+            spore_id: spore_id.0,
             check_owner: Some(owner.clone().into()),
         }));
     });
@@ -238,6 +245,7 @@ pub fn mint_clusters(minter: &Address, clusters: Vec<Cluster>) -> DefaultInstruc
             Box::new(AddInputCellByAddress {
                 address: minter.clone(),
             }),
+            Box::new(AddClusterCelldep {}),
         ],
     );
     for Cluster {
@@ -250,6 +258,7 @@ pub fn mint_clusters(minter: &Address, clusters: Vec<Cluster>) -> DefaultInstruc
             lock_script: owner.unwrap_or_else(|| minter.clone()).into(),
             name: cluster_name,
             description: cluster_description,
+            network: minter.network().clone(),
         }));
     }
     mint.push(Box::new(AddSporeActions { restrict: true }));
@@ -274,7 +283,9 @@ pub fn transfer_clusters(from: &Address, clusters: Vec<(Address, H256)>) -> Defa
     );
     for (to, cluster_id) in clusters {
         transfer
-            .push(Box::new(AddClusterInputCellByClusterId { cluster_id }))
+            .push(Box::new(AddClusterInputCellByClusterId {
+                cluster_id: cluster_id.0,
+            }))
             .push(Box::new(AddOutputCellByInputIndex {
                 input_index: usize::MAX,
                 lock_script: Some(to.into()),
@@ -297,9 +308,11 @@ pub fn dao_deposit(depositer: &Address, ckb: HumanCapacity) -> DefaultInstructio
         intent::DEPOSIT,
         vec![
             Box::new(AddSecp256k1SighashCellDep {}),
+            Box::new(AddDaoCelldep {}),
             Box::new(AddDaoDepositOutputCell {
                 owner: depositer.clone().into(),
                 deposit_capacity: ckb.into(),
+                network: depositer.network().clone(),
             }),
         ],
     )
@@ -377,6 +390,7 @@ pub fn mint_xudt(
                 issuer: issuer.clone().into(),
                 amount,
                 extra_args,
+                network: issuer.network().clone(),
             }),
         ],
     )

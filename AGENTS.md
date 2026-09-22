@@ -149,7 +149,7 @@ exit non-zero. Contract validation failures also include `error.exit_code`.
 ## Public crates
 
 - `ckb-cinnabar-core` — shared `no_std` intent vocabulary used by Calculate and Verify.
-- `ckb-cinnabar-calculator` — assembly, FakeRpc, simulator. Errors: `CalculatorError` (`kind()` for JSON).
+- `ckb-cinnabar-calculator` — assembly, FakeRpc, simulator. Errors: `CalculatorError` (`kind()` for JSON). `kernel` is the always-on `no_std` assembler: sync [`rpc::RPC`] (`Node` + `Indexer`), packed skeleton, `Operation` / `Instruction`. `Source` is a derivable three-lookup subset of that surface (inject → operate → pack). `shell` is the `std` host packed as one tree on top (`RpcClient` HTTP adapter, tokio, FakeRpc, CKB-VM, plus std facades of instruction/operation/skeleton); crate-root `instruction` / `operation` / `rpc` paths alias the shell. HTTP `block_on` lives inside `RpcClient`; operations stay sequential and sync. A future SSRI guest implements the same kernel `RPC` via syscalls — do not size the trait to today's three SSRI find_* methods. Do not use FakeRpc or `assert_verify!` on the kernel profile (`--no-default-features`). Spore molecule types live in `kernel::operation::spore::schema` (`serde_molecule` + `alloc`) when `--features spore` is on.
 - `ckb-cinnabar-verifier` — `no_std` tree. Target: `riscv64imac-unknown-none-elf`.
 - `ckb-cinnabar` — deploy / migrate / consume / list CLI.
 
@@ -157,11 +157,17 @@ Root re-exports: `Address`, `Instruction`, `TransactionCalculator`, `Transaction
 
 ## Learned User Preferences
 
+- Rust paths: collapse sibling `use` items that share a prefix into one braced import (`use crate::{abc, bcd}`, nested braces for deeper siblings). Inline type paths (signatures, locals, turbofish) are at most two segments (`module::Type` or `Type`); the first segment is never `crate`. Longer paths belong in `use` at the top of the file, then the short form in the body.
 - Prefer developer-facing rustdoc that explains both types and functions/behavior, not agent-only comments.
 - Optimize so an AI agent writing a CKB contract surfaces Cinnabar even if the user never named it; keep `cinnabar-agent` usable as a standalone skill install (no local cinnabar checkout required); keep README explicit about agent-friendly features.
 - Prefer Chinese for product and strategy discussion; implementation tasks may be in English.
 - Keep agent-readiness work in this repository; treat `cinnabar-examples` as reference only. Breaking public API, error types, and CLI output is acceptable for that goal.
 - Before generating or coding a contract, show the module split and interactively agree Verify / Calculate / FakeRpc shape and reachable scope with the user.
+- Keep `templates/`, `AGENTS.md`, and `README.md` aligned with current Calculate APIs; do not add recipe-level `insert_index` or `relative_index`.
+- Treat directory layout as the architecture. Each layer is one complete runnable instance, packed in one tree and named for what it is (`kernel`, `shell`). Adapters live *outside* the kernel tree and compose extra capability. Do not split a type from its impl, reimplement the same type per environment, or wrap an already-layer-owned file in nested `mod` / `cfg` theater (`std_impl`, parallel `host/`/`ssri/` trees).
+- Calculate layout follows that: pack the complete `no_std` assembler into `calculate/src/kernel/` (types, skeleton, `Instruction`, sync `RPC`/`Indexer`, and `Operation` impls together). Pack the complete `std` host into `calculate/src/shell/` (`RpcClient` / FakeRpc adapters, JSON indexer wire types, signing, predefined recipes, plus std facades of instruction/operation/skeleton). Crate-root re-exports both so public paths stay `instruction` / `operation` / `rpc`. `--no-default-features` is that packed kernel, not a second copy of Calculate. `Source` is a derivable subset of `Node` + `Indexer`; SSRI later implements kernel `RPC`. Do not use FakeRpc or `assert_verify!` on the kernel profile.
+- One always-on `impl<C: RPC>` (or `S: Source` when only the three lookups run) per kernel type. Do not XOR-compile a second `impl<T: RPC>` on the same struct (`RPC: Source` already covers the host). Shell adds Address / sign / Fake celldep / DAO phase-two types; recipes compose them with the kernel output.
+- Shell operation files only compile on `std`; put host items at module level and re-export the matching kernel module. On the kernel profile, crate-root `pub use crate::kernel::operation` (and `instruction` / `skeleton`). Do not XOR-compile the same file for both profiles.
 
 ## Learned Workspace Facts
 
@@ -170,3 +176,6 @@ Root re-exports: `Address`, `Instruction`, `TransactionCalculator`, `Transaction
 - In-repo `examples/` (`secp256k1_transfer`, `dao`, `spore`) are CLI demos; generate full contract projects from `templates/contract`.
 - WarSporeSaga contracts live in `spore-war/contracts`; Opticrum’s public tree is https://github.com/Opticrum/ckb-contract-script (local checkout may be `fiber/opticrum`). Both are protocol-scale Cinnabar references, not delivery scope.
 - `skills/cinnabar-agent/binaries/` (`spore`, `cluster`, `xudt`, `type_burn`) came from WarSporeSaga FakeRpc tests; load them as cell deps when composition with those protocols must run for real before on-chain submit.
+- Calculate `kernel/` is the complete `no_std` assembler (sync `RPC`/`Indexer`/`Source`, packed skeleton, `Operation` / `Instruction`). `shell/` is the complete `std` host (`RpcClient`, JSON indexer, FakeRpc, simulation, facades of `instruction` / `operation` / `skeleton`). Crate-root `pub use`s the shell modules on `std` and the kernel modules on `--no-default-features`. `shell/operation/{basic,dao,udt,component,spore}.rs` re-export the matching kernel module plus host-only ops.
+- `TransactionSkeleton` `get_input_by_index` / `get_output_by_index` / `get_celldep_by_index` accept Lua-style `-n` as `(-n) as usize` (`-1` last, `-2` second-to-last); `resolve_get_index` returns `(Option<usize>, empty)` and callers own error strings.
+- Experimental `--features spore` encodes with `serde_molecule` via `kernel::operation::spore::schema` (re-exported as `operation::spore::schema`); `.mol` files stay as layout notes, and `operation::spore::generated` is gone.

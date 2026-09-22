@@ -3,22 +3,22 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use crate::{
+    error::{self, CalculatorError},
+    indexer::{json, Indexer, LiveCell, Pagination, ScriptType, SearchKey, SearchMode, Tx},
+    rpc::{Host, Network, Node, Rpc, RPC},
+    skeleton::CellOutputEx,
+    types::{h256_to_hash, hash_to_h256, Hash256},
+};
 use ckb_jsonrpc_types::{
     BlockNumber, BlockView, CellData, CellInfo, CellWithStatus, ChainInfo, HeaderView, JsonBytes,
     OutPoint, OutputsValidator, ResponseFormat, Status, Transaction, TransactionView,
-    TransactionWithStatusResponse, TxPoolInfo, TxStatus,
+    TransactionWithStatusResponse, TxStatus,
 };
 use ckb_types::{
     core, packed,
     prelude::{IntoTransactionView, Unpack},
     H256,
-};
-use eyre::eyre;
-
-use crate::{
-    indexer::{Cell, Pagination, ScriptType, SearchKey, SearchMode, Tx},
-    rpc::{Network, Rpc, RPC},
-    skeleton::CellOutputEx,
 };
 
 /// In-memory chain state backing [`FakeRpcClient`].
@@ -34,7 +34,7 @@ pub struct FakeProvider {
     /// Committed fake transactions by hash.
     pub fake_transaction: HashMap<H256, (TxStatus, Transaction)>,
     /// Indexer `get_transactions` search results (tx hash + io markers).
-    pub fake_txs: Vec<Tx>,
+    pub fake_txs: Vec<json::Tx>,
     /// Reported tx-pool min fee rate (shannons/byte).
     pub fake_feerate: u64,
     /// Reported tip block number.
@@ -43,13 +43,13 @@ pub struct FakeProvider {
     pub fake_tipheader: HeaderView,
 }
 
-fn indexer_cell(out_point: &OutPoint, cell: &CellOutputEx) -> Cell {
-    Cell {
-        block_number: 0.into(),
-        out_point: out_point.clone(),
-        output: cell.output.clone().into(),
-        tx_index: 0.into(),
-        output_data: Some(JsonBytes::from_vec(cell.data.clone())),
+fn live_from_fake(out_point: &OutPoint, cell: &CellOutputEx) -> LiveCell {
+    LiveCell {
+        output: cell.output.clone(),
+        output_data: cell.data.clone(),
+        out_point: out_point.clone().into(),
+        block_number: 0,
+        tx_index: 0,
     }
 }
 
@@ -84,15 +84,16 @@ fn script_partial_equal(
 impl FakeProvider {
     fn get_cells_by_search_key(
         &self,
-        search_key: SearchKey,
+        search_key: &SearchKey,
         limit: usize,
-        cursor: Option<JsonBytes>,
-    ) -> (Vec<Cell>, usize) {
+        cursor: Option<&[u8]>,
+    ) -> (Vec<LiveCell>, usize) {
         if limit == 0 {
             return (vec![], 0);
         }
         let mut offset = cursor
-            .map(|v| usize::from_le_bytes(v.into_bytes().to_vec().try_into().unwrap()))
+            .and_then(|v| <[u8; 8]>::try_from(v).ok())
+            .map(usize::from_le_bytes)
             .unwrap_or_default();
         let mut objects = vec![];
         for (out_point, cell) in self.fake_cells.iter().skip(offset) {
@@ -100,26 +101,24 @@ impl FakeProvider {
             let (primary_script, script_a, secondary_script, script_b) =
                 match search_key.script_type {
                     ScriptType::Lock => {
-                        let primary_script: packed::Script = search_key.script.clone().into();
                         let secondary_script: Option<Option<packed::Script>> =
-                            search_key.filter.clone().map(|v| v.script.map(Into::into));
+                            search_key.filter.clone().map(|v| v.script);
                         let lock_script = cell.lock_script();
                         let type_script = cell.type_script();
                         (
-                            primary_script,
+                            search_key.script.clone(),
                             Some(lock_script),
                             secondary_script,
                             type_script,
                         )
                     }
                     ScriptType::Type => {
-                        let primary_script: packed::Script = search_key.script.clone().into();
                         let secondary_script: Option<Option<packed::Script>> =
-                            search_key.filter.clone().map(|v| v.script.map(Into::into));
+                            search_key.filter.clone().map(|v| v.script);
                         let lock_script = cell.lock_script();
                         let type_script = cell.type_script();
                         (
-                            primary_script,
+                            search_key.script.clone(),
                             type_script,
                             secondary_script,
                             Some(lock_script),
@@ -134,7 +133,7 @@ impl FakeProvider {
                                 continue;
                             }
                         }
-                        objects.push(indexer_cell(out_point, cell));
+                        objects.push(live_from_fake(out_point, cell));
                     }
                 }
                 Some(SearchMode::Prefix) => {
@@ -144,7 +143,7 @@ impl FakeProvider {
                                 continue;
                             }
                         }
-                        objects.push(indexer_cell(out_point, cell))
+                        objects.push(live_from_fake(out_point, cell))
                     }
                 }
                 Some(SearchMode::Partial) => {
@@ -154,7 +153,7 @@ impl FakeProvider {
                                 continue;
                             }
                         }
-                        objects.push(indexer_cell(out_point, cell));
+                        objects.push(live_from_fake(out_point, cell));
                     }
                 }
             }
@@ -263,7 +262,7 @@ impl FakeRpcClient {
     }
 
     /// Seed an indexer `get_transactions` search result.
-    pub fn insert_fake_tx(&mut self, tx: Tx) -> &mut Self {
+    pub fn insert_fake_tx(&mut self, tx: json::Tx) -> &mut Self {
         self.lock().fake_txs.push(tx);
         self
     }
@@ -359,7 +358,7 @@ fn apply_sent_transaction(provider: &mut FakeProvider, tx: &Transaction, hash: &
             index: (i as u32).into(),
         };
         let packed_output: packed::CellOutput = output.clone().into();
-        let cell = crate::skeleton::CellOutputEx::new(packed_output, data.as_bytes().to_vec());
+        let cell = CellOutputEx::new(packed_output, data.as_bytes().to_vec());
         provider.fake_cells.push((out_point, cell));
     }
     provider.fake_transaction.insert(
@@ -377,11 +376,7 @@ fn apply_sent_transaction(provider: &mut FakeProvider, tx: &Transaction, hash: &
     );
 }
 
-impl RPC for FakeRpcClient {
-    fn network(&self) -> Network {
-        self.network.clone()
-    }
-
+impl Host for FakeRpcClient {
     fn url(&self) -> (String, String) {
         ("fake://ckb".into(), "fake://indexer".into())
     }
@@ -398,43 +393,6 @@ impl RPC for FakeRpcClient {
         Box::pin(async move { Ok(info) })
     }
 
-    fn get_live_cell(&self, out_point: &OutPoint, _with_data: bool) -> Rpc<CellWithStatus> {
-        let cell = self
-            .lock()
-            .get_cell_by_outpoint(out_point)
-            .ok_or(eyre!("no live cell found"));
-        Box::pin(async move { cell })
-    }
-
-    fn get_cells(
-        &self,
-        search_key: SearchKey,
-        limit: u32,
-        cursor: Option<JsonBytes>,
-    ) -> Rpc<Pagination<Cell>> {
-        let (cells, cursor) =
-            self.lock()
-                .get_cells_by_search_key(search_key, limit as usize, cursor);
-        let result = Pagination::<Cell> {
-            objects: cells,
-            last_cursor: JsonBytes::from_vec(cursor.to_le_bytes().to_vec()),
-        };
-        Box::pin(async move { Ok(result) })
-    }
-
-    fn get_transactions(
-        &self,
-        _search_key: SearchKey,
-        _limit: u32,
-        _cursor: Option<JsonBytes>,
-    ) -> Rpc<Pagination<Tx>> {
-        let result = Pagination::<Tx> {
-            objects: self.lock().fake_txs.clone(),
-            last_cursor: JsonBytes::default(),
-        };
-        Box::pin(async move { Ok(result) })
-    }
-
     fn get_block_by_number(&self, number: BlockNumber) -> Rpc<Option<BlockView>> {
         let block = self
             .lock()
@@ -446,39 +404,6 @@ impl RPC for FakeRpcClient {
     fn get_block(&self, hash: &H256) -> Rpc<Option<BlockView>> {
         let block = self.lock().get_header_by_hash(hash).map(block_from_header);
         Box::pin(async move { Ok(block) })
-    }
-
-    fn get_header(&self, hash: &H256) -> Rpc<Option<HeaderView>> {
-        let header = self.lock().get_header_by_hash(hash);
-        Box::pin(async move { Ok(header) })
-    }
-
-    fn get_header_by_number(&self, number: BlockNumber) -> Rpc<Option<HeaderView>> {
-        let header = self.lock().get_header_by_number(number.into());
-        Box::pin(async move { Ok(header) })
-    }
-
-    fn get_block_hash(&self, number: BlockNumber) -> Rpc<Option<H256>> {
-        let header = self.lock().get_header_by_number(number.into());
-        Box::pin(async move { Ok(header.map(|h| h.hash)) })
-    }
-
-    fn get_tip_block_number(&self) -> Rpc<BlockNumber> {
-        let tip_number = self.lock().fake_tipnumber;
-        Box::pin(async move { Ok(tip_number.into()) })
-    }
-
-    fn get_tip_header(&self) -> Rpc<HeaderView> {
-        let tip_header = self.lock().fake_tipheader.clone();
-        Box::pin(async move { Ok(tip_header) })
-    }
-
-    fn tx_pool_info(&self) -> Rpc<TxPoolInfo> {
-        let pool = TxPoolInfo {
-            min_fee_rate: self.lock().fake_feerate.into(),
-            ..Default::default()
-        };
-        Box::pin(async move { Ok(pool) })
     }
 
     fn get_transaction(&self, hash: &H256) -> Rpc<Option<TransactionWithStatusResponse>> {
@@ -498,10 +423,116 @@ impl RPC for FakeRpcClient {
     }
 }
 
+impl Node for FakeRpcClient {
+    fn network(&self) -> Network {
+        self.network.clone()
+    }
+
+    fn get_live_cell(
+        &self,
+        out_point: &packed::OutPoint,
+        with_data: bool,
+    ) -> error::Result<LiveCell> {
+        let json_op: OutPoint = out_point.clone().into();
+        let cell = self
+            .lock()
+            .fake_cells
+            .iter()
+            .find(|(op, _)| op == &json_op)
+            .map(|(_, cell)| cell.clone())
+            .ok_or_else(|| CalculatorError::InputCellNotFound("live cell not found".into()))?;
+        Ok(LiveCell {
+            output: cell.output,
+            output_data: if with_data { cell.data } else { Vec::new() },
+            out_point: out_point.clone(),
+            block_number: 0,
+            tx_index: 0,
+        })
+    }
+
+    fn get_header(&self, hash: &Hash256) -> error::Result<Option<packed::Header>> {
+        Ok(self
+            .lock()
+            .get_header_by_hash(&hash_to_h256(hash))
+            .map(|h| h.inner.into()))
+    }
+
+    fn get_header_by_number(&self, number: u64) -> error::Result<Option<packed::Header>> {
+        Ok(self
+            .lock()
+            .get_header_by_number(number)
+            .map(|h| h.inner.into()))
+    }
+
+    fn get_tip_header(&self) -> error::Result<packed::Header> {
+        Ok(self.lock().fake_tipheader.inner.clone().into())
+    }
+
+    fn get_block_hash(&self, number: u64) -> error::Result<Option<Hash256>> {
+        Ok(self
+            .lock()
+            .get_header_by_number(number)
+            .map(|h| h256_to_hash(&h.hash)))
+    }
+
+    fn get_tip_block_number(&self) -> error::Result<u64> {
+        Ok(self.lock().fake_tipnumber)
+    }
+
+    fn get_transaction_block_hash(&self, tx_hash: &Hash256) -> error::Result<Option<Hash256>> {
+        Ok(self
+            .lock()
+            .get_transaction_by_hash(&hash_to_h256(tx_hash))
+            .and_then(|tx| tx.tx_status.block_hash)
+            .map(|h| h256_to_hash(&h)))
+    }
+
+    fn min_fee_rate(&self) -> error::Result<u64> {
+        Ok(self.lock().fake_feerate)
+    }
+}
+
+impl Indexer for FakeRpcClient {
+    fn get_cells(
+        &self,
+        search_key: &SearchKey,
+        limit: u32,
+        cursor: Option<&[u8]>,
+    ) -> error::Result<Pagination<LiveCell>> {
+        let (cells, next) = self
+            .lock()
+            .get_cells_by_search_key(search_key, limit as usize, cursor);
+        Ok(Pagination {
+            objects: cells,
+            last_cursor: next.to_le_bytes().to_vec(),
+        })
+    }
+
+    fn get_transactions(
+        &self,
+        _search_key: &SearchKey,
+        _limit: u32,
+        _cursor: Option<&[u8]>,
+    ) -> error::Result<Pagination<Tx>> {
+        Ok(Pagination {
+            objects: self
+                .lock()
+                .fake_txs
+                .clone()
+                .into_iter()
+                .map(json::Tx::into_kernel)
+                .collect(),
+            last_cursor: Vec::new(),
+        })
+    }
+}
+
+impl RPC for FakeRpcClient {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rpc::RPC;
+    use crate::rpc::Host;
 
     #[tokio::test]
     async fn fake_rpc_url_and_chain_info() {

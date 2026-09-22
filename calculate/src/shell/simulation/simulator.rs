@@ -6,6 +6,7 @@ use crate::{
     operation::Log,
     rpc::RPC,
     skeleton::TransactionSkeleton,
+    types::hash_to_h256,
 };
 use ckb_chain_spec::consensus::{Consensus, ConsensusBuilder};
 use ckb_script::{ScriptError, TransactionScriptError, TransactionScriptsVerifier, TxVerifyEnv};
@@ -18,7 +19,7 @@ use ckb_types::{
         Cycle, HeaderBuilder, HeaderView, TransactionInfo,
     },
     packed::{self, Byte32, OutPoint},
-    prelude::Unpack,
+    prelude::{IntoHeaderView, Unpack},
     H256,
 };
 
@@ -180,7 +181,7 @@ impl TransactionSimulator {
         let mut skeleton = self.skeleton.unwrap_or_default();
         let mut log = Log::new();
         for instruction in instructions {
-            instruction.run(rpc, &mut skeleton, &mut log).await?;
+            instruction.run(rpc, &mut skeleton, &mut log)?;
         }
         if self.print_tx {
             println!("transaction skeleton: {}", skeleton);
@@ -190,12 +191,11 @@ impl TransactionSimulator {
         let headers = skeleton
             .headerdeps
             .iter()
-            .map(|v| (v.block_hash.clone(), v.header.clone()))
+            .map(|v| (hash_to_h256(&v.block_hash), v.header.clone().into_view()))
             .collect();
         let resolved_tx = {
             let mut resolved_tx = skeleton
                 .into_resolved_transaction(rpc)
-                .await
                 .map_err(CalculatorError::from)?;
             complete_resolved_tx(self.outpoint_to_headers, &mut resolved_tx);
             Arc::new(resolved_tx)

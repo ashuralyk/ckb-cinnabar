@@ -1,14 +1,13 @@
-//! Typed errors for off-chain assembly. Operation implementations may still
-//! use `eyre`; [`Instruction`](crate::instruction::Instruction) and
-//! [`TransactionCalculator`](crate::instruction::TransactionCalculator) surface
-//! [`CalculatorError`] so agents can branch without scraping strings.
+//! Typed errors for assembly. Host operations may still use `eyre`;
+//! [`Instruction`](crate::instruction::Instruction) surfaces [`CalculatorError`].
 
-use std::fmt;
+use alloc::string::{String, ToString};
+use core::{fmt, result};
 
 /// Calculator result type used by public assembly / simulation APIs.
-pub type Result<T> = std::result::Result<T, CalculatorError>;
+pub type Result<T> = result::Result<T, CalculatorError>;
 
-/// Recoverable off-chain assembly / simulation / RPC failure.
+/// Recoverable assembly / simulation / RPC / source failure.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CalculatorError {
     /// A referenced cell dep could not be located on-chain.
@@ -34,6 +33,8 @@ pub enum CalculatorError {
     FakeRpc(String),
     /// Filesystem failure (contract binary, deployment record, ...).
     Io(String),
+    /// [`crate::source::Source`] is unset or the lookup is not implemented.
+    SourceUnavailable(String),
     /// Anything that does not fit the variants above.
     Other(String),
 }
@@ -53,6 +54,7 @@ impl CalculatorError {
             Self::ScriptValidation { .. } => "script_validation",
             Self::FakeRpc(_) => "fake_rpc",
             Self::Io(_) => "io",
+            Self::SourceUnavailable(_) => "source_unavailable",
             Self::Other(_) => "other",
         }
     }
@@ -70,6 +72,7 @@ impl CalculatorError {
             | Self::Simulation(m)
             | Self::FakeRpc(m)
             | Self::Io(m)
+            | Self::SourceUnavailable(m)
             | Self::Other(m) => m,
             Self::ScriptValidation { message, .. } => message,
         }
@@ -83,7 +86,7 @@ impl CalculatorError {
         }
     }
 
-    /// Classify a free-form `eyre` report into a typed variant.
+    /// Classify a free-form report into a typed variant.
     pub fn from_message(msg: impl AsRef<str>) -> Self {
         let msg = msg.as_ref();
         let lower = msg.to_ascii_lowercase();
@@ -95,7 +98,9 @@ impl CalculatorError {
                 };
             }
         }
-        if lower.contains("cell dep not found")
+        if lower.contains("source") && lower.contains("unavailable") {
+            Self::SourceUnavailable(msg.to_string())
+        } else if lower.contains("cell dep not found")
             || (lower.contains("celldep") && lower.contains("not found"))
         {
             Self::CellDepNotFound(msg.to_string())
@@ -136,25 +141,26 @@ impl fmt::Display for CalculatorError {
     }
 }
 
+#[cfg(feature = "std")]
 impl std::error::Error for CalculatorError {}
 
+#[cfg(feature = "std")]
 impl From<eyre::Report> for CalculatorError {
     fn from(err: eyre::Report) -> Self {
         Self::from_message(format!("{err:#}"))
     }
 }
 
+#[cfg(feature = "std")]
 impl From<std::io::Error> for CalculatorError {
     fn from(err: std::io::Error) -> Self {
         Self::Io(err.to_string())
     }
 }
 
+#[cfg(feature = "std")]
 impl serde::Serialize for CalculatorError {
-    fn serialize<S: serde::Serializer>(
-        &self,
-        serializer: S,
-    ) -> std::result::Result<S::Ok, S::Error> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> result::Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
         let mut s = serializer.serialize_struct("CalculatorError", 3)?;
         s.serialize_field("kind", self.kind())?;
@@ -170,6 +176,7 @@ impl serde::Serialize for CalculatorError {
 ///
 /// Best-effort parser used when errors arrive as plain text (e.g. via eyre);
 /// prefer [`CalculatorError::script_exit_code`] when a typed error is available.
+#[cfg(feature = "std")]
 pub fn script_exit_code(err: &eyre::Report) -> Option<i8> {
     script_exit_code_from_str(&format!("{err:#}"))
 }

@@ -10,22 +10,68 @@
 //! match deployed spore/cluster binaries (cobuild-poc), as documented in
 //! `cobuild.mol`.
 
-use ckb_types::prelude::Unpack;
-use eyre::{eyre, Result};
+use alloc::{format, vec::Vec};
+use core::result;
+
 use serde::{de, ser, Deserialize, Serialize};
 use serde_molecule::{de::MoleculeDeserializer, from_slice, struct_serde::CollectData, to_vec};
+
+use crate::{
+    error::{CalculatorError, Result},
+    types::{packed, unpack_hash},
+};
 
 /// cobuild `WitnessLayout` item id for `SighashAll` (`4278190081`).
 pub const WITNESS_LAYOUT_SIGHASH_ALL: u32 = 0xFF00_0001;
 
 /// Encode `value` as a molecule table (or union, for [`WitnessLayout`]).
 pub fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>> {
-    to_vec(value, false).map_err(|err| eyre!("molecule encode failed: {err}"))
+    to_vec(value, false)
+        .map_err(|err| CalculatorError::Other(format!("molecule encode failed: {err}")))
 }
 
 /// Decode a molecule table (compatible extra fields allowed).
 pub fn decode<'de, T: Deserialize<'de>>(bytes: &'de [u8]) -> Result<T> {
-    from_slice(bytes, false).map_err(|err| eyre!("molecule decode failed: {err}"))
+    from_slice(bytes, false)
+        .map_err(|err| CalculatorError::Other(format!("molecule decode failed: {err}")))
+}
+
+/// Encode `SporeData` (content type, content, optional cluster id).
+pub fn make_spore_data(
+    content_type: &str,
+    content: &[u8],
+    cluster_id: Option<&[u8; 32]>,
+) -> Vec<u8> {
+    encode(&SporeData {
+        content_type: content_type.as_bytes().to_vec(),
+        content: content.to_vec(),
+        cluster_id: cluster_id.map(|id| id.to_vec()),
+    })
+    .expect("SporeData is always encodable")
+}
+
+/// Encode `ClusterDataV2` (name, description, empty mutant id).
+pub fn make_cluster_data(name: &str, description: &[u8]) -> Vec<u8> {
+    encode(&ClusterDataV2 {
+        name: name.as_bytes().to_vec(),
+        description: description.to_vec(),
+        mutant_id: None,
+    })
+    .expect("ClusterDataV2 is always encodable")
+}
+
+/// Encode cobuild `table Action`.
+pub fn encode_cobuild_action(
+    script_info_hash: &[u8; 32],
+    script_hash: &[u8; 32],
+    data: &[u8],
+) -> Vec<u8> {
+    encode(&Action {
+        script_info_hash: *script_info_hash,
+        script_hash: *script_hash,
+        data: data.to_vec(),
+    })
+    .expect("Action is always encodable")
 }
 
 /// `table SporeData` in `spore.mol`.
@@ -58,11 +104,11 @@ pub struct Script {
     pub args: Vec<u8>,
 }
 
-impl From<ckb_types::packed::Script> for Script {
-    fn from(script: ckb_types::packed::Script) -> Self {
+impl From<packed::Script> for Script {
+    fn from(script: packed::Script) -> Self {
         Self {
-            code_hash: script.code_hash().unpack(),
-            hash_type: script.hash_type().into(),
+            code_hash: unpack_hash(&script.code_hash()),
+            hash_type: u8::from(script.hash_type()),
             args: script.args().raw_data().to_vec(),
         }
     }
@@ -74,8 +120,8 @@ pub enum Address {
     Script(Script),
 }
 
-impl From<ckb_types::packed::Script> for Address {
-    fn from(script: ckb_types::packed::Script) -> Self {
+impl From<packed::Script> for Address {
+    fn from(script: packed::Script) -> Self {
         Address::Script(script.into())
     }
 }
@@ -139,10 +185,10 @@ pub struct Action {
 
 impl Action {
     /// Bind `spore_action` to `script` (`script_info_hash` left zeroed).
-    pub fn spore(script: &ckb_types::packed::Script, spore_action: &SporeAction) -> Result<Self> {
+    pub fn spore(script: &packed::Script, spore_action: &SporeAction) -> Result<Self> {
         Ok(Self {
             script_info_hash: [0u8; 32],
-            script_hash: script.calc_script_hash().unpack(),
+            script_hash: unpack_hash(&script.calc_script_hash()),
             data: encode(spore_action)?,
         })
     }
@@ -170,10 +216,7 @@ pub enum WitnessLayout {
 }
 
 impl Serialize for WitnessLayout {
-    fn serialize<S: serde::Serializer>(
-        &self,
-        serializer: S,
-    ) -> core::result::Result<S::Ok, S::Error> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> result::Result<S::Ok, S::Error> {
         match self {
             WitnessLayout::SighashAll(inner) => {
                 let mut data = WITNESS_LAYOUT_SIGHASH_ALL.to_le_bytes().to_vec();
@@ -188,9 +231,7 @@ impl Serialize for WitnessLayout {
 }
 
 impl<'de> Deserialize<'de> for WitnessLayout {
-    fn deserialize<D: serde::Deserializer<'de>>(
-        deserializer: D,
-    ) -> core::result::Result<Self, D::Error> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> result::Result<Self, D::Error> {
         let data = CollectData::deserialize(deserializer)?.data;
         if data.len() < 4 {
             return Err(de::Error::custom("WitnessLayout too short"));
@@ -212,6 +253,7 @@ impl<'de> Deserialize<'de> for WitnessLayout {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     #[test]
     fn spore_data_encodes_as_molecule_table() {

@@ -3,9 +3,11 @@
 //! [`Address`] parses `ckb1…` / `ckt1…` strings and converts to/from packed
 //! [`Script`]. [`AddressPayload`] is the lock-script triple without the HRP.
 
-use std::convert::{TryFrom, TryInto};
-use std::fmt;
-use std::str::FromStr;
+use std::{
+    convert::{TryFrom, TryInto},
+    fmt,
+    str::FromStr,
+};
 
 use bech32::{self, convert_bits, ToBase32, Variant};
 use ckb_types::{

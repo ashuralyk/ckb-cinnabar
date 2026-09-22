@@ -78,7 +78,6 @@ pub async fn main() {
         .instruction(dao)
         .instruction(balance_and_sign)
         .new_skeleton(&rpc)
-        .await
         .expect("build tx");
 
     // send transaction without any block confirmations

@@ -1,5 +1,14 @@
 //! Off-chain CKB transaction assembly for the Cinnabar framework.
 //!
+//! Two layers (additive, not exclusive):
+//!
+//! - **Kernel (always on)** — [`kernel`]: `no_std` + `alloc` packed skeleton,
+//!   sync [`rpc::RPC`] / [`indexer::Indexer`], [`source::Source`],
+//!   [`operation::Operation`] / [`instruction::Instruction`]. Enable the
+//!   kernel profile with `--no-default-features`. HTTP and SSRI are adapters.
+//! - **Shell (`std`, default)** — [`shell`]: host adapter packed on top of
+//!   the kernel ([`rpc::RpcClient`], tokio, FakeRpc, signing, simulation).
+//!
 //! Compose [`operation::Operation`] values into an
 //! [`instruction::Instruction`], then run them through
 //! [`TransactionCalculator`] to produce a [`skeleton::TransactionSkeleton`].
@@ -14,20 +23,47 @@
 //! assert_eq!(intent::CREATE, "create");
 //! ```
 
-pub mod address;
-pub mod error;
-pub mod indexer;
-pub mod instruction;
-pub mod intent;
-pub mod operation;
-pub mod rpc;
-pub mod simulation;
-pub mod skeleton;
+#![cfg_attr(not(feature = "std"), no_std)]
 
-pub use address::Address;
-pub use error::{script_exit_code, CalculatorError, Result};
-pub use instruction::{DefaultInstruction, Instruction, TransactionCalculator};
-pub use rpc::{Network, RpcClient, MAINNET_RPC_URL, RPC, TESTNET_RPC_URL};
+extern crate alloc;
+
+pub mod kernel;
+
+#[cfg(feature = "std")]
+pub mod shell;
+
+#[cfg(feature = "std")]
+#[doc(inline)]
+pub use shell::{address, indexer, instruction, operation, rpc, simulation, skeleton};
+
+#[cfg(not(feature = "std"))]
+#[doc(inline)]
+pub use kernel::{indexer, instruction, operation, rpc, skeleton};
+
+#[cfg(feature = "std")]
+pub use kernel::error::script_exit_code;
+pub use kernel::{
+    error,
+    error::{script_exit_code_from_str, CalculatorError, Result},
+    indexer::Indexer,
+    intent, network,
+    network::Network,
+    rpc::{Node, RPC},
+    source,
+    source::{Source, UnsupportedSource},
+    types,
+    types::{occupied_capacity_shannons, Hash256},
+};
+
+#[cfg(feature = "std")]
+pub use {
+    address::Address,
+    rpc::{Host, RpcClient, MAINNET_RPC_URL, TESTNET_RPC_URL},
+};
+
+#[cfg(feature = "std")]
+pub use instruction::DefaultInstruction;
+pub use instruction::{Instruction, TransactionCalculator};
 pub use skeleton::{ScriptEx, TransactionSkeleton, TYPE_ID_CODE_HASH};
 
 /// Assert CKB-VM exit code after assembling `instructions` against `rpc`.
@@ -37,6 +73,7 @@ pub use skeleton::{ScriptEx, TransactionSkeleton, TYPE_ID_CODE_HASH};
 /// ```ignore
 /// ckb_cinnabar_calculator::assert_verify!(&rpc, instructions, 0).unwrap();
 /// ```
+#[cfg(feature = "std")]
 #[macro_export]
 macro_rules! assert_verify {
     ($rpc:expr, $instructions:expr, $expected_exit:expr) => {
@@ -44,7 +81,9 @@ macro_rules! assert_verify {
     };
 }
 
-// Re-exports to eliminate the need for downstream dependencies to specify the version of ckb_* crates
+/// Re-exports to eliminate the need for downstream dependencies to specify the
+/// version of host `ckb_*` crates.
+#[cfg(feature = "std")]
 pub mod re_exports {
     pub use async_trait;
     pub use ckb_hash;

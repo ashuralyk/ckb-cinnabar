@@ -5,27 +5,22 @@
 
 use std::{fs, path::PathBuf};
 
-use async_trait::async_trait;
 use ckb_hash::blake2b_256;
 use ckb_types::{
-    core::{Capacity, DepType, HeaderView},
-    packed::{CellOutput, Header, RawHeader},
+    core::{Capacity, DepType, HeaderView, ScriptHashType},
+    packed::{CellDep, CellInput, CellOutput, Header, OutPoint, RawHeader, Script},
     prelude::{Builder, Entity, IntoHeaderView, Pack, Unpack},
     H256,
 };
-use eyre::Result;
 
 use crate::{
+    error,
     operation::{Log, Operation},
     rpc::{Network, RPC},
     skeleton::{CellDepEx, CellInputEx, ScriptEx, TransactionSkeleton, TYPE_ID_CODE_HASH},
 };
 
 pub use ckb_always_success_script::ALWAYS_SUCCESS;
-use ckb_types::{
-    core::ScriptHashType,
-    packed::{CellDep, CellInput, OutPoint, Script},
-};
 use rand::Rng;
 
 /// 32 bytes of randomness, used to derive fake hashes / out-points.
@@ -84,16 +79,17 @@ pub struct AddFakeContractCelldep {
     pub type_id_args: Option<H256>,
 }
 
-#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddFakeContractCelldep {
-    async fn run(
+    fn run(
         self: Box<Self>,
         rpc: &T,
         skeleton: &mut TransactionSkeleton,
         _: &mut Log,
-    ) -> Result<()> {
+    ) -> error::Result<()> {
         if rpc.network() != Network::Fake {
-            return Err(eyre::eyre!("only support fake network"));
+            return Err(error::CalculatorError::FakeRpc(
+                "only support fake network".into(),
+            ));
         }
         let celldep_out_point = fake_outpoint();
         let celldep = CellDep::new_builder()
@@ -129,14 +125,13 @@ pub struct AddFakeContractCelldepByName {
     pub contract_binary_path: String,
 }
 
-#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddFakeContractCelldepByName {
-    async fn run(
+    fn run(
         self: Box<Self>,
         rpc: &T,
         skeleton: &mut TransactionSkeleton,
         log: &mut Log,
-    ) -> Result<()> {
+    ) -> error::Result<()> {
         let contract_path = PathBuf::new()
             .join(self.contract_binary_path)
             .join(&self.contract);
@@ -147,21 +142,19 @@ impl<T: RPC> Operation<T> for AddFakeContractCelldepByName {
             type_id_args: self.type_id_args,
         })
         .run(rpc, skeleton, log)
-        .await
     }
 }
 
 /// Add always success celldep to the transaction skeleton
 pub struct AddFakeAlwaysSuccessCelldep {}
 
-#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddFakeAlwaysSuccessCelldep {
-    async fn run(
+    fn run(
         self: Box<Self>,
         _: &T,
         skeleton: &mut TransactionSkeleton,
         _: &mut Log,
-    ) -> Result<()> {
+    ) -> error::Result<()> {
         let always_success_out_point = fake_outpoint();
         let celldep = CellDep::new_builder()
             .out_point(always_success_out_point)
@@ -192,14 +185,13 @@ pub struct AddFakeInputCell {
     pub absolute_capacity: bool,
 }
 
-#[async_trait(?Send)]
 impl<T: RPC> Operation<T> for AddFakeInputCell {
-    async fn run(
+    fn run(
         self: Box<Self>,
         _: &T,
         skeleton: &mut TransactionSkeleton,
         _: &mut Log,
-    ) -> Result<()> {
+    ) -> error::Result<()> {
         let primary_script = self.lock_script.to_script(skeleton)?;
         let second_script = if let Some(second) = self.type_script {
             Some(second.to_script(skeleton)?)
@@ -216,7 +208,11 @@ impl<T: RPC> Operation<T> for AddFakeInputCell {
             let output = CellOutput::new_builder()
                 .lock(primary_script)
                 .type_(second_script.pack())
-                .build_exact_capacity(Capacity::bytes(self.data.len())?)?;
+                .build_exact_capacity(
+                    Capacity::bytes(self.data.len())
+                        .map_err(|e| error::CalculatorError::Other(e.to_string()))?,
+                )
+                .map_err(|e| error::CalculatorError::Other(e.to_string()))?;
             let minimal_capacity: u64 = output.capacity().unpack();
             output
                 .as_builder()
