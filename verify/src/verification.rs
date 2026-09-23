@@ -65,7 +65,20 @@ impl<T: Default> TransactionVerifier<T> {
     }
 }
 
-/// Examples:
+/// Register the verification tree, and optionally an SSRI door.
+///
+/// Hop-only form is unchanged. Enable crate feature `ssri` and append
+/// `SSRI { "Wire.name" => expr, ... }` to emit a second entry: empty `argv`
+/// walks the hop tree; SSRI VM (`argv` + `vm_version == u64::MAX`) dispatches
+/// the wire table. `SSRI { }` is the door plus an explicit wire table, not a
+/// protocol identity. Hop `verify()` stays off the wire.
+///
+/// Each RHS is any expression `ssri::export` can turn into bytes: a
+/// `fn(&SsriSource, SsriArgs) -> Result<R>`, a `&[u8]` / `str` constant, a
+/// `u8`, a `Vec<u8>` local, or a `Result`. The guest fn reads each slot with
+/// `SsriArgs::get` or `SsriArgs::molecule`.
+/// `ssri_methods!` always emits `SSRI.version`, `SSRI.get_methods`, and
+/// `SSRI.has_methods`. Do not repeat those wire strings in the block.
 ///
 /// ```ignore
 /// use ckb_cinnabar_verifier::{
@@ -103,9 +116,67 @@ impl<T: Default> TransactionVerifier<T> {
 ///     (TREE_ROOT, RootVerifier),
 ///     (intent::TRANSFER, BranchVerifier)
 /// );
+///
+/// const NAME: &[u8] = b"Test UDT";
+/// let decimals: u8 = 8;
+///
+/// cinnabar_main!(
+///     GlobalContext,
+///     (TREE_ROOT, RootVerifier),
+///     (intent::TRANSFER, BranchVerifier),
+///     SSRI {
+///         "UDT.mint"     => mint,
+///         "UDT.name"     => NAME,
+///         "UDT.decimals" => decimals,
+///     }
+/// );
 /// ```
 #[macro_export]
 macro_rules! cinnabar_main {
+    (
+        $ctx:ty,
+        $(($name:expr, $verifier:ty)),+ $(,)?
+        SSRI { $($wire:literal => $entry:expr),+ $(,)? } $(,)?
+    ) => {
+        ckb_std::default_alloc!();
+        ckb_std::entry!(program_entry);
+
+        pub fn program_entry() -> i8 {
+            match program_entry_inner() {
+                Ok(()) => 0,
+                Err(err) => err.into(),
+            }
+        }
+
+        fn program_entry_inner() -> ckb_cinnabar_verifier::Result<()> {
+            if ckb_ssri_std::utils::should_fallback().map_err(Into::into)? {
+                let mut ctx = <$ctx>::default();
+                let mut verifier = ckb_cinnabar_verifier::TransactionVerifier::default();
+                $(
+                    verifier.add_verifier($name, alloc::boxed::Box::new(<$verifier>::default()));
+                )+
+                verifier.run(&mut ctx)
+            } else {
+                let argv = ckb_std::env::argv();
+                let bytes = {
+                    use ckb_cinnabar_verifier::Error;
+                    // `ssri_methods!` emits `Result<T, Error>`. Shadow the
+                    // verifier's one-argument `Result` alias if the contract imported it.
+                    use core::result::Result;
+                    ckb_cinnabar_verifier::ssri_methods!(
+                        argv: &argv,
+                        invalid_method: Error::SSRIMethodsNotFound,
+                        invalid_args: Error::SSRIMethodsArgsInvalid,
+                        $($wire => ckb_cinnabar_verifier::ssri::export(&argv, $entry),)+
+                    )?
+                };
+                let pipe = ckb_std::syscalls::pipe()?;
+                ckb_std::syscalls::write(pipe.1, bytes)?;
+                Ok(())
+            }
+        }
+    };
+
     ($ctx:ty, $(($name:expr, $verifier:ty) $(,)?)+) => {
         ckb_std::default_alloc!();
         ckb_std::entry!(program_entry);
@@ -122,4 +193,29 @@ macro_rules! cinnabar_main {
             }
         }
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Default)]
+    struct Ctx;
+
+    #[derive(Default)]
+    struct Root;
+
+    impl Verification<Ctx> for Root {
+        fn verify(&mut self, _name: &str, _ctx: &mut Ctx) -> Result<Option<&str>> {
+            Ok(None)
+        }
+    }
+
+    #[test]
+    fn hop_only_tree_type_checks() {
+        let mut ctx = Ctx;
+        let mut verifier = TransactionVerifier::default();
+        verifier.add_verifier(TREE_ROOT, Box::new(Root));
+        verifier.run(&mut ctx).unwrap();
+    }
 }

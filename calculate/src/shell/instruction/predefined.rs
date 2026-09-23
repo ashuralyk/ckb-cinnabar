@@ -16,10 +16,10 @@ use secp256k1::SecretKey;
 #[cfg(feature = "spore")]
 use crate::operation::spore::*;
 use crate::{
-    address::Address,
     instruction::DefaultInstruction,
     intent,
     operation::{basic::*, dao::*, udt::*},
+    Address,
 };
 
 /// Transfer CKB from one address to another

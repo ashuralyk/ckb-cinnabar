@@ -1000,4 +1000,68 @@ impl TransactionSkeleton {
             .witnesses(witnesses.pack())
             .build()
     }
+
+    /// Rebuild a skeleton from a packed molecule `Transaction`.
+    ///
+    /// Inputs and cell deps keep their out-points but not live cell data
+    /// (placeholders, `with_data = false`). Header deps keep the block hash
+    /// only. Use this for SSRI held-tx continue; the host
+    /// `new_from_transaction_view` path still resolves live cells over RPC.
+    pub fn from_packed_transaction(tx: &packed::Transaction) -> Self {
+        let raw = tx.raw();
+        let inputs = raw
+            .inputs()
+            .into_iter()
+            .map(|input| CellInputEx::new(input, CellOutput::default(), None))
+            .collect();
+        let outputs = raw
+            .outputs()
+            .into_iter()
+            .zip(raw.outputs_data())
+            .map(|(output, data)| CellOutputEx::new(output, data.raw_data().to_vec()))
+            .collect();
+        let celldeps = raw
+            .cell_deps()
+            .into_iter()
+            .enumerate()
+            .map(|(i, celldep)| {
+                CellDepEx::new(format!("packed-{i}"), celldep, CellOutput::default(), None)
+            })
+            .collect();
+        let witnesses = tx
+            .witnesses()
+            .into_iter()
+            .map(|witness| {
+                let raw = witness.raw_data();
+                if let Ok(witness_args) = WitnessArgs::from_slice(&raw) {
+                    let lock = witness_args.lock().to_opt().unwrap_or_default();
+                    let input_type = witness_args.input_type().to_opt().unwrap_or_default();
+                    let output_type = witness_args.output_type().to_opt().unwrap_or_default();
+                    WitnessEx::new(
+                        lock.raw_data().to_vec(),
+                        input_type.raw_data().to_vec(),
+                        output_type.raw_data().to_vec(),
+                    )
+                } else if raw.is_empty() {
+                    WitnessEx::default()
+                } else {
+                    WitnessEx::new_plain(raw.to_vec())
+                }
+            })
+            .collect();
+        let headerdeps = raw
+            .header_deps()
+            .into_iter()
+            .map(|hash| {
+                HeaderDepEx::from_parts(unpack_hash(&hash), packed::Header::default(), vec![])
+            })
+            .collect();
+        TransactionSkeleton {
+            inputs,
+            outputs,
+            celldeps,
+            witnesses,
+            headerdeps,
+        }
+    }
 }

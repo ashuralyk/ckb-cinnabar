@@ -46,7 +46,12 @@ cinnabar_main!(Context, (TREE_ROOT, Root), (intent::TRANSFER, Transfer), /* ... 
 
 Multi-identity protocols register domain hop strings instead. Custom on-chain
 errors start at `CUSTOM_ERROR_START` (20); system codes are 1–5 and framework
-codes 10–11.
+codes 10–11 (verify tree) or 12–18 (optional SSRI). Enable
+`ckb-cinnabar-verifier` feature `ssri` and append `SSRI { "Wire.name" => expr }`
+to `cinnabar_main!` for a second SSRI entry. That feature uses
+[`ckb-ssri-std`](https://github.com/ashuralyk/ckb-ssri-std) `ssri_methods!`,
+which always emits `SSRI.version` / `get_methods` / `has_methods`. Hop
+`verify()` stays off the wire. The contract template stays hop-only.
 
 ### Contract project template
 

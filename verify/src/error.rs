@@ -31,11 +31,12 @@ macro_rules! define_errors {
 }
 
 /// First exit code available to contract-defined errors. Codes 1–5 are
-/// system errors and 10–11 are framework errors.
+/// system errors and 10–18 are framework errors (10–11 verify tree, 12–18 SSRI).
 pub const CUSTOM_ERROR_START: i8 = 20;
 
 /// Unified on-chain error type; converts into the `i8` exit code returned by
 /// the script entry point.
+#[derive(Debug)]
 pub enum Error {
     /// CKB-VM `IndexOutOfBound` (exit `1`).
     IndexOutOfBound,
@@ -52,6 +53,21 @@ pub enum Error {
     NotFoundRootVerifier,
     /// A node returned a next-name that is not registered, or the walk cycled (exit `11`).
     NotFoundBranchVerifier,
+
+    /// SSRI method path in `argv[0]` is not in the `SSRI { }` table (exit `12`).
+    SSRIMethodsNotFound,
+    /// SSRI method arguments failed to decode (exit `13`).
+    SSRIMethodsArgsInvalid,
+    /// SSRI method exists but this contract does not implement it (exit `14`).
+    SSRIMethodsNotImplemented,
+    /// SSRI method needs a higher execution level than the host provided (exit `15`).
+    SSRIMethodRequireHigherLevel,
+    /// `argv` is set but `vm_version` is not the SSRI sentinel `u64::MAX` (exit `16`).
+    InvalidVmVersion,
+    /// Kernel `Instruction` / assemble failed while serving an SSRI method (exit `17`).
+    SSRIAssembleFailed,
+    /// Guest SSRI `Source` lookup (`find_*`) failed (exit `18`).
+    SSRISourceUnavailable,
 
     /// Contract-defined failure, carrying the raw `i8` from [`define_errors!`] (must be ≥ [`CUSTOM_ERROR_START`]).
     Custom(i8),
@@ -79,6 +95,13 @@ impl From<Error> for i8 {
             Error::UnknownSystemError => 5,
             Error::NotFoundRootVerifier => 10,
             Error::NotFoundBranchVerifier => 11,
+            Error::SSRIMethodsNotFound => 12,
+            Error::SSRIMethodsArgsInvalid => 13,
+            Error::SSRIMethodsNotImplemented => 14,
+            Error::SSRIMethodRequireHigherLevel => 15,
+            Error::InvalidVmVersion => 16,
+            Error::SSRIAssembleFailed => 17,
+            Error::SSRISourceUnavailable => 18,
             Error::Custom(value) => value,
         }
     }

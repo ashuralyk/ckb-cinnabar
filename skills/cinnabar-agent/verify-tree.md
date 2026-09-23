@@ -18,14 +18,14 @@ Returning a name twice, or a cycle, yields framework error 11.
 Split **CKB physics** and **domain rules** into the smallest pieces that can
 fail or be reused:
 
-| Kind | Examples |
-|------|----------|
-| Identity | “this lock is an order”, “args[0] means session”, type-id unique cell |
-| Payload | molecule / packed args+data, amounts, unoccupied capacity |
-| Actor | buyer / seller / owner / issuer — stored as `lock_hash` in args |
-| Time | input `since`, header number/timestamp on the cell or tip |
-| Neighbor | Spore, Cluster, xUDT, type-burn, Fiber-like channel in CellDeps |
-| Predicate | conservation, args frozen, DNA, rent formula, window elapsed |
+| Kind      | Examples                                                              |
+| --------- | --------------------------------------------------------------------- |
+| Identity  | “this lock is an order”, “args[0] means session”, type-id unique cell |
+| Payload   | molecule / packed args+data, amounts, unoccupied capacity             |
+| Actor     | buyer / seller / owner / issuer — stored as `lock_hash` in args       |
+| Time      | input `since`, header number/timestamp on the cell or tip             |
+| Neighbor  | Spore, Cluster, xUDT, type-burn, Fiber-like channel in CellDeps       |
+| Predicate | conservation, args frozen, DNA, rent formula, window elapsed          |
 
 Do not start from user verbs. Verbs become **recipes** after the relation
 table exists.
@@ -155,23 +155,30 @@ cinnabar_main!(
     ("check_since", CheckSince),
     ("check_owner", CheckOwner),
 );
+
+Optional SSRI door (crate feature `ssri`): keep the hop table, then append
+`SSRI { "Wire.name" => expr, ... }`. The block is an entry switch plus an
+explicit wire table — not a protocol identity and not hop `verify()`. Each
+RHS is a guest fn, constant, or local that `export` turns into bytes.
+`ssri_methods!` always emits `SSRI.version` / `get_methods` / `has_methods`;
+do not list those names in the block. Leave the generated template hop-only.
 ```
 
 ## Predicate catalog
 
-| Requirement | Typical check | Module |
-|-------------|----------------|--------|
-| Only owner can spend | owner `lock_hash` in inputs | Actor |
-| Anyone after time | `since` or `tip - cell_header` vs args | Time |
-| Cannot change rules | input args == output args | Identity frozen |
-| One cell in, one out | `this_script_count` | Morphology |
-| New unique cell | Create; type-id args = `calc_type_id(index)` | Identity |
-| Supply conserved | sum amounts in Context | Payload |
-| Only issuer mints | issuer lock in inputs | Actor |
-| Cannot destroy | Burn → error | Transition table |
-| Data well-formed | decode into Context | Payload |
-| Foreign asset/NFT | load type/lock; code hash in allow-list | Neighbor |
-| Linear rent / windows | header number × rate; compare capacity | Time + payload |
+| Requirement           | Typical check                                | Module           |
+| --------------------- | -------------------------------------------- | ---------------- |
+| Only owner can spend  | owner `lock_hash` in inputs                  | Actor            |
+| Anyone after time     | `since` or `tip - cell_header` vs args       | Time             |
+| Cannot change rules   | input args == output args                    | Identity frozen  |
+| One cell in, one out  | `this_script_count`                          | Morphology       |
+| New unique cell       | Create; type-id args = `calc_type_id(index)` | Identity         |
+| Supply conserved      | sum amounts in Context                       | Payload          |
+| Only issuer mints     | issuer lock in inputs                        | Actor            |
+| Cannot destroy        | Burn → error                                 | Transition table |
+| Data well-formed      | decode into Context                          | Payload          |
+| Foreign asset/NFT     | load type/lock; code hash in allow-list      | Neighbor         |
+| Linear rent / windows | header number × rate; compare capacity       | Time + payload   |
 
 Load with `ckb_std::high_level`. Helpers: `this_script_args`,
 `this_script_indices`, `this_script_count`, `this_script_pattern`,

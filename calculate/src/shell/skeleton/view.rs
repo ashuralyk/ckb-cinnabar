@@ -16,37 +16,17 @@ use ckb_types::{
 use tokio::time::sleep;
 
 use crate::{
-    address::{Address, AddressPayload},
+    address::Address,
     error::{CalculatorError, Result},
     kernel::skeleton::{
         CellDepEx, CellInputEx, CellOutputEx, ScriptEx, TransactionSkeleton, WitnessEx,
     },
-    rpc::{Host, Network, RPC},
+    rpc::{Host, RPC},
     types::{
         packed::{Script, WitnessArgs},
         Builder, DepType, Entity, Hash256, Pack, Unpack,
     },
 };
-
-impl ScriptEx {
-    /// Turn into CKB address
-    pub fn to_address(self, network: Network) -> Result<Address> {
-        let payload = Script::try_from(self)?.into();
-        Ok(Address::new(network, payload))
-    }
-}
-
-impl From<Address> for ScriptEx {
-    fn from(value: Address) -> Self {
-        value.payload().into()
-    }
-}
-
-impl From<&AddressPayload> for ScriptEx {
-    fn from(value: &AddressPayload) -> Self {
-        Script::from(value).into()
-    }
-}
 
 impl CellOutputEx {
     /// Exactly occupied capacity of the cell

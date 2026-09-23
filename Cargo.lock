@@ -368,7 +368,9 @@ name = "ckb-cinnabar-verifier"
 version = "0.1.0"
 dependencies = [
  "blake2b-ref",
+ "ckb-cinnabar-calculator",
  "ckb-cinnabar-core",
+ "ckb-ssri-std",
  "ckb-std",
 ]
 
@@ -655,6 +657,28 @@ dependencies = [
  "tokio-util",
  "tokio_with_wasm",
  "web-time",
+]
+
+[[package]]
+name = "ckb-ssri-std"
+version = "0.0.1"
+source = "git+https://github.com/ashuralyk/ckb-ssri-std#23ab16f258fc9143288d6de1d2eb1c84c17981da"
+dependencies = [
+ "ckb-ssri-std-proc-macro",
+ "ckb-std",
+ "serde",
+ "serde_molecule",
+]
+
+[[package]]
+name = "ckb-ssri-std-proc-macro"
+version = "0.0.1"
+source = "git+https://github.com/ashuralyk/ckb-ssri-std#23ab16f258fc9143288d6de1d2eb1c84c17981da"
+dependencies = [
+ "ckb-hash",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]

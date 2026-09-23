@@ -8,7 +8,6 @@
 //! Crate-root `instruction` / `operation` / `skeleton` / `rpc` paths are
 //! aliases of these modules so existing imports keep working.
 
-pub mod address;
 pub mod indexer;
 pub mod instruction;
 pub mod operation;

@@ -30,10 +30,16 @@ jobs:
       - name: Kernel plus spore (no_std)
         run: cargo test -p ckb-cinnabar-calculator --no-default-features --features spore
       - name: Verifier RISC-V check
-        run: cargo check -p ckb-cinnabar-verifier --target riscv64imac-unknown-none-elf
+        run: |
+          cargo check -p ckb-cinnabar-verifier --target riscv64imac-unknown-none-elf
+          cargo check -p ckb-cinnabar-verifier --features ssri --target riscv64imac-unknown-none-elf
         env:
           CARGO_TERM_COLOR: always
           TARGET_CC: clang
+      - name: Verifier SSRI native tests
+        run: cargo test -p ckb-cinnabar-verifier --features ssri
+        env:
+          CARGO_TERM_COLOR: always
       - name: Install cargo-generate
         run: cargo install cargo-generate --version 0.20.0 --locked
       - name: Generated contract end-to-end

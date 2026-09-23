@@ -3,7 +3,15 @@ name = "ckb-cinnabar-verifier"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["ssri"]
+# Guest SSRI door: `cinnabar_main!` `SSRI { }` block, `SsriSource`, kernel assemble.
+# `ckb-ssri-std` comes from the ckb-std 1.1 fork; crates.io 0.0.1 still pins 0.16.
+ssri = ["dep:ckb-ssri-std", "dep:ckb-cinnabar-calculator"]
+
 [dependencies]
 ckb-std = "1.1.0"
 blake2b-ref = "0.3.1"
 ckb-cinnabar-core = { version = "0.1.0", path = "../core" }
+ckb-cinnabar-calculator = { version = "0.1.0", path = "../calculate", optional = true, default-features = false }
+ckb-ssri-std = { git = "https://github.com/ashuralyk/ckb-ssri-std", optional = true }

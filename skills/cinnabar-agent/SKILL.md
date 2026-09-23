@@ -210,7 +210,7 @@ the gate.
 5. **Recipes** — `Instruction::new` (or `named` on the shortcut) + domain
    `Operation`s if basic ones are not enough.
 6. **Errors** — `define_errors!(…, { First = CUSTOM_ERROR_START, … })`. Sys 1–5,
-   framework 10–11, custom ≥ 20.
+   framework 10–11 (verify tree) and 12–18 (optional SSRI), custom ≥ 20.
 
 Morphology-scale register:
 

@@ -2,7 +2,14 @@
 
 extern crate alloc;
 
-use alloc::{boxed::Box, vec, vec::Vec};
+use alloc::{boxed::Box, string::ToString, vec, vec::Vec};
+
+use core::str::FromStr;
+
+use super::{
+    address::{Address, AddressPayload},
+    network::Network,
+};
 
 use crate::{
     instruction::Instruction,
@@ -14,10 +21,37 @@ use crate::{
         },
         Log,
     },
-    skeleton::{CellInputEx, CellOutputEx, ScriptEx, TransactionSkeleton},
+    skeleton::{CellInputEx, CellOutputEx, ScriptEx, TransactionSkeleton, WitnessEx},
     source::UnsupportedSource,
     types::{occupied_capacity_shannons, pack_hash, packed, Builder, Entity, Pack, ScriptHashType},
 };
+
+#[test]
+fn address_round_trips_full_format() {
+    let payload = AddressPayload::new_full(ScriptHashType::Data1, [0x11; 32], vec![0x01, 0x02]);
+    let address = Address::new(Network::Mainnet, payload.clone());
+    let text = address.to_string();
+    assert!(text.starts_with("ckb1"));
+
+    let parsed = Address::from_str(&text).unwrap();
+    assert_eq!(parsed, address);
+    assert_eq!(AddressPayload::from(packed::Script::from(&parsed)), payload);
+
+    let script_ex = ScriptEx::from(&payload);
+    let via_script = script_ex.to_address(Network::Testnet).unwrap();
+    assert!(via_script.to_string().starts_with("ckt1"));
+    assert_eq!(via_script.payload(), &payload);
+
+    let fake = Address::new(Network::Fake, payload);
+    let decoded = Address::from_str(&fake.to_string()).unwrap();
+    assert_eq!(decoded.network(), &Network::Testnet);
+
+    assert!(Address::from_str("ckb1qqqq").is_err());
+    assert!(Address::from_str("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4").is_err());
+    assert!(ScriptEx::Reference("named".into(), vec![1])
+        .to_address(Network::Mainnet)
+        .is_err());
+}
 
 fn dummy_script(args: Vec<u8>) -> packed::Script {
     packed::Script::new_builder()
@@ -143,4 +177,39 @@ fn inject_operate_and_pack() {
     assert_eq!(packed.raw().outputs().len(), 1);
     assert_eq!(packed.raw().outputs_data().len(), 1);
     assert!(!packed.as_slice().is_empty());
+}
+
+#[test]
+fn from_packed_transaction_round_trips_fields() {
+    let mut skeleton = TransactionSkeleton::default();
+    skeleton.input(dummy_input()).unwrap();
+    let (output, data) = dummy_output(50_0000_0000, b"hello".to_vec());
+    skeleton.output(CellOutputEx::new(output, data));
+    skeleton.witness(WitnessEx::new(vec![0xaa; 65], Vec::new(), Vec::new()));
+    let packed = skeleton.into_packed_transaction();
+
+    let restored = TransactionSkeleton::from_packed_transaction(&packed);
+    assert_eq!(restored.inputs.len(), 1);
+    assert_eq!(restored.outputs.len(), 1);
+    assert_eq!(restored.outputs[0].data, b"hello");
+    assert_eq!(restored.witnesses.len(), 1);
+    assert_eq!(restored.witnesses[0].lock, vec![0xaa; 65]);
+
+    let packed2 = restored.into_packed_transaction();
+    assert_eq!(
+        packed.raw().inputs().as_slice(),
+        packed2.raw().inputs().as_slice()
+    );
+    assert_eq!(
+        packed.raw().outputs().as_slice(),
+        packed2.raw().outputs().as_slice()
+    );
+    assert_eq!(
+        packed.raw().outputs_data().as_slice(),
+        packed2.raw().outputs_data().as_slice()
+    );
+    assert_eq!(
+        packed.witnesses().as_slice(),
+        packed2.witnesses().as_slice()
+    );
 }

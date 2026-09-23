@@ -8,7 +8,7 @@
 //! Typical root node: call [`this_script_pattern`] at [`ScriptPlace::Lock`]
 //! or [`ScriptPlace::Type`], then hop to `intent::CREATE` / `TRANSFER` /
 //! `BURN`. Custom errors start at [`CUSTOM_ERROR_START`] (20); system codes
-//! are 1–5 and framework codes 10–11.
+//! are 1–5 and framework codes 10–11 (verify tree) or 12–18 (optional SSRI).
 //!
 //! See the workspace `AGENTS.md` for the generate / test / deploy path.
 
@@ -17,6 +17,10 @@ extern crate alloc;
 
 mod error;
 pub mod intent;
+#[cfg(feature = "ssri")]
+pub mod ssri;
+#[cfg(feature = "ssri")]
+pub use ckb_ssri_std::ssri_methods;
 mod utils;
 mod verification;
 
@@ -25,5 +29,6 @@ pub use utils::*;
 pub use verification::*;
 
 pub mod re_exports {
+    pub use ckb_ssri_std;
     pub use ckb_std;
 }

@@ -34,7 +34,7 @@ pub mod shell;
 
 #[cfg(feature = "std")]
 #[doc(inline)]
-pub use shell::{address, indexer, instruction, operation, rpc, simulation, skeleton};
+pub use shell::{indexer, instruction, operation, rpc, simulation, skeleton};
 
 #[cfg(not(feature = "std"))]
 #[doc(inline)]
@@ -43,7 +43,7 @@ pub use kernel::{indexer, instruction, operation, rpc, skeleton};
 #[cfg(feature = "std")]
 pub use kernel::error::script_exit_code;
 pub use kernel::{
-    error,
+    address, error,
     error::{script_exit_code_from_str, CalculatorError, Result},
     indexer::Indexer,
     intent, network,
@@ -55,11 +55,10 @@ pub use kernel::{
     types::{occupied_capacity_shannons, Hash256},
 };
 
+pub use address::{Address, AddressPayload};
+
 #[cfg(feature = "std")]
-pub use {
-    address::Address,
-    rpc::{Host, RpcClient, MAINNET_RPC_URL, TESTNET_RPC_URL},
-};
+pub use rpc::{Host, RpcClient, MAINNET_RPC_URL, TESTNET_RPC_URL};
 
 #[cfg(feature = "std")]
 pub use instruction::DefaultInstruction;

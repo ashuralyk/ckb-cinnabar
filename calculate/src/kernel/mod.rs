@@ -6,6 +6,7 @@
 //!
 //! Host I/O (HTTP client, tokio, FakeRpc, CKB-VM) lives in [`crate::shell`].
 
+pub mod address;
 pub mod error;
 pub mod indexer;
 pub mod instruction;
