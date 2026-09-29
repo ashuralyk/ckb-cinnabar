@@ -49,6 +49,8 @@ Cinnabar is Calculate (assemble) + Verify (check). The design order is not
 ```
 modules + relations
   → shared outputs in Context
+  → ask SSRI or non-SSRI (SSRI → kernel calculator; non-SSRI → shell)
+  → ask serde plan (default serde_molecule, or their own)
   → Root classifies, children only read Context
   → each user action is an Operation pipeline that lands on one relation
   → FakeRpc universe runs the real RISC-V (+ foreign protocol binaries)
@@ -58,7 +60,9 @@ modules + relations
 
 `Instruction` is a pipeline of `Operation`s (inputs, outputs, deps, headers,
 witnesses). It is **not** required to share a name with a Verify node. Coupling
-is the **layout** (args/data types) plus the **transition table**.
+is the **layout** (args/data types) plus the **transition table**. The default
+layout codec is **serde_molecule**. Ask them to keep it or name their own
+plan while this dialogue is still running; do not pick a second codec later.
 
 On-chain integers and fixed bytes only. Human units (APY, UX enums) convert
 off-chain.
@@ -94,17 +98,40 @@ answers, reprint changed sections. Implement only on explicit go-ahead
 (“按这个实现” / “implement as above”). New cases found while coding → reopen
 the pack.
 
-The eight knobs below are filled **inside** that pack, not after coding starts.
+**Version, before generate.** In that same dialogue, ask which project they
+want. Do not `cargo generate` until they pick one:
+
+| Choice | Calculator | Verify |
+| --- | --- | --- |
+| **SSRI** | Kernel mode: `ckb-cinnabar-calculator` with `default-features = false`. Recipes are `no_std` kernel `Instruction`s a guest method can call. | `cinnabar_main!` ends with an `SSRI { }` wire table. |
+| **non-SSRI** | Shell mode, the default: `ckb-cinnabar-calculator` with default `std` (HTTP, FakeRpc, host recipes, `assert_verify!`). | Hop-only `cinnabar_main!`. No `SSRI { }` arm. |
+
+Ask in their language. If they defer, propose **non-SSRI + shell**, say that
+is the default, and wait. Do not scaffold on silence. Full wording:
+[confirm.md](confirm.md). How to set the crate after generate:
+[calculate.md](calculate.md).
+
+**Serde plan, in that same dialogue.** Structured args, data, and witnesses
+use one codec on both sides. The default is **serde_molecule** (`Serialize` /
+`Deserialize`, `serde_molecule::to_vec` / `from_slice`). Ask them to keep
+that default or name their own plan (crate plus encode/decode entry points).
+If they defer, propose serde_molecule, say that is the default, and wait.
+Do not generate, and do not invent a second codec, while this answer is
+open. Wording: [confirm.md](confirm.md). How to apply it:
+[calculate.md](calculate.md).
+
+The knobs below are filled **inside** that pack, not after coding starts.
 Details: [verify-tree.md](verify-tree.md), [calculate.md](calculate.md).
 
 | Knob            | What to decide                                                                                                                                |
 | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Version**     | Asked before generate: **SSRI** (kernel calculator) or **non-SSRI** (shell calculator, the default)                                           |
 | **Place**       | Lock (who spends), Type (asset/mint/conservation), or **one binary both** via an args discriminator                                           |
 | **Identity**    | How args (flag, length, type-id…) distinguish cell roles. Note: a **lock script does not run on Create** (cell only in outputs)               |
 | **Transitions** | Legal `(old instance → new instance)` → hop name. CKB Create/Transfer/Burn is only “is this script in inputs/outputs?”, not the business name |
 | **Context**     | Parsed args/data, amounts, capacity, auth flags, header clocks — filled once, usually in Root                                                 |
 | **Predicates**  | One Verify node per independently fail-able check; tiny `if`s stay in the hop                                                                 |
-| **Layout**      | Shared `no_std` types both sides encode/decode. Dual-written constants (timeouts, code hashes) marked as must-stay-in-sync                    |
+| **Layout**      | Shared `no_std` types both sides encode/decode. Default codec is **serde_molecule**; they may name another plan instead. Dual-written constants stay in sync |
 | **Recipes**     | One `Instruction` per user action that realizes exactly one table cell                                                                        |
 | **Universe**    | FakeRpc: always-success for **user** locks; **this** contract binary; **real** binaries for every foreign script Verify will execute          |
 
@@ -138,6 +165,11 @@ not a git dependency of generated projects.
 
 ## Scaffold (only after confirmation)
 
+Generate only after the pack is accepted **and** both answers are explicit:
+SSRI or non-SSRI, and serde_molecule or their own serde plan. The template
+is the same either way; set the calculator profile and the layout codec
+immediately after generate, before writing recipes.
+
 ```bash
 cargo generate --git https://github.com/ashuralyk/ckb-cinnabar \
   --path templates/contract --name <project> \
@@ -154,6 +186,19 @@ If `cargo-generate` is missing: `cargo install cargo-generate`, or clone
 
 Inside an existing Cinnabar checkout, prefer
 `cargo generate --path templates/contract --name <project>` (local path deps OK).
+
+Then apply the version they chose:
+
+- **non-SSRI (shell, default).** Leave
+  `calculator/Cargo.toml` as `ckb-cinnabar-calculator = { workspace = true }`.
+  Keep `cinnabar_main!` hop-only. Do not add an `SSRI { }` arm.
+- **SSRI (kernel).** In `calculator/Cargo.toml` set
+  `ckb-cinnabar-calculator = { workspace = true, default-features = false }`.
+  Make `calculator` `#![no_std]` + `extern crate alloc`, and write only kernel
+  operations there. Point the contract at that crate and call those
+  `Instruction`s from `SSRI { }` guest wrappers. Leave `tests/` on default
+  `std` so FakeRpc and `assert_verify!` stay available. Details:
+  [calculate.md](calculate.md).
 
 The generate template is the **morphology-scale** skeleton (one contract). For
 several identities, several contracts, or a shared layout crate, keep that
@@ -210,7 +255,10 @@ the gate.
 5. **Recipes** — `Instruction::new` (or `named` on the shortcut) + domain
    `Operation`s if basic ones are not enough.
 6. **Errors** — `define_errors!(…, { First = CUSTOM_ERROR_START, … })`. Sys 1–5,
-   framework 10–11 (verify tree) and 12–18 (optional SSRI), custom ≥ 20.
+   verify tree 10–11, SSRI 12–18 (see [verify-tree.md](verify-tree.md)),
+   custom ≥ 20. Every molecule / `serde_molecule` failure in a generated
+   project maps to **one** of those custom codes. Do not add a code per
+   molecule error variant.
 
 Morphology-scale register:
 
@@ -265,8 +313,24 @@ See [calculate.md](calculate.md). Minimum:
 
 Predefined native recipes: `secp256k1_sighash_transfer`, `dao_deposit`,
 `dao_withdraw_phase_one`, `dao_withdraw_phase_two`, `mint_xudt`, `transfer_xudt`.
-`--features spore` when recipes must **assemble** Spore/Cluster cells (calculator
-helpers are experimental; VM still needs the bundled binaries).
+`--features spore` when recipes must **assemble** Spore/Cluster cells
+(`serde_molecule` via `operation::spore::schema`; helpers are experimental;
+the VM still needs the bundled binaries).
+
+Application imports stay on crate-root paths (`instruction`, `operation`,
+`rpc`, `skeleton`, `address`). Which profile those names resolve to follows
+the version they picked before generate:
+
+- **non-SSRI** — shell, the default `std` build (HTTP, FakeRpc, host recipes,
+  `assert_verify!`).
+- **SSRI** — kernel, `--no-default-features` (`no_std` + `alloc`, including
+  ckb2021 `Address`). Guest methods call these kernel `Instruction`s.
+
+Feature `ssri` stays the verifier default. Use the `SSRI { }` arm only for
+the SSRI version. Empty `argv` runs the tree; `argv` with raw
+`vm_version == u64::MAX` runs that block. Guest methods take `&SsriSource`
+plus `SsriArgs`. Full contract: [verify-tree.md](verify-tree.md). Profile
+setup: [calculate.md](calculate.md).
 
 ## Do / Don't
 
@@ -282,6 +346,10 @@ helpers are experimental; VM still needs the bundled binaries).
   or type-burn.
 - Load https://github.com/Opticrum/ckb-contract-script when you need a solid
   protocol-scale Cinnabar example (tree, recipes, FakeRpc tests).
+- Ask SSRI or non-SSRI before `cargo generate`. SSRI → kernel calculator.
+  non-SSRI → shell calculator (the default).
+- Ask the serde plan in that same dialogue. Default is serde_molecule.
+  Their own plan must name the crate and the encode/decode entry points.
 
 **Don't**
 
@@ -293,6 +361,19 @@ helpers are experimental; VM still needs the bundled binaries).
 - Duplicate validation in the calculator.
 - Call interactive `ckb-cli` in automation (`--privkey-env` or `--dry-run`).
 - Replace foreign protocol scripts with always-success.
+- Register hop `verify()` as an SSRI method, or pass a `std` host recipe as
+  an `SSRI { }` right-hand side.
+- Hand-write `program_entry`, `should_fallback`, or `ssri_methods!`. Put the
+  wire table in `cinnabar_main!`'s `SSRI { "Wire.name" => expr }` arm. Each
+  name is a string literal in that arm.
+- Import `kernel::` or `shell::` from a generated contract.
+- Generate before they pick SSRI or non-SSRI, or put shell-only types
+  (`RpcClient`, FakeRpc, `assert_verify!`, host recipes) in an SSRI
+  calculator crate.
+- Generate before they accept serde_molecule or name their own serde plan.
+  Do not mix two codecs for the same args, data, or witness.
+- Map each molecule error variant to its own `define_errors!` code. One
+  generated project gets one in-script error for all of them.
 
 ## Crates
 
@@ -301,6 +382,14 @@ Git deps (isolated projects): `ckb-cinnabar`, `ckb-cinnabar-calculator`,
 Target: `riscv64imac-unknown-none-elf`. Root re-exports: `Address`,
 `Instruction`, `TransactionCalculator`, `TransactionSkeleton`, `Network`,
 `RpcClient`, `CalculatorError`, `intent`.
+
+`ckb-cinnabar-core` owns the shared `no_std` intent names. Calculator
+`kernel` (always on; `--no-default-features`) is the `no_std` assembler:
+sync `RPC`, `Source`, packed skeleton, operations, ckb2021 `Address`.
+Calculator `shell` (default `std`) adds `RpcClient`, FakeRpc, signing,
+recipes, and `assert_verify!`. Verifier feature `ssri` (default) adds the
+`SSRI { }` door, `SsriSource`, and `SsriArgs`, and depends on the calculator
+kernel so a guest method can assemble.
 
 Humans: install this folder with [INSTALL.md](INSTALL.md) so the skill works
 outside a Cinnabar checkout.

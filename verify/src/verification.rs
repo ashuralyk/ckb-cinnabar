@@ -71,7 +71,9 @@ impl<T: Default> TransactionVerifier<T> {
 /// `SSRI { "Wire.name" => expr, ... }` to emit a second entry: empty `argv`
 /// walks the hop tree; SSRI VM (`argv` + `vm_version == u64::MAX`) dispatches
 /// the wire table. `SSRI { }` is the door plus an explicit wire table, not a
-/// protocol identity. Hop `verify()` stays off the wire.
+/// protocol identity. Each left-hand side is a string literal written in this
+/// block; that literal is the method name `ssri_methods!` matches. Keep the
+/// wire table here. Hop `verify()` stays off the wire.
 ///
 /// Each RHS is any expression `ssri::export` can turn into bytes: a
 /// `fn(&SsriSource, SsriArgs) -> Result<R>`, a `&[u8]` / `str` constant, a
@@ -149,7 +151,9 @@ macro_rules! cinnabar_main {
         }
 
         fn program_entry_inner() -> ckb_cinnabar_verifier::Result<()> {
-            if ckb_ssri_std::utils::should_fallback().map_err(Into::into)? {
+            if ckb_cinnabar_verifier::re_exports::ckb_ssri_std::utils::should_fallback()
+                .map_err(ckb_cinnabar_verifier::Error::from)?
+            {
                 let mut ctx = <$ctx>::default();
                 let mut verifier = ckb_cinnabar_verifier::TransactionVerifier::default();
                 $(
@@ -163,7 +167,7 @@ macro_rules! cinnabar_main {
                     // `ssri_methods!` emits `Result<T, Error>`. Shadow the
                     // verifier's one-argument `Result` alias if the contract imported it.
                     use core::result::Result;
-                    ckb_cinnabar_verifier::ssri_methods!(
+                    ckb_cinnabar_verifier::expand_ssri_methods!(
                         argv: &argv,
                         invalid_method: Error::SSRIMethodsNotFound,
                         invalid_args: Error::SSRIMethodsArgsInvalid,
@@ -171,7 +175,7 @@ macro_rules! cinnabar_main {
                     )?
                 };
                 let pipe = ckb_std::syscalls::pipe()?;
-                ckb_std::syscalls::write(pipe.1, bytes)?;
+                ckb_std::syscalls::write(pipe.1, &bytes)?;
                 Ok(())
             }
         }

@@ -5,6 +5,7 @@ members = [
     "calculate",
     "core",
     "verify",
+    "verify/macros",
 ]
 
 [package]

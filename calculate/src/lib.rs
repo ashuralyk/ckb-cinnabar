@@ -63,7 +63,8 @@ pub use rpc::{Host, RpcClient, MAINNET_RPC_URL, TESTNET_RPC_URL};
 #[cfg(feature = "std")]
 pub use instruction::DefaultInstruction;
 pub use instruction::{Instruction, TransactionCalculator};
-pub use skeleton::{ScriptEx, TransactionSkeleton, TYPE_ID_CODE_HASH};
+pub use skeleton::{ScriptEx, TransactionSkeleton};
+pub use types::{SHANNONS_PER_BYTE, TYPE_ID_CODE_HASH};
 
 /// Assert CKB-VM exit code after assembling `instructions` against `rpc`.
 ///

@@ -20,6 +20,9 @@ pub mod intent;
 #[cfg(feature = "ssri")]
 pub mod ssri;
 #[cfg(feature = "ssri")]
+#[doc(hidden)]
+pub use ckb_cinnabar_verifier_macros::expand_ssri_methods;
+#[cfg(feature = "ssri")]
 pub use ckb_ssri_std::ssri_methods;
 mod utils;
 mod verification;
@@ -29,6 +32,7 @@ pub use utils::*;
 pub use verification::*;
 
 pub mod re_exports {
+    pub use ckb_cinnabar_calculator::{SHANNONS_PER_BYTE, TYPE_ID_CODE_HASH};
     pub use ckb_ssri_std;
     pub use ckb_std;
 }

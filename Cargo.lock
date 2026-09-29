@@ -370,8 +370,18 @@ dependencies = [
  "blake2b-ref",
  "ckb-cinnabar-calculator",
  "ckb-cinnabar-core",
+ "ckb-cinnabar-verifier-macros",
  "ckb-ssri-std",
  "ckb-std",
+]
+
+[[package]]
+name = "ckb-cinnabar-verifier-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]

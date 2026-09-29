@@ -45,13 +45,48 @@ cinnabar_main!(Context, (TREE_ROOT, Root), (intent::TRANSFER, Transfer), /* ... 
 ```
 
 Multi-identity protocols register domain hop strings instead. Custom on-chain
-errors start at `CUSTOM_ERROR_START` (20); system codes are 1–5 and framework
-codes 10–11 (verify tree) or 12–18 (optional SSRI). Enable
-`ckb-cinnabar-verifier` feature `ssri` and append `SSRI { "Wire.name" => expr }`
-to `cinnabar_main!` for a second SSRI entry. That feature uses
-[`ckb-ssri-std`](https://github.com/ashuralyk/ckb-ssri-std) `ssri_methods!`,
-which always emits `SSRI.version` / `get_methods` / `has_methods`. Hop
-`verify()` stays off the wire. The contract template stays hop-only.
+errors start at `CUSTOM_ERROR_START` (20). System codes are 1–5. The verify
+tree uses 10–11. An SSRI entry uses 12–18:
+
+| Code | `Error` |
+| ---- | ------- |
+| 12 | `SSRIMethodsNotFound` |
+| 13 | `SSRIMethodsArgsInvalid` |
+| 14 | `SSRIMethodsNotImplemented` |
+| 15 | `SSRIMethodRequireHigherLevel` |
+| 16 | `InvalidVmVersion` (`argv` is set and `vm_version` is not `u64::MAX`) |
+| 17 | `SSRIAssembleFailed` |
+| 18 | `SSRISourceUnavailable` |
+
+`ckb-cinnabar-verifier` feature `ssri` is on by default and pulls in
+[`ckb-ssri-std`](https://github.com/ashuralyk/ckb-ssri-std). Empty `argv`
+runs the verify tree. `argv` together with raw `vm_version == u64::MAX` runs
+SSRI. Append a wire table when this binary serves methods:
+
+```rust
+cinnabar_main!(
+    Context,
+    (TREE_ROOT, Root),
+    (intent::MINT, Mint),
+    SSRI {
+        "UDT.name" => "Example",
+        "UDT.decimals" => 8u8,
+        "UDT.mint" => mint, // fn(&SsriSource, SsriArgs) -> Result<Vec<u8>>
+    },
+);
+```
+
+`ssri_methods!` always emits `SSRI.version`, `SSRI.get_methods`, and
+`SSRI.has_methods`. The `SSRI { }` block lists the contract's own methods.
+Each right-hand side is an expression `export` turns into bytes: a guest
+function, `&[u8]`, `u8`, `Vec<u8>`, or `Result`. Hop `verify()` stays on the
+tree. `SsriSource` implements calculator `Source`: `find_out_point_by_type`,
+`find_cell_by_out_point`, and `find_cell_data_by_out_point`.
+`SsriArgs::bytes(index)` returns one hex-decoded slot; slot 0 is the method
+path, and later slots follow that method's own layout. The method body is a
+guest wrapper: it reads `SsriArgs` and runs a kernel `Instruction` (the
+verifier's calculator dependency is `--no-default-features`). The generated
+contract template stays hop-only.
 
 ### Contract project template
 
@@ -104,6 +139,30 @@ ckb-cinnabar --json --dry-run --privkey-env CINNABAR_PRIVKEY \
 ```
 
 Root crate re-exports the types agents typically need: `Address`, `Instruction`, `TransactionCalculator`, `TransactionSkeleton`, `Network`, `RpcClient`, `CalculatorError`, `intent`.
+
+### Calculate layers
+
+One formula on both profiles: an `Instruction` of `Operation`s, then
+`TransactionCalculator`, then `TransactionSkeleton`. Import them from the
+crate root (`instruction`, `operation`, `rpc`, `skeleton`, `address`).
+
+| Profile | How | What you get |
+| ------- | --- | ------------ |
+| Kernel | `--no-default-features` | Always-on `no_std` + `alloc` assembler: sync `RPC` (`Node` + `Indexer`), `Source`, packed skeleton, operations, ckb2021 `Address` (`ckb1…` / `ckt1…` bech32m, [RFC-0021](https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0021-ckb-address-format/0021-ckb-address-format.md)) |
+| Shell | default `std` | The kernel, plus `RpcClient`, FakeRpc, CKB-VM, signing, predefined recipes, and `assert_verify!` |
+
+`Source` is `find_out_point_by_type`, `find_cell_by_out_point`, and
+`find_cell_data_by_out_point`. Every `RPC` implements it.
+`UnsupportedSource` answers every lookup with `SourceUnavailable`. Inject-only
+assembly uses it when the caller already has the cells to place on the
+skeleton. FakeRpc and `assert_verify!` are shell-only.
+
+`--features spore` (experimental) encodes Spore and Cluster cells with
+`serde_molecule` through `operation::spore::schema`.
+
+`TransactionSkeleton::get_input_by_index`, `get_output_by_index`, and
+`get_celldep_by_index` take a `usize`. A Lua-style relative index is
+`(-n) as usize` (`-1` is the last cell).
 
 ## Background
 
@@ -181,7 +240,7 @@ $ cargo run --example secp256k1_transfer ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49
 Run [spore](examples/spore.rs) example:
 
 ```bash
-$ cargo run --example spore -- spore mint --minter ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqfqmf4hphl9jkrw3934mwe6m3a2nx88rzgdlw820 --content-type "text/plain" --content "hello, cinnabar"
+$ cargo run --example spore --features spore -- spore mint --minter ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqfqmf4hphl9jkrw3934mwe6m3a2nx88rzgdlw820 --content-type "text/plain" --content "hello, cinnabar"
 
 # other commands please see help
 $ cargo run --example spore

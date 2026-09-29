@@ -20,9 +20,11 @@ Use it as structure, not as the user’s product.
 1. Draft the pack below from the user’s words **and** from CKB physics they
    did not mention (Create-does-not-run-lock, extra cells, missing headers,
    both/neither auth, CKB vs xUDT, …). Mark guesses as **assumption**.
-2. Show the full pack in one message. Then ask, clustered — do not dump 40
-   unrelated questions. Walk **Verify → Calculate → tests**, and for each:
-   shape first, then reachable scope, then edge cases still open.
+2. Show the full pack in one message. Ask the version question (section 0)
+   and the serde-plan question (section 0b) in that message. Then ask the
+   rest, clustered — do not dump 40 unrelated questions. Walk **Verify →
+   Calculate → tests**, and for each: shape first, then reachable scope,
+   then edge cases still open.
 3. After each cluster of answers, **reprint only the changed sections**.
 4. Stop only on an explicit go-ahead (“按这个实现” / “implement as above” /
    checking the whole pack). “看起来行” / “ok” on a vague paragraph is not
@@ -30,12 +32,86 @@ Use it as structure, not as the user’s product.
 5. If they refuse to decide, propose the **stricter on-chain** default, say
    so, and wait. Do not silently pick the loose default.
 6. Scaffold (`cargo generate`) **after** this gate, unless they already have
-   a repo and only asked for a design review.
+   a repo and only asked for a design review. Section 0 (SSRI or non-SSRI)
+   and section 0b (serde_molecule or their own plan) must both be explicit
+   picks before that command.
+
+## Version before generate (hard question)
+
+Ask this in the first pack message, in their language. Do not `cargo generate`
+while the answer is `open`, assumed, or silence.
+
+> Before I generate the project, which version do you want?
+>
+> - **SSRI** — the calculator crate is kernel mode
+>   (`default-features = false`). On-chain methods call those kernel
+>   `Instruction`s.
+> - **non-SSRI** — the calculator crate is shell mode (the default `std`
+>   build). Verify is hop-only; tests and host recipes stay on the shell.
+
+Chinese:
+
+> 生成项目之前，你要哪一版？
+>
+> - **SSRI** — calculator 用 kernel 模式（`default-features = false`），链上方法调用这些 kernel `Instruction`。
+> - **非 SSRI** — calculator 用默认 shell 模式。Verify 只有跳转；测试和宿主配方走 shell。
+
+If they defer, propose **non-SSRI + shell**, say that is the default, and
+wait. Do not generate on that proposal until they accept it.
+
+## Serde plan before generate (hard question)
+
+Ask this in the same first pack message, in their language. Do not
+`cargo generate`, and do not start a layout crate, while the answer is
+`open`, assumed, or silence.
+
+The default plan is **serde_molecule**. Structured args, data, and witnesses
+are `Serialize` / `Deserialize` types. Calculate calls
+`serde_molecule::to_vec`. Verify calls `serde_molecule::from_slice`. The
+second argument is `is_struct`: `false` maps the Rust struct to a molecule
+**table** (the usual cell payload; extra fields can be tolerated on decode),
+`true` maps it to a molecule **struct**. Pass the same value on both sides.
+Field order is the molecule field order.
+
+> Args, data, and witnesses need one serde plan on both sides. Which do you want?
+>
+> - **serde_molecule** (default) — shared `no_std` types, `to_vec` / `from_slice`.
+> - **Your own** — name the crate and the encode/decode functions. Calculate and Verify use only that plan.
+
+Chinese:
+
+> args、data、witness 两边要用同一套 serde 方案。你选哪个？
+>
+> - **serde_molecule**（默认）— 共用 `no_std` 类型，`to_vec` / `from_slice`。
+> - **你自己的方案** — 说出 crate 和编解码入口。Calculate 和 Verify 只用这一套。
+
+If they defer, propose **serde_molecule**, say that is the default, and
+wait. If they name their own plan, record the crate and both entry points
+in section 0b before generating. A one-word “custom” is still `open`.
 
 ## Pack to show (required sections)
 
 Copy this outline into the reply and fill it. Empty rows are not allowed —
 write `n/a` and why, or `open` and the question.
+
+### 0. Version (blocks generate)
+
+| Choice | Calculator profile | Verify entry |
+|--------|--------------------|--------------|
+| SSRI / non-SSRI / `open` | kernel (`default-features = false`) or shell (default `std`) | `SSRI { }` wire table, or hop-only |
+
+Fill this from their answer. `open` blocks `cargo generate`.
+
+### 0b. Serde plan (blocks generate)
+
+| Plan | Where it lives | Encode / decode |
+|------|----------------|-----------------|
+| serde_molecule / their crate / `open` | `protocol/` or `core/common/` (`no_std`) | `to_vec` / `from_slice`, or the entry points they named |
+
+Fill this from their answer. `open` blocks `cargo generate`. One payload
+does not get two codecs. Raw integers with no struct still get an answer:
+serde_molecule for any later struct, or their named plan. Spore / Cluster
+cells keep `operation::spore::schema`; do not re-encode those bytes.
 
 ### 1. Modules
 
@@ -66,7 +142,15 @@ Fields Root (or first hop) will fill; which predicates read them; what is
 - Time rule (`since` vs header; exact boundary).
 - Frozen vs mutable args/data fields.
 - Neighbor identification (code hash / type-id / cluster id).
-- `define_errors!` draft (names, not necessarily numbers yet).
+- `define_errors!` draft (names, not necessarily numbers yet). All molecule
+  / serde failures share **one** custom code for this project. Do not list
+  one code per molecule error variant.
+- SSRI follows section 0. **non-SSRI:** hop-only, no `SSRI { }` arm.
+  **SSRI:** wire names in `cinnabar_main!`'s `SSRI { }` arm (string literals),
+  each RHS (`&[u8]` / `u8` / guest fn that calls a kernel `Instruction`),
+  argv slots (`SsriArgs::bytes`; slot 0 is the method path), and
+  `SsriSource` lookups (`find_out_point_by_type`, `find_cell_by_out_point`,
+  `find_cell_data_by_out_point`).
 - **Out of Verify (will not check on-chain):** e.g. UX strings, APY text,
   display DNA, Fiber multiaddr in witness.
 
@@ -81,6 +165,11 @@ Create).
 
 ### 6. Calculate — shape
 
+- Profile from section 0. **SSRI:** kernel (`default-features = false`,
+  `#![no_std]` calculator; guest wrappers call those recipes). **non-SSRI:**
+  shell (default `std`).
+- Serde plan from section 0b. **serde_molecule** (default): `to_vec` here,
+  `from_slice` in Verify. **Their plan:** only the entry points they named.
 - One recipe function per user action; which table row it realizes.
 - `Instruction::new` vs `named(intent::*)`.
 - Custom `Operation`s vs basic ones.
@@ -135,6 +224,7 @@ decision the user must see.
 - Type script present vs absent (CKB-only vs xUDT or other typed asset).
 - Capacity: occupied vs unoccupied; shrinking/growing; type-id extra occupied.
 - Args/data: too short, too long, unknown discriminator, frozen field mutated.
+  Codec is section 0b (serde_molecule by default, or the plan they named).
 - Lock Create does not run this script — who is allowed to write the first
   args/data, and is that a problem?
 

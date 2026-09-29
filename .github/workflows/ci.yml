@@ -33,11 +33,16 @@ jobs:
         run: |
           cargo check -p ckb-cinnabar-verifier --target riscv64imac-unknown-none-elf
           cargo check -p ckb-cinnabar-verifier --features ssri --target riscv64imac-unknown-none-elf
+          cargo check -p ckb-cinnabar-ssri-smoke --target riscv64imac-unknown-none-elf
         env:
           CARGO_TERM_COLOR: always
           TARGET_CC: clang
       - name: Verifier SSRI native tests
         run: cargo test -p ckb-cinnabar-verifier --features ssri
+        env:
+          CARGO_TERM_COLOR: always
+      - name: Verifier SSRI entry compiles
+        run: cargo check -p ckb-cinnabar-ssri-smoke
         env:
           CARGO_TERM_COLOR: always
       - name: Install cargo-generate

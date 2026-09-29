@@ -25,7 +25,7 @@ use crate::kernel::{
     },
 };
 
-/// Well-known code hash of the type-id system script (`TYPE_ID` in ASCII).
+/// Well-known code hash of the type-id system script (`TYPE_ID` in the last 7 bytes).
 pub use crate::types::TYPE_ID_CODE_HASH;
 
 /// A wrapper of packed Script

@@ -86,8 +86,12 @@ Rules:
   flags.
 - Later nodes **read Context**; they do not reload the same cells.
 - Off-chain uses the **same byte types**. Put them in `protocol/` /
-  `core/common/` when more than one crate needs them. Dual-written constants
-  (block windows, code hashes) stay in sync on purpose.
+  `core/common/` when more than one crate needs them. Decode with the serde
+  plan from the confirmation pack. The default is **serde_molecule**
+  (`from_slice` into Context). Their own plan uses the entry point they
+  named. Any decode failure returns the project's single molecule
+  `define_errors!` code. Dual-written constants (block windows, code hashes)
+  stay in sync on purpose.
 
 ```rust
 #[derive(Default)]
@@ -155,13 +159,58 @@ cinnabar_main!(
     ("check_since", CheckSince),
     ("check_owner", CheckOwner),
 );
+```
 
-Optional SSRI door (crate feature `ssri`): keep the hop table, then append
-`SSRI { "Wire.name" => expr, ... }`. The block is an entry switch plus an
-explicit wire table — not a protocol identity and not hop `verify()`. Each
-RHS is a guest fn, constant, or local that `export` turns into bytes.
-`ssri_methods!` always emits `SSRI.version` / `get_methods` / `has_methods`;
-do not list those names in the block. Leave the generated template hop-only.
+## Optional SSRI door
+
+Add this only when section 0 of the confirmation pack is **SSRI**
+([confirm.md](confirm.md)). That choice also puts `calculator/` in kernel
+mode ([calculate.md](calculate.md)); guest wrappers call those kernel
+`Instruction`s. Feature `ssri` is the verifier default. The **non-SSRI**
+choice stays hop-only and does not use this section.
+
+Empty `argv` runs the verify tree (`should_fallback`). `argv` together with
+raw `vm_version == u64::MAX` runs the `SSRI { }` block. `ssri_methods!`
+always emits `SSRI.version`, `SSRI.get_methods`, and `SSRI.has_methods`.
+The block lists the contract's methods. Write that table in `cinnabar_main!`.
+Each name is a string literal in the block (`"UDT.mint"`). `cinnabar_main!`
+expands `program_entry`, `should_fallback`, and `ssri_methods!`.
+
+Each right-hand side is an expression `export` turns into bytes: a guest
+function, `&[u8]`, `u8`, `Vec<u8>`, or `Result`. Hop `verify()` stays on the
+tree. `SsriSource` implements kernel `Source` (`find_out_point_by_type`,
+`find_cell_by_out_point`, `find_cell_data_by_out_point`). `SsriArgs` holds
+hex-decoded slots. Slot 0 is the method path. Later slots follow that
+method's own definition; read them with `SsriArgs::bytes(index)`.
+
+The method body is a guest wrapper. It decodes `SsriArgs` and runs a kernel
+`Instruction` (verifier feature `ssri` depends on the calculator kernel).
+A `std` host recipe is a shell type and stays on the host.
+
+```rust
+use alloc::vec::Vec;
+use ckb_cinnabar_verifier::{
+    ssri::{SsriArgs, SsriSource},
+    Result,
+};
+
+fn mint(_source: &SsriSource, args: SsriArgs) -> Result<Vec<u8>> {
+    let _to = args.bytes(1)?;
+    let _amount = args.bytes(2)?;
+    // assemble with a kernel Instruction, then return wire bytes
+    Ok(Vec::new())
+}
+
+cinnabar_main!(
+    Context,
+    (TREE_ROOT, Root),
+    (intent::MINT, Mint),
+    SSRI {
+        "UDT.name" => "Example",
+        "UDT.decimals" => 8u8,
+        "UDT.mint" => mint,
+    },
+);
 ```
 
 ## Predicate catalog
@@ -253,3 +302,22 @@ define_errors!(TokenError, {
 
 Match tests with `assert_verify!(&rpc, ixs, 22)` or
 `script_exit_code() == Some(22)`.
+
+Molecule decode and encode failures (`serde_molecule` or the plan they
+named) share **one** custom code per generated project, for example
+`InvalidData`. A short buffer, a bad table header, and a type mismatch all
+return that same `i8`. Do not declare one `define_errors!` variant per
+molecule error. Business failures (wrong issuer, bad amount) stay their own
+codes.
+
+SSRI framework codes (feature `ssri`):
+
+| Code | `Error` |
+| ---- | ------- |
+| 12 | `SSRIMethodsNotFound` |
+| 13 | `SSRIMethodsArgsInvalid` |
+| 14 | `SSRIMethodsNotImplemented` |
+| 15 | `SSRIMethodRequireHigherLevel` |
+| 16 | `InvalidVmVersion` |
+| 17 | `SSRIAssembleFailed` |
+| 18 | `SSRISourceUnavailable` |

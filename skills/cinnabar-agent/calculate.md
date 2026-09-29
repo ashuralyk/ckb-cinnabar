@@ -7,12 +7,114 @@ Calculate **assembles** a skeleton that will be classified by Verify. It does
 **not** duplicate on-chain predicates. Coupling is the shared **layout** and
 the **transition table**, not a mandatory `Instruction` name.
 
+## Which profile to generate
+
+Ask SSRI or non-SSRI before `cargo generate` ([confirm.md](confirm.md)
+section 0). The template is the same; set `calculator/` to the profile they
+picked before writing recipes.
+
+| Version | Calculator crate | Verify |
+| ------- | ---------------- | ------ |
+| non-SSRI | Shell, the default. Leave `ckb-cinnabar-calculator = { workspace = true }`. | Hop-only `cinnabar_main!`. No `SSRI { }` arm. |
+| SSRI | Kernel. `ckb-cinnabar-calculator = { workspace = true, default-features = false }`. `#![no_std]` + `extern crate alloc`. | `SSRI { }` guest wrappers call these kernel `Instruction`s. |
+
+SSRI `calculator/Cargo.toml`:
+
+```toml
+[dependencies]
+ckb-cinnabar-calculator = { workspace = true, default-features = false }
+```
+
+SSRI `calculator/src/lib.rs` starts with `#![no_std]` and `extern crate alloc`.
+Recipes use kernel operations only. In the contract crate, depend on that
+calculator (`path = "../../calculator"` from `contracts/<name>/`) and call
+the recipes from the guest wrappers. Do not put `RpcClient`, FakeRpc,
+`assert_verify!`, signing, or predefined host recipes in that crate.
+
+`tests/Cargo.toml` keeps the default shell dependency
+(`ckb-cinnabar-calculator = { workspace = true }`) so FakeRpc and
+`assert_verify!` exist. Do not turn `std` on inside `calculator/` to satisfy
+tests.
+
+non-SSRI leaves the generated calculator dependency as the workspace default
+(shell). The contract does not need to depend on `calculator/` for a guest
+entry.
+
+## Layers
+
+Generated contracts import crate-root paths only:
+
+`instruction`, `operation`, `rpc`, `skeleton`, `address`, `intent`.
+
+The version above picks which layer those names resolve to. Do not import
+`kernel::` or `shell::`.
+
+| Profile | Cargo | When | Contents |
+| ------- | ----- | ---- | -------- |
+| Shell | default `std` | non-SSRI calculator, and every `tests/` crate | Kernel plus `RpcClient`, FakeRpc, CKB-VM, signing, predefined recipes, `assert_verify!` |
+| Kernel | `--no-default-features` | SSRI calculator crate, and the guest that calls it | `no_std` + `alloc` assembler: sync `RPC` (`Node` + `Indexer`), `Source`, packed skeleton, operations, ckb2021 `Address` |
+
+`Address` / `AddressPayload` parse full ckb2021 addresses (`ckb1…` / `ckt1…`,
+bech32m, RFC-0021). They compile on both profiles.
+
+`Source` is three lookups: `find_out_point_by_type`, `find_cell_by_out_point`,
+`find_cell_data_by_out_point`. Every `RPC` implements `Source`.
+`UnsupportedSource` answers every lookup with `SourceUnavailable`. Inject-only
+assembly uses it when the caller already has the cells to place on the
+skeleton.
+
+FakeRpc, `assert_verify!`, and the predefined recipes exist on the shell
+profile. An SSRI guest links the kernel profile (verifier feature `ssri`
+depends on `ckb-cinnabar-calculator` with default features off) and calls the
+kernel calculator crate from the version table above.
+
+`TransactionSkeleton::get_input_by_index`, `get_output_by_index`, and
+`get_celldep_by_index` take a `usize`. Encode a Lua-style relative index as
+`(-n) as usize` (`-1` is the last cell, `-2` the second-to-last).
+
 ## Layout first
 
 Put args/data encode–decode in one place both crates use (`protocol/` or
 `core/common/`, `no_std` + alloc). Calculator serializes; Verify parses into
 `Context`. Constants that appear on both sides (windows, code hashes, type
 ids) are explicit sync points.
+
+The confirmation pack names the serde plan ([confirm.md](confirm.md)
+section 0b). **serde_molecule is the default.** Apply that plan before
+writing recipes. If they named another plan, use only the crate and entry
+points they gave. Do not add a second codec for the same bytes.
+
+serde_molecule dependencies (`no_std` + alloc, so a kernel calculator and
+the verifier can both link them):
+
+```toml
+serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
+serde_molecule = { version = "1.1", default-features = false, features = ["alloc"] }
+```
+
+```rust
+use serde::{Deserialize, Serialize};
+use serde_molecule::{from_slice, to_vec};
+
+#[derive(Serialize, Deserialize)]
+struct CellData {
+    amount: u64,
+}
+
+// `false` = molecule table. `true` = molecule struct. Same flag on both calls.
+let bytes = to_vec(&CellData { amount }, false).unwrap();
+let parsed: CellData = from_slice(&bytes, false).unwrap();
+```
+
+`is_struct` is that second argument. The in-tree Spore schema passes
+`false` (table). A molecule dynvec field uses
+`#[serde(with = "serde_molecule::dynvec_serde")]`. Spore and Cluster cells
+that already have `operation::spore::schema` stay on that schema.
+
+On the Verify side of a generated project, fold every molecule failure into
+one `define_errors!` code (`InvalidData` or the name in the pack). Do not
+map `serde_molecule` error variants one by one. The same collapse applies
+if they named another serde plan.
 
 ## Instruction pipelines
 
@@ -80,7 +182,8 @@ Calculate-side module. Compose them; do not dump a raw skeleton in the
 recipe function.
 
 Spore/Cluster **assembly** helpers: `operation::spore` behind `--features
-spore` (experimental). Use them when the user’s cells are Spore/Cluster.
+spore` (experimental). Molecule bytes go through `serde_molecule` in
+`operation::spore::schema`. Use them when the user’s cells are Spore/Cluster.
 **VM execution** of those scripts still needs the binaries below.
 
 Time: if Verify reads headers, the recipe must add the matching header deps.
