@@ -19,13 +19,17 @@ npx skills add ashuralyk/ckb-cinnabar -g -a cursor -s cinnabar-agent -y
 
 From a local clone: `npx skills add /path/to/cinnabar -g -a cursor -s cinnabar-agent -y`.
 Details: [skills/cinnabar-agent/INSTALL.md](skills/cinnabar-agent/INSTALL.md).
-A prompt like “write a CKB lock script” should then load Cinnabar even in an
-empty folder. Humans and agents follow the same recipe: split CKB plus the
-contract into **minimal modules**, relate them, put shared results in
-**Context**, then implement Verify + Calculate and FakeRpc tests.
+A prompt like “write a CKB lock script”, or a product sentence such as “a
+blind box that issues my handmade art”, should then load Cinnabar even in an
+empty folder. The agent asks one product question at a time until the user
+has said every missing product rule, then shows a **verification tree** and
+implements only after they confirm it. Recipes and FakeRpc tests are derived
+from the accepted tree.
 
 ```
-modules + relations + Context
+product demands
+    → one question at a time until every absent product detail is said
+    → user confirms the tree
     → Verify hops (intent::* when morphology = business; else domain names)
     → Instruction pipelines (named only on that shortcut)
     → FakeRpc + TransactionSimulator
@@ -80,8 +84,11 @@ cinnabar_main!(
 `SSRI.has_methods`. The `SSRI { }` block lists the contract's own methods.
 Each right-hand side is an expression `export` turns into bytes: a guest
 function, `&[u8]`, `u8`, `Vec<u8>`, or `Result`. Hop `verify()` stays on the
-tree. `SsriSource` implements calculator `Source`: `find_out_point_by_type`,
-`find_cell_by_out_point`, and `find_cell_data_by_out_point`.
+tree. `SsriSource` implements kernel `RPC` for `network`, `get_live_cell`,
+`get_header`, `get_header_by_number`, `get_block_hash`,
+`get_transaction_block_hash`, and `get_cells`. `get_tip_header`,
+`get_tip_block_number`, `min_fee_rate`, and `get_transactions` return
+`SourceUnavailable`. `Source` lookups still come from that `RPC`.
 `SsriArgs::bytes(index)` returns one hex-decoded slot; slot 0 is the method
 path, and later slots follow that method's own layout. The method body is a
 guest wrapper: it reads `SsriArgs` and runs a kernel `Instruction` (the

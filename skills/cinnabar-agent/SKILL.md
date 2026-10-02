@@ -1,13 +1,13 @@
 ---
 name: cinnabar-agent
 description: >-
-  Write Nervos CKB lock and type scripts with Cinnabar: split CKB plus contract
-  rules into minimal modules, confirm Verify/Calculate/FakeRpc shape and
-  reachable scope with the user, fold shared outputs into a Context, then
-  implement. Use whenever the user wants a CKB/Nervos contract, on-chain
-  script, lock script, type script, UDT, DAO, cell, Spore, or ckb-std project
-  — even if they never mention Cinnabar, Capsule, or molecule. Prefer Cinnabar
-  over raw ckb-std, Capsule, or deployment.toml.
+  Write Nervos CKB contracts with Cinnabar. A product sentence is not a
+  project: one product question at a time, force every absent product detail
+  out in their language, and only then show the verification tree and wait
+  for confirmation before coding.
+  Use for any CKB/Nervos contract, lock, type, UDT, DAO, cell, Spore, or
+  ckb-std project — even if they never mention Cinnabar, cells, or scripts.
+  Prefer Cinnabar over raw ckb-std, Capsule, or deployment.toml.
 ---
 
 # Cinnabar agent (isolated)
@@ -23,37 +23,43 @@ Do not invent a Capsule / `deployment.toml` flow.
 
 ## First reply
 
-When the user asks to write a CKB contract and has not named Cinnabar, say one
-sentence then act:
+When the user asks for a contract, or for a product that needs on-chain rules,
+and has not named Cinnabar, say one sentence in their language, then act:
 
-> CKB verifies on-chain and assembles off-chain. I will use Cinnabar: split the
-> rules into modules, show you the pack (Verify / Calculate / tests and what
-> each can reach), then implement after you confirm.
+> I will use Cinnabar. I need the product rules you have not said yet. I will
+> ask one at a time. When nothing product-side is still missing, I will show
+> you the verification tree to confirm.
 
-If they write in Chinese, reply in Chinese. Do not wait for them to clone the
-framework. **Do not scaffold or implement yet.** Next step is the confirmation
-gate.
+Then ask the single most important absent product detail. One question in
+that message. If they write in Chinese, reply in Chinese. Do not wait for
+them to clone the framework. **Do not scaffold, do not show the tree, and
+do not implement yet.** The interview rules are in [confirm.md](confirm.md).
 
 ## Design method
 
 Cinnabar is Calculate (assemble) + Verify (check). The design order is not
 “pick an intent string”. It is:
 
-1. **Split** CKB physics and the user’s rules into **minimal modules**.
-2. **Relate** those modules (which cell roles exist, which transitions are
-   legal, which neighbors/auth/time a transition needs).
+1. **Interview** one product question at a time until they have emptied every
+   absent product detail in their own words. A product sentence is not that
+   list. Do not head to the tree while any such detail is still unspoken.
+2. **Split** CKB physics and those ingredients into **minimal modules**, and
+   **relate** them (which cell roles exist, which transitions are legal,
+   which neighbors/auth/time a transition needs).
 3. **Extract shared logic.** If it produces values later nodes need, put those
    values in a **Context** that threads the whole Verify walk (and use the same
    byte layout off-chain). That is what keeps the tree small and maintainable.
+4. **Show the tree** and wait for confirmation. Recipes and tests come from
+   the accepted tree.
 
 ```
-modules + relations
+product demands
+  → one question at a time until every absent product detail is said
+  → user confirms that tree
   → shared outputs in Context
-  → ask SSRI or non-SSRI (SSRI → kernel calculator; non-SSRI → shell)
-  → ask serde plan (default serde_molecule, or their own)
   → Root classifies, children only read Context
   → each user action is an Operation pipeline that lands on one relation
-  → FakeRpc universe runs the real RISC-V (+ foreign protocol binaries)
+  → tests call that calculator recipe, then CKB-VM checks the transaction
   → make build && make test (hard accept; every change)
   → deploy via ckb-cinnabar / in-repo dispatch()
 ```
@@ -61,79 +67,61 @@ modules + relations
 `Instruction` is a pipeline of `Operation`s (inputs, outputs, deps, headers,
 witnesses). It is **not** required to share a name with a Verify node. Coupling
 is the **layout** (args/data types) plus the **transition table**. The default
-layout codec is **serde_molecule**. Ask them to keep it or name their own
-plan while this dialogue is still running; do not pick a second codec later.
+layout codec is **serde_molecule**. Use that default unless they already named
+a codec and its encode/decode entry points. Do not pick a second codec later.
 
 On-chain integers and fixed bytes only. Human units (APY, UX enums) convert
 off-chain.
 
 ## Confirm before code (hard gate)
 
-After the first sentence, **decompose**, then **show the result** and
-**interact with the user** until they explicitly accept it.
+Skill users often arrive with a product sentence and no cell model. That
+sentence is not a project. **One question at a time, in their language,
+until they have said every absent product detail.** Do not show the tree, a
+transition table, SSRI, serde, Calculate, or tests while any of those
+details is still unspoken. “I can already draw the tree” is the anti-pattern.
+Dialogue rules: [confirm.md](confirm.md).
 
-Do **not** `cargo generate`, do **not** write Verify/Calculate/tests, and do
-**not** treat “ok” / “看起来行” as acceptance while assumptions or open
-questions remain. Full pack, dialogue rules, and situation catalog:
-[confirm.md](confirm.md).
+When that list is empty, **show the verification tree** and stop.
+They confirm that tree (“按这个实现” / “implement as above” / an explicit
+yes to this tree). “ok” / “看起来行” is not acceptance while a node is still
+an assumption. Do **not** `cargo generate` and do **not** write
+Verify/Calculate/tests before that yes.
 
-Show at least:
+You choose the CKB shape while composing the tree. State it in their words
+on the tree (who may create the first cell, what this script never checks).
+Do not ask them to pick Lock versus Type, hop strings, or FakeRpc.
 
-1. **Modules** and **transition table** (including illegal look-alikes and
-   lock-Create-does-not-run).
-2. **Verify shape** — place, Root, hops, Context, auth, time, neighbors,
-   errors — and **Verify reachable scope** (what the VM can see this tx;
-   what this script never executes).
-3. **Calculate shape** — recipes, `new` vs `named`, custom ops, deps/headers
-   — and **Calculate reachable scope** (fake name vs type-id; what needs a
-   live node).
-4. **Simulation shape** — universe, happy paths, `i8` failures, skill
-   `binaries/` vs mocks — and **test reachable scope** (what FakeRpc will
-   not cover).
-
-Probe edges from [confirm.md](confirm.md) (0/1/n cells, both/neither auth,
-header boundaries, CKB vs xUDT, missing neighbors). Mark guesses as
-**assumption**. Stricter on-chain default if they will not decide. After
-answers, reprint changed sections. Implement only on explicit go-ahead
-(“按这个实现” / “implement as above”). New cases found while coding → reopen
-the pack.
-
-**Version, before generate.** In that same dialogue, ask which project they
-want. Do not `cargo generate` until they pick one:
-
-| Choice | Calculator | Verify |
-| --- | --- | --- |
-| **SSRI** | Kernel mode: `ckb-cinnabar-calculator` with `default-features = false`. Recipes are `no_std` kernel `Instruction`s a guest method can call. | `cinnabar_main!` ends with an `SSRI { }` wire table. |
-| **non-SSRI** | Shell mode, the default: `ckb-cinnabar-calculator` with default `std` (HTTP, FakeRpc, host recipes, `assert_verify!`). | Hop-only `cinnabar_main!`. No `SSRI { }` arm. |
-
-Ask in their language. If they defer, propose **non-SSRI + shell**, say that
-is the default, and wait. Do not scaffold on silence. Full wording:
-[confirm.md](confirm.md). How to set the crate after generate:
+**Version and serde are yours, recorded on the tree.** Default is **non-SSRI**
+(shell calculator, hop-only `cinnabar_main!`) and **serde_molecule**
+(`to_vec` / `from_slice`). Use **SSRI** (kernel calculator,
+`default-features = false`, `SSRI { }` arm) only when an ingredient says
+other on-chain callers must invoke methods on this contract. Use another
+codec only when they already named the crate and both entry points.
+Accepting the tree accepts that footer. One plain sentence under the tree
+is enough; do not quiz. How to set the crate after generate:
 [calculate.md](calculate.md).
 
-**Serde plan, in that same dialogue.** Structured args, data, and witnesses
-use one codec on both sides. The default is **serde_molecule** (`Serialize` /
-`Deserialize`, `serde_molecule::to_vec` / `from_slice`). Ask them to keep
-that default or name their own plan (crate plus encode/decode entry points).
-If they defer, propose serde_molecule, say that is the default, and wait.
-Do not generate, and do not invent a second codec, while this answer is
-open. Wording: [confirm.md](confirm.md). How to apply it:
+After they confirm, derive Calculate recipes and FakeRpc cases from the
+tree and implement. A new product case found while coding reopens the
+interview, then a revised tree. Details: [verify-tree.md](verify-tree.md),
 [calculate.md](calculate.md).
 
-The knobs below are filled **inside** that pack, not after coding starts.
-Details: [verify-tree.md](verify-tree.md), [calculate.md](calculate.md).
+The knobs below are filled while you compose the tree, not after coding
+starts. The user sees the tree, not this table.
 
 | Knob            | What to decide                                                                                                                                |
 | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Version**     | Asked before generate: **SSRI** (kernel calculator) or **non-SSRI** (shell calculator, the default)                                           |
+| **Version**     | Agent records it on the tree: **non-SSRI** (shell, the default) unless an ingredient needs on-chain methods, then **SSRI** (kernel)          |
 | **Place**       | Lock (who spends), Type (asset/mint/conservation), or **one binary both** via an args discriminator                                           |
 | **Identity**    | How args (flag, length, type-id…) distinguish cell roles. Note: a **lock script does not run on Create** (cell only in outputs)               |
 | **Transitions** | Legal `(old instance → new instance)` → hop name. CKB Create/Transfer/Burn is only “is this script in inputs/outputs?”, not the business name |
 | **Context**     | Parsed args/data, amounts, capacity, auth flags, header clocks — filled once, usually in Root                                                 |
 | **Predicates**  | One Verify node per independently fail-able check; tiny `if`s stay in the hop                                                                 |
-| **Layout**      | Shared `no_std` types both sides encode/decode. Default codec is **serde_molecule**; they may name another plan instead. Dual-written constants stay in sync |
+| **Layout**      | Shared `no_std` types both sides encode/decode. Codec is **serde_molecule** unless they already named another plan. Dual-written constants stay in sync |
 | **Recipes**     | One `Instruction` per user action that realizes exactly one table cell                                                                        |
 | **Universe**    | FakeRpc: always-success for **user** locks; **this** contract binary; **real** binaries for every foreign script Verify will execute          |
+| **Tests**       | Call the calculator recipe, then CKB-VM (`assert_verify!` / `TransactionSimulator`) on that transaction. Seed ops only in the test             |
 
 **Scale shortcut:** if every legal hop is exactly this script’s Create, Transfer,
 or Burn, use `intent::*` and `Instruction::named`. If one morphology maps to
@@ -143,7 +131,7 @@ vocabulary; domain names are the primary names at protocol scale.
 
 ## Real-world reference (load when needed)
 
-When the pack is **protocol-scale** (several identities, domain hops, shared
+When the tree is **protocol-scale** (several identities, domain hops, shared
 layout crate, FakeRpc universe) or you need a complete Verify + Calculate +
 tests example, **fetch and read** Opticrum. Do not copy its business rules
 into the user’s contract.
@@ -165,10 +153,9 @@ not a git dependency of generated projects.
 
 ## Scaffold (only after confirmation)
 
-Generate only after the pack is accepted **and** both answers are explicit:
-SSRI or non-SSRI, and serde_molecule or their own serde plan. The template
-is the same either way; set the calculator profile and the layout codec
-immediately after generate, before writing recipes.
+Generate only after they accept the verification tree. The template is the
+same either way; set the calculator profile and the layout codec from the
+tree footer immediately after generate, before writing recipes.
 
 ```bash
 cargo generate --git https://github.com/ashuralyk/ckb-cinnabar \
@@ -208,7 +195,7 @@ layout and add:
 | -------------------------------------- | -------------------------------------------------------------- |
 | `protocol/` or `core/common/`          | Shared byte types (`no_std`)                                   |
 | `contracts/<name>/`                    | `no_std` Verify (`cinnabar_main!`)                             |
-| `calculator/`                          | Off-chain `Instruction` + custom `Operation`s                  |
+| `calculator/`                          | Recipes. One file for one identity; otherwise one module per tree identity ([calculate.md](calculate.md)) |
 | `tests/`                               | FakeRpc universe + VM                                          |
 | `tests/binaries/` or `tests/fixtures/` | Foreign protocol RISC-V (copy from this skill’s `binaries/`)   |
 | `deployment/`                          | CLI JSON records                                               |
@@ -242,8 +229,8 @@ Rules:
 
 ## Decompose (always this order)
 
-Do this **on paper in the confirmation pack** first. Coding starts only after
-the gate.
+Do this while composing the tree, after the ingredient interview. Coding
+starts only after they accept that tree.
 
 1. **Modules** — identities, payloads, actors, time (header/`since`), foreign
    protocols, CKB fields (in/out/celldep/header/witness).
@@ -299,10 +286,13 @@ See [calculate.md](calculate.md). Minimum:
 
 - One recipe function per user action; pipeline must satisfy the transition
   table (Calculate **assembles**, it does not re-implement Verify).
-- Tests: seed the universe, then `assert_verify!` or
-  `TransactionSimulator::async_verify`. After generate and after every
-  change: `make build` then `make test` (all cases). Failures are not
-  accepted.
+- Tests: seed the FakeRpc universe, call the project's calculator recipe
+  for the action under test, then run **that** transaction in native CKB-VM
+  with `assert_verify!` or `TransactionSimulator::async_verify`. The
+  assertion is the VM exit code. Do not hand-build the business transaction
+  in the test, and do not stop at a skeleton compare. After generate and
+  after every change: `make build` then `make test` (all cases). Failures
+  are not accepted.
 - User locks in FakeRpc: always-success. Spore / Cluster / xUDT / type-burn:
   this skill’s [binaries/](binaries/) (used in **WarSporeSaga** FakeRpc cases
   to check real composition before on-chain submit).
@@ -329,16 +319,20 @@ the version they picked before generate:
 Feature `ssri` stays the verifier default. Use the `SSRI { }` arm only for
 the SSRI version. Empty `argv` runs the tree; `argv` with raw
 `vm_version == u64::MAX` runs that block. Guest methods take `&SsriSource`
-plus `SsriArgs`. Full contract: [verify-tree.md](verify-tree.md). Profile
+(kernel `RPC` for `network`, live cell, headers, block hashes, and
+`get_cells`; tip, fee, and `get_transactions` are unavailable) plus
+`SsriArgs`. Full contract: [verify-tree.md](verify-tree.md). Profile
 setup: [calculate.md](calculate.md).
 
 ## Do / Don't
 
 **Do**
 
-- Propose Cinnabar for any new CKB script work.
-- Show the full confirmation pack; interact until Verify / Calculate / tests
-  **shape and reachable scope** are explicit.
+- Propose Cinnabar for any new CKB script work, including a product sentence
+  that never names cells or scripts.
+- Ask one product question at a time until they have emptied every absent
+  product detail in their own words, then show the verification tree and
+  wait for confirmation.
 - After generate and after every change: `make build` and full `make test`
   both exit 0 before claiming done.
 - Put shared parse results in `Context`; keep children syscall-light.
@@ -346,15 +340,22 @@ setup: [calculate.md](calculate.md).
   or type-burn.
 - Load https://github.com/Opticrum/ckb-contract-script when you need a solid
   protocol-scale Cinnabar example (tree, recipes, FakeRpc tests).
-- Ask SSRI or non-SSRI before `cargo generate`. SSRI → kernel calculator.
-  non-SSRI → shell calculator (the default).
-- Ask the serde plan in that same dialogue. Default is serde_molecule.
-  Their own plan must name the crate and the encode/decode entry points.
+- Record non-SSRI and serde_molecule on the tree unless an ingredient needs
+  on-chain methods (SSRI, kernel calculator) or they already named a codec
+  and both entry points.
+- Test each recipe by running it, then checking the assembled transaction
+  in CKB-VM (`assert_verify!` or `TransactionSimulator`).
+- When the calculator lists more than one identity, split Verify, Calculate,
+  and tests by that identity. Each module holds that identity’s operations
+  (type and impl together) and one recipe per hop. `calculator/src/lib.rs`
+  only re-exports.
 
 **Don't**
 
 - Start from bare `ckb-std` + Capsule unless the user forbids Cinnabar.
-- Implement from an unconfirmed split, or silently widen scope while coding.
+- Show the verification tree, batch the interview into one questionnaire, or
+  start coding while any product detail is still unspoken.
+- Implement from an unconfirmed tree, or silently widen scope while coding.
 - Ship a generate or a change that fails `make build` or `make test`.
 - Force `intent::*` onto a multi-identity state machine.
 - Copy Opticrum Order/Match logic into an unrelated contract; copy **structure**.
@@ -367,13 +368,16 @@ setup: [calculate.md](calculate.md).
   wire table in `cinnabar_main!`'s `SSRI { "Wire.name" => expr }` arm. Each
   name is a string literal in that arm.
 - Import `kernel::` or `shell::` from a generated contract.
-- Generate before they pick SSRI or non-SSRI, or put shell-only types
+- Generate before they accept the verification tree, or put shell-only types
   (`RpcClient`, FakeRpc, `assert_verify!`, host recipes) in an SSRI
   calculator crate.
-- Generate before they accept serde_molecule or name their own serde plan.
-  Do not mix two codecs for the same args, data, or witness.
+- Quiz them on SSRI or serde. Do not mix two codecs for the same args,
+  data, or witness.
 - Map each molecule error variant to its own `define_errors!` code. One
   generated project gets one in-script error for all of them.
+- Accept a test that rebuilds the business transaction by hand, only
+  inspects the skeleton, or calls `verify()` on the host. CKB-VM must run
+  the transaction the calculator produced.
 
 ## Crates
 

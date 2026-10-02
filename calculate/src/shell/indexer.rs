@@ -4,7 +4,7 @@
 //! to serde JSON for HTTP.
 
 pub use crate::kernel::indexer::{
-    CellQueryOptions, GetCellsIter, Indexer, LiveCell, MaturityOption, Pagination,
+    CellQueryOptions, GetCellsIter, Indexer, LiveCell, MaturityOption, Order, Pagination,
     PrimaryScriptType, QueryOrder, ScriptType, SearchKey, SearchKeyFilter, SearchMode, Tx,
     ValueRangeOption,
 };

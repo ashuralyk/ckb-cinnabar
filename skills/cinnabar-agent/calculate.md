@@ -1,7 +1,7 @@
 # Off-chain Calculate, FakeRpc, and CLI
 
-Recipes and the FakeRpc universe are agreed in the confirmation pack
-([confirm.md](confirm.md)) before this file is used to implement them.
+Recipes and the FakeRpc universe are derived from the verification tree the
+user accepted ([confirm.md](confirm.md)). Use this file to implement them.
 
 Calculate **assembles** a skeleton that will be classified by Verify. It does
 **not** duplicate on-chain predicates. Coupling is the shared **layout** and
@@ -9,9 +9,10 @@ the **transition table**, not a mandatory `Instruction` name.
 
 ## Which profile to generate
 
-Ask SSRI or non-SSRI before `cargo generate` ([confirm.md](confirm.md)
-section 0). The template is the same; set `calculator/` to the profile they
-picked before writing recipes.
+The profile is the one recorded on the accepted tree
+([confirm.md](confirm.md) section 0). Default is non-SSRI. SSRI only when
+that tree needs on-chain methods. The template is the same; set
+`calculator/` to that profile before writing recipes.
 
 | Version | Calculator crate | Verify |
 | ------- | ---------------- | ------ |
@@ -61,7 +62,10 @@ bech32m, RFC-0021). They compile on both profiles.
 `find_cell_data_by_out_point`. Every `RPC` implements `Source`.
 `UnsupportedSource` answers every lookup with `SourceUnavailable`. Inject-only
 assembly uses it when the caller already has the cells to place on the
-skeleton.
+skeleton. Guest `SsriSource` is a kernel `RPC` for `network`, `get_live_cell`,
+headers, block hashes, and `get_cells`. `get_tip_header`,
+`get_tip_block_number`, `min_fee_rate`, and `get_transactions` return
+`SourceUnavailable`.
 
 FakeRpc, `assert_verify!`, and the predefined recipes exist on the shell
 profile. An SSRI guest links the kernel profile (verifier feature `ssri`
@@ -79,7 +83,7 @@ Put args/data encode–decode in one place both crates use (`protocol/` or
 `Context`. Constants that appear on both sides (windows, code hashes, type
 ids) are explicit sync points.
 
-The confirmation pack names the serde plan ([confirm.md](confirm.md)
+The accepted tree names the serde plan ([confirm.md](confirm.md)
 section 0b). **serde_molecule is the default.** Apply that plan before
 writing recipes. If they named another plan, use only the crate and entry
 points they gave. Do not add a second codec for the same bytes.
@@ -112,7 +116,7 @@ let parsed: CellData = from_slice(&bytes, false).unwrap();
 that already have `operation::spore::schema` stay on that schema.
 
 On the Verify side of a generated project, fold every molecule failure into
-one `define_errors!` code (`InvalidData` or the name in the pack). Do not
+one `define_errors!` code (`InvalidData` or the name on the tree). Do not
 map `serde_molecule` error variants one by one. The same collapse applies
 if they named another serde plan.
 
@@ -189,16 +193,60 @@ spore` (experimental). Molecule bytes go through `serde_molecule` in
 Time: if Verify reads headers, the recipe must add the matching header deps.
 Off-chain may convert APY → `u64` per block; the chain only sees the `u64`.
 
-## Local simulation (universe, then tx)
+## When the recipe list is too large
 
-FakeRpc is an in-memory chain. Seed **every module** Verify will touch, then
-run the recipe.
+One identity whose hops are Create / Transfer / Burn stays in
+`calculator/src/lib.rs`, as the template does. Split when a second identity
+appears, or when one file would hold recipes from more than one identity.
+The cut is the verification tree’s identities, and **every** side uses that
+same cut: Verify, Calculate, and tests.
 
-1. `always-success` for **user** locks (auth module: “hash in inputs”).
-2. This contract’s RISC-V from `../build/release` (often with `type_id_args`).
-3. Real RISC-V for foreign protocols Verify executes (see binaries).
-4. `insert_fake_cell` / `insert_fake_header` so queries and header clocks exist.
-5. Optional: `instruction.run` to inspect skeleton/witness, then VM.
+Each identity module has the same shape. Read any one of them the same way:
+
+1. Shared layout for this identity (`protocol/` or `core/common/`).
+2. Custom `Operation`s this identity needs. The type and its `impl` stay in
+   this file. Do not collect every operation into one file and every recipe
+   into another.
+3. One public recipe per hop of this identity. Each returns an `Instruction`
+   of those operations. No other identity’s recipes.
+
+`calculator/src/lib.rs` is only the index: `mod` plus `pub use` of the
+recipes. No recipe bodies there.
+
+```text
+calculator/src/lib.rs          # pub mod issue; pub use issue::seal;
+calculator/src/box_.rs         # seal, open, transfer, burn
+calculator/src/collection.rs   # create_collection
+contracts/<name>/src/main.rs   # Context, define_errors!, cinnabar_main!
+contracts/<name>/src/box_.rs   # this identity’s Verify nodes
+contracts/<name>/src/collection.rs
+tests/src/box_.rs              # calls box_ recipes, then CKB-VM
+tests/src/collection.rs
+```
+
+A module that needs a step from another identity calls that identity’s
+recipe or operation. It does not copy the pipeline.
+
+## Local simulation (calculator, then CKB-VM)
+
+Every contract test does these two steps, in order. The transaction under
+test is the one the **calculator** assembles. **CKB-VM** is what accepts or
+rejects it.
+
+1. **Seed** the FakeRpc universe (setup only, not the business transaction):
+   - `always-success` for **user** locks (auth module: “hash in inputs”).
+   - This contract’s RISC-V from `../build/release` (often with `type_id_args`).
+   - Real RISC-V for foreign protocols Verify executes (see binaries).
+   - `insert_fake_cell` / `insert_fake_header` so queries and header clocks exist.
+2. **Calculate.** Call the project's recipe (`transfer(...)`, `mint(...)`, …).
+   That `Instruction` builds the transaction. Do not rebuild the same inputs,
+   outputs, data, or witnesses by hand in the test. A negative case still
+   calls the recipe: pass a bad argument or seed a bad cell so the assembler
+   emits a transaction the VM should reject.
+3. **Verify in CKB-VM.** Pass the seed instructions plus that recipe to
+   `assert_verify!` or `TransactionSimulator::async_verify`. Both run the
+   instructions, then execute every script group in the native CKB-VM. The
+   assertion is the VM exit code.
 
 ```rust
 let rpc = FakeRpcClient::default();
@@ -210,16 +258,26 @@ let prepare = Instruction::new(vec![
         contract_binary_path: "../build/release".into(),
     }),
 ]);
+// `transfer` is the calculator recipe. The test does not rebuild its cells.
+let transfer_ix = my_lock_calculator::transfer::<FakeRpcClient>(from, to, capacity);
 assert_verify!(&rpc, vec![prepare, transfer_ix], 0).unwrap();
 ```
 
-`0` = VM success. Non-zero = `define_errors!` `i8`.
+`0` = VM success. Non-zero = `define_errors!` `i8`
+(`assert_verify!(&rpc, vec![prepare, transfer_ix], 22)`).
 `CalculatorError::ScriptValidation` → `script_exit_code()`.
 `kind()` is stable (`script_validation`, `cell_dep_not_found`, …).
 
-`assert_verify!` is sugar over `TransactionCalculator` +
-`TransactionSimulator`. Protocol tests often `new_skeleton`, seed cells, then
-`async_verify`. Always `make build` before loading `build/release/<crate>`.
+`assert_verify!` is sugar over assembling those instructions and
+`TransactionSimulator`, which runs native `ckb-script` (CKB-VM).
+`TransactionSimulator::skeleton` may hold cells the recipe expects already
+placed; `async_verify` still runs the calculator instructions and then the
+VM. A skeleton that already contains the business outputs is not a stand-in
+for the recipe.
+
+`instruction.run` may print a skeleton while debugging. It is not the
+assertion. Do not call `verify()` from host Rust, and do not replace CKB-VM
+with a mock. Always `make build` before loading `build/release/<crate>`.
 
 Acceptance: after generate and after every change, run `make build` then
 `make test` in the project root. Both must pass the **full** suite. A green

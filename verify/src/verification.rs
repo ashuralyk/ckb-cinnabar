@@ -151,7 +151,7 @@ macro_rules! cinnabar_main {
         }
 
         fn program_entry_inner() -> ckb_cinnabar_verifier::Result<()> {
-            if ckb_cinnabar_verifier::re_exports::ckb_ssri_std::utils::should_fallback()
+            if ckb_cinnabar_verifier::re_exports::ckb_ssri_std::should_fallback()
                 .map_err(ckb_cinnabar_verifier::Error::from)?
             {
                 let mut ctx = <$ctx>::default();

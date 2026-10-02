@@ -1,115 +1,175 @@
-# Confirm the split before writing code
+# Interview, then the verification tree
 
-Read this while executing the **hard gate** in `SKILL.md`. Do not implement
-Verify, Calculate, or tests until the user explicitly accepts the pack (or a
-revised pack after Q&A).
+Read this while executing the **hard gate** in `SKILL.md`. Skill users may
+only have a product sentence. They are not expected to know the cell model
+or a script formula.
 
-The point is not a short summary. It is to **surface every module, relation,
-and non-goal**, then **interactively** fix Verify / Calculate / FakeRpc
-**shape** and **reachable scope** with the user.
+Do not implement Verify, Calculate, or tests until they explicitly accept
+the verification tree (or a revised tree after a new ingredient).
 
 If they write in Chinese, run this dialogue in Chinese.
 
-If the split looks protocol-scale (several identities, domain hops) and you
+If the product looks protocol-scale (several identities, domain hops) and you
 need a complete example of tree + recipes + tests, fetch
-https://github.com/Opticrum/ckb-contract-script before filling the pack.
-Use it as structure, not as the user’s product.
+https://github.com/Opticrum/ckb-contract-script before composing the tree.
+Use it as structure, not as the user’s product. Do not show that example
+instead of the interview.
 
-## How to interact
+## Hard gate
 
-1. Draft the pack below from the user’s words **and** from CKB physics they
-   did not mention (Create-does-not-run-lock, extra cells, missing headers,
-   both/neither auth, CKB vs xUDT, …). Mark guesses as **assumption**.
-2. Show the full pack in one message. Ask the version question (section 0)
-   and the serde-plan question (section 0b) in that message. Then ask the
-   rest, clustered — do not dump 40 unrelated questions. Walk **Verify →
-   Calculate → tests**, and for each: shape first, then reachable scope,
-   then edge cases still open.
-3. After each cluster of answers, **reprint only the changed sections**.
-4. Stop only on an explicit go-ahead (“按这个实现” / “implement as above” /
-   checking the whole pack). “看起来行” / “ok” on a vague paragraph is not
-   enough if assumptions remain.
-5. If they refuse to decide, propose the **stricter on-chain** default, say
-   so, and wait. Do not silently pick the loose default.
-6. Scaffold (`cargo generate`) **after** this gate, unless they already have
-   a repo and only asked for a design review. Section 0 (SSRI or non-SSRI)
-   and section 0b (serde_molecule or their own plan) must both be explicit
-   picks before that command.
+Do not head to the verification tree until the user has emptied every absent
+product detail, in product language, out of their own mouth.
 
-## Version before generate (hard question)
+<HARD-GATE>
+One product question per message. Wait for the answer. Then ask the next
+absent detail. Do not show the tree, the worksheet, SSRI, serde, Calculate,
+or tests in that message. Do not scaffold. This applies even when the
+product sounds small.
+</HARD-GATE>
 
-Ask this in the first pack message, in their language. Do not `cargo generate`
-while the answer is `open`, assumed, or silence.
+A detail is emptied only when they said it, or when they said yes to a
+stricter rule you proposed in product language. A guess you could write
+onto the tree is still absent. Silence does not close it.
 
-> Before I generate the project, which version do you want?
->
-> - **SSRI** — the calculator crate is kernel mode
->   (`default-features = false`). On-chain methods call those kernel
->   `Instruction`s.
-> - **non-SSRI** — the calculator crate is shell mode (the default `std`
->   build). Verify is hop-only; tests and host recipes stay on the shell.
+## Anti-pattern: "I can already draw the tree"
 
-Chinese:
+Every product goes through this interview. A one-line lock, a blind box, a
+token — all of them. "Simple" is where an unspoken rule becomes the wrong
+node. You do not get to skip ahead because the first sentence was clear
+enough to sketch hops.
 
-> 生成项目之前，你要哪一版？
->
-> - **SSRI** — calculator 用 kernel 模式（`default-features = false`），链上方法调用这些 kernel `Instruction`。
-> - **非 SSRI** — calculator 用默认 shell 模式。Verify 只有跳转；测试和宿主配方走 shell。
+These thoughts mean stop. You are rationalizing your way to the tree:
 
-If they defer, propose **non-SSRI + shell**, say that is the default, and
-wait. Do not generate on that proposal until they accept it.
+| Thought | Reality |
+| --- | --- |
+| "I can already sketch the tree" | The missing rules are still in your head, not theirs. Ask. |
+| "This product is too simple to interview" | Simple products hide the rule that changes a node. |
+| "I'll mark it assumption and show the tree" | An assumption is an absent detail. Stay in the interview. |
+| "A batch of questions is faster" | One question. Their answer reveals the next absence. |
+| "They said you decide" | Propose the stricter rule in their words and wait for yes. |
+| "CKB physics covers it, no need to ask" | If it changes what the product does, ask in product language. |
+| "They said ok" | "ok" did not state the detail. Ask the next absence. |
 
-## Serde plan before generate (hard question)
+## How to ask
 
-Ask this in the same first pack message, in their language. Do not
-`cargo generate`, and do not start a layout crate, while the answer is
-`open`, assumed, or silence.
+Keep a private list of absent product details. Each message pulls exactly
+one, in their language. Prefer a multiple-choice question when the answers
+are a few real product options; otherwise one open question. Do not dump
+the situation catalog. Do not ask them to choose Lock versus Type, hop
+strings, molecule, SSRI, or FakeRpc.
 
-The default plan is **serde_molecule**. Structured args, data, and witnesses
-are `Serialize` / `Deserialize` types. Calculate calls
-`serde_molecule::to_vec`. Verify calls `serde_molecule::from_slice`. The
-second argument is `is_struct`: `false` maps the Rust struct to a molecule
-**table** (the usual cell payload; extra fields can be tolerated on decode),
-`true` maps it to a molecule **struct**. Pass the same value on both sides.
-Field order is the molecule field order.
+Translate the gap into the product. "Who is allowed to write the first
+args" is "who is allowed to issue the first box, and does anyone else get
+to". Ask that. Do not teach the cell model in order to get the answer.
 
-> Args, data, and witnesses need one serde plan on both sides. Which do you want?
->
-> - **serde_molecule** (default) — shared `no_std` types, `to_vec` / `from_slice`.
-> - **Your own** — name the crate and the encode/decode functions. Calculate and Verify use only that plan.
+If they will not decide, offer the **stricter** rule as the recommended
+choice ("only you can issue a box; anyone holding it can open it") and
+wait. Do not pick the loose rule for them.
 
-Chinese:
+Stop only when the private list is empty: the ingredient rows below are
+closed by their words, and a pass over the situation catalog finds no
+remaining product rule they have not stated. Then, and only then, compose
+the tree and show it.
 
-> args、data、witness 两边要用同一套 serde 方案。你选哪个？
->
-> - **serde_molecule**（默认）— 共用 `no_std` 类型，`to_vec` / `from_slice`。
-> - **你自己的方案** — 说出 crate 和编解码入口。Calculate 和 Verify 只用这一套。
+Framework choices with no product fork stay yours: shell versus kernel,
+serde_molecule, FakeRpc, exit codes. State any of those that the user
+would notice, in their words, on the tree.
 
-If they defer, propose **serde_molecule**, say that is the default, and
-wait. If they name their own plan, record the crate and both entry points
-in section 0b before generating. A one-word “custom” is still `open`.
+## Ingredients (each absence is one question)
 
-## Pack to show (required sections)
+Each row is closed only by their answer or by their yes to your proposal.
+Walk whatever is still absent, one question at a time. Do not close a row
+by inference.
 
-Copy this outline into the reply and fill it. Empty rows are not allowed —
-write `n/a` and why, or `open` and the question.
+| Ingredient | You need | Still open, so keep asking |
+| --- | --- | --- |
+| Things | The distinct objects (a sealed box, a revealed artwork, a collection) | “Art” with no count, no sealed-versus-open |
+| Actors | Who may create, change, open, or destroy each thing | “Users” with no maker versus holder |
+| Stories | Legal changes, and changes that must fail | A verb (“issue”) with no forbidden cases |
+| Checks | What must be true on-chain for each story (who pays, uniqueness, hidden until open, creator frozen) | A story with no pass/fail rule |
+| Off-chain | Pictures, shop text, fiat prices, anything that must not be a check | Not stated, and a node might otherwise store it |
+| Neighbors | Other on-chain things a story must read (a payment coin, an existing art format) | “Issue art” that might be a new script or Spore, and they have not accepted one |
 
-### 0. Version (blocks generate)
+If a cell-model fact changes the product (who may create the first item,
+what happens when two of them move together, what is rejected), it is an
+absent product detail. Ask it in their words before the tree. Mechanics
+that do not change the product wait until you compose.
+
+## Show the verification tree
+
+When every ingredient is closed, show the tree in their language and stop.
+Example shape, for a blind box — use their product:
+
+```
+Root
+  → issue — only the maker can seal a box; the artwork stays hidden
+  → open — the holder can reveal that box once; the art matches what was sealed
+  → transfer — the holder can give a sealed or revealed box away
+  → burn — the holder can destroy it
+Never checked here: the picture file, the shop price
+Rejected: opening someone else's box, revealing twice, the maker rewriting a sealed box
+```
+
+Under it, the implementable nodes: place, `cinnabar_main!` hop names,
+Context fields, and one error name per node that can fail on its own. Hop
+names are their words (`open`, `issue`), or `intent::*` when a hop is exactly
+Create, Transfer, or Burn of this script.
+
+One footer sentence, not a quiz: ordinary shell assembler and
+serde_molecule, unless an ingredient needs other on-chain callers to invoke
+methods (then SSRI and a kernel calculator) or they already named a codec
+and both entry points. Accepting the tree accepts the footer.
+
+They confirm with “按这个实现”, “implement as above”, or an explicit yes to
+this tree. “看起来行” / “ok” while a node is still marked **assumption** is
+not acceptance. If their reply opens an ingredient, go back to the interview
+and show a revised tree only when it is closed again.
+
+Calculate recipes and FakeRpc cases are derived from the accepted tree. Do
+not open a second interview about them. Scaffold after this yes, unless they
+already have a repo and only asked for a design review.
+
+## Version and serde (you record them, you do not ask)
+
+Fill section 0 and section 0b when you compose the tree. Do not
+`cargo generate` before they accept the tree.
+
+| Their demands | What you record |
+| --- | --- |
+| No on-chain methods | **non-SSRI**. Shell calculator. Hop-only `cinnabar_main!`. |
+| Other on-chain callers must invoke methods on this contract | **SSRI**. Kernel calculator (`default-features = false`). `SSRI { }` arm; guest wrappers call those kernel `Instruction`s. |
+| They named no codec | **serde_molecule**. `Serialize` / `Deserialize`. Calculate calls `serde_molecule::to_vec`. Verify calls `serde_molecule::from_slice`. |
+| They named a crate and both entry points | That plan only. A one-word “custom” leaves the codec ingredient open: ask which crate and which functions, in their language. |
+
+serde_molecule’s second argument is `is_struct`: `false` maps the Rust
+struct to a molecule **table** (the usual cell payload; extra fields can be
+tolerated on decode), `true` maps it to a molecule **struct**. Pass the same
+value on both sides. Field order is the molecule field order.
+
+## Worksheet (do not show this during the interview)
+
+Copy this outline and fill it while composing. Empty rows are not allowed —
+write `n/a` and why, or go back to the interview. The user sees the tree,
+not this worksheet.
+
+### 0. Version (you record it)
 
 | Choice | Calculator profile | Verify entry |
 |--------|--------------------|--------------|
-| SSRI / non-SSRI / `open` | kernel (`default-features = false`) or shell (default `std`) | `SSRI { }` wire table, or hop-only |
+| SSRI / non-SSRI | kernel (`default-features = false`) or shell (default `std`) | `SSRI { }` wire table, or hop-only |
 
-Fill this from their answer. `open` blocks `cargo generate`.
+Fill this from the version table above. `open` means the on-chain-methods
+ingredient is still open: go back to the interview. Do not show the tree.
 
-### 0b. Serde plan (blocks generate)
+### 0b. Serde plan (you record it)
 
 | Plan | Where it lives | Encode / decode |
 |------|----------------|-----------------|
-| serde_molecule / their crate / `open` | `protocol/` or `core/common/` (`no_std`) | `to_vec` / `from_slice`, or the entry points they named |
+| serde_molecule / their crate | `protocol/` or `core/common/` (`no_std`) | `to_vec` / `from_slice`, or the entry points they named |
 
-Fill this from their answer. `open` blocks `cargo generate`. One payload
-does not get two codecs. Raw integers with no struct still get an answer:
+Fill this from the version table above. `open` means they said “custom”
+without a crate and both entry points: ask, do not show the tree. One
+payload does not get two codecs. Raw integers with no struct still get
 serde_molecule for any later struct, or their named plan. Spore / Cluster
 cells keep `operation::spore::schema`; do not re-encode those bytes.
 
@@ -149,8 +209,8 @@ Fields Root (or first hop) will fill; which predicates read them; what is
   **SSRI:** wire names in `cinnabar_main!`'s `SSRI { }` arm (string literals),
   each RHS (`&[u8]` / `u8` / guest fn that calls a kernel `Instruction`),
   argv slots (`SsriArgs::bytes`; slot 0 is the method path), and
-  `SsriSource` lookups (`find_out_point_by_type`, `find_cell_by_out_point`,
-  `find_cell_data_by_out_point`).
+  `SsriSource` as kernel `RPC` (`network`, `get_live_cell`, headers, block
+  hashes, `get_cells`; tip, fee, and `get_transactions` are unavailable).
 - **Out of Verify (will not check on-chain):** e.g. UX strings, APY text,
   display DNA, Fiber multiaddr in witness.
 
@@ -187,13 +247,19 @@ live indexer/node (search by type, Fiber channel discovery).
 
 ### 8. Simulation — shape
 
+Each case calls a calculator recipe, then CKB-VM runs that transaction.
+`assert_verify!` or `TransactionSimulator::async_verify` is the runner.
+The test seeds the universe; it does not rebuild the business transaction.
+
 - Universe: always-success user locks; this binary; **which** foreign
   binaries from this skill’s `binaries/` (or named mocks and why).
 - Seeded cells and headers (block numbers, linking cells to headers).
-- Happy-path tests (one per recipe that Verify actually runs).
-- Failure tests (`script_exit_code` per important `i8`).
-- Skeleton/witness assertions if Calculate puts metadata off-script.
-- `assert_verify!` vs `TransactionSimulator` + `new_skeleton`.
+- Happy path: one VM success (`0`) per recipe that Verify actually runs.
+  The instruction is the calculator function, not an inlined copy of its ops.
+- Failure: same recipe with a bad argument or a bad seeded cell, then the
+  VM `i8` via `script_exit_code`. Do not hand-build a parallel tx in `tests/`.
+- Skeleton/witness checks only as extras on that same VM run, when Calculate
+  puts metadata off-script. They do not replace the VM exit code.
 
 ### 9. Simulation — reachable scope
 
@@ -206,14 +272,20 @@ contract) rather than a bundled RISC-V file.
 
 ### 10. Open questions
 
-Numbered. Each maps to a row above. Do not implement while this list is
-non-empty unless the user defers a numbered item in writing.
+Numbered. Each maps to an ingredient or a worksheet row. A non-empty list
+means the ingredients are not enough: keep asking, do not show the tree.
+Do not implement while this list is non-empty unless they accept your
+stricter proposal for that item in writing.
 
-## Situation catalog (probe these; do not skip silently)
+## Situation catalog (yours; do not read it out)
 
-Use this as a checklist while filling the pack. For every item: **on-chain /
-off-chain assemble / FakeRpc / none**. If “none”, that is a reachable-scope
-decision the user must see.
+Use this after the ingredient rows, still inside the interview, to find
+product details they have not said. For every item: **on-chain / off-chain
+assemble / FakeRpc / none**. If the item is a product rule they have not
+stated, it is one more question, in product language, before the tree.
+“none” is still their line to speak (“the picture is never checked”).
+Framework-only items (FakeRpc, exit codes, codec) you resolve while
+composing.
 
 ### Cell physics
 
@@ -269,19 +341,23 @@ decision the user must see.
 
 ### Tests
 
-- Every legal hop has a success tx Verify will actually run.
-- Every important `Err` has a tx that should fail with that `i8`.
-- Illegal look-alikes in the transition table have at least one negative test.
+- Every case: calculator recipe builds the transaction, then CKB-VM
+  (`assert_verify!` / `TransactionSimulator`) runs it. Seed ops only in the test.
+- Every legal hop has a success tx (`0`) that Verify will actually run.
+- Every important `Err` has a calculator-built tx that fails with that `i8`.
+- Illegal look-alikes in the transition table have at least one negative test,
+  still produced by the recipe (bad argument or bad seeded cell).
 - Foreign protocol groups that Verify executes are in the universe.
 - What you will **not** test (signatures, live Fiber, mainnet binaries) is
   written in section 9.
 
 ## After confirmation
 
-Implement **only** what the pack allows. If coding reveals a new case, stop
-and reopen the pack — do not silently widen Verify, Calculate, or test
+Implement **only** what the accepted tree allows. Derive Calculate and tests
+from it. If coding reveals a new product case, stop, reopen the interview,
+and show a revised tree — do not silently widen Verify, Calculate, or test
 scope.
 
 After generate and after every implementation change: `make build` and
 `make test` (all cases) must exit 0. That is project acceptance. Do not
-treat the pack as delivered while either command fails.
+treat the tree as delivered while either command fails.

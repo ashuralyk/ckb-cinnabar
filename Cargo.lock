@@ -672,7 +672,7 @@ dependencies = [
 [[package]]
 name = "ckb-ssri-std"
 version = "0.0.1"
-source = "git+https://github.com/ashuralyk/ckb-ssri-std#23ab16f258fc9143288d6de1d2eb1c84c17981da"
+source = "git+https://github.com/ashuralyk/ckb-ssri-std?rev=8c2c245#8c2c24555e064cff3db138ec330de49797c5f18e"
 dependencies = [
  "ckb-ssri-std-proc-macro",
  "ckb-std",
@@ -683,7 +683,7 @@ dependencies = [
 [[package]]
 name = "ckb-ssri-std-proc-macro"
 version = "0.0.1"
-source = "git+https://github.com/ashuralyk/ckb-ssri-std#23ab16f258fc9143288d6de1d2eb1c84c17981da"
+source = "git+https://github.com/ashuralyk/ckb-ssri-std?rev=8c2c245#8c2c24555e064cff3db138ec330de49797c5f18e"
 dependencies = [
  "ckb-hash",
  "proc-macro2",

@@ -258,12 +258,28 @@ impl From<CellQueryOptions> for SearchKey {
     }
 }
 
+/// Result order for [`Indexer::get_cells`] and [`Indexer::get_transactions`].
+///
+/// Discriminants match the SSRI `get_cells` register: [`Order::Asc`] is `0`,
+/// [`Order::Desc`] is `1`. [`CellQueryOptions::order`] stays a separate hint
+/// and is not copied onto [`SearchKey`].
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash)]
+#[repr(u64)]
+pub enum Order {
+    /// Oldest first.
+    #[default]
+    Asc = 0,
+    /// Newest first.
+    Desc = 1,
+}
+
 /// Sync live-cell / transaction search.
 pub trait Indexer {
     /// Paginated live-cell search (spent cells excluded).
     fn get_cells(
         &self,
         search_key: &SearchKey,
+        order: Order,
         limit: u32,
         cursor: Option<&[u8]>,
     ) -> Result<Pagination<LiveCell>>;
@@ -273,6 +289,7 @@ pub trait Indexer {
     fn get_transactions(
         &self,
         search_key: &SearchKey,
+        order: Order,
         limit: u32,
         cursor: Option<&[u8]>,
     ) -> Result<Pagination<Tx>>;
@@ -282,15 +299,20 @@ pub trait Indexer {
 pub struct GetCellsIter<'a, I: Indexer> {
     indexer: &'a I,
     search_key: SearchKey,
+    order: Order,
     cursor: Option<Vec<u8>>,
 }
 
 impl<'a, I: Indexer> GetCellsIter<'a, I> {
     /// Create an iterator over all live cells matching `search_key`.
+    ///
+    /// Pages use [`Order::Asc`], the same order host `get_cells` used before
+    /// `order` was a trait argument.
     pub fn new(indexer: &'a I, search_key: SearchKey) -> Self {
         GetCellsIter {
             indexer,
             search_key,
+            order: Order::Asc,
             cursor: None,
         }
     }
@@ -298,9 +320,9 @@ impl<'a, I: Indexer> GetCellsIter<'a, I> {
     /// Fetch the next page of up to `limit` cells. Returns `Ok(None)` once a
     /// page comes back empty (iterator exhausted).
     pub fn next_batch(&mut self, limit: u32) -> Result<Option<Vec<LiveCell>>> {
-        let page = self
-            .indexer
-            .get_cells(&self.search_key, limit, self.cursor.as_deref())?;
+        let page =
+            self.indexer
+                .get_cells(&self.search_key, self.order, limit, self.cursor.as_deref())?;
         if page.objects.is_empty() {
             return Ok(None);
         }

@@ -34,8 +34,8 @@ use tokio::{
 use crate::{
     error::{self, CalculatorError},
     indexer::{
-        json::{self, Order},
-        Indexer, LiveCell, Pagination, SearchKey, Tx,
+        json::{self, Order as JsonOrder},
+        Indexer, LiveCell, Order, Pagination, SearchKey, Tx,
     },
     types::{h256_to_hash, hash_to_h256, packed, Hash256},
 };
@@ -221,10 +221,11 @@ impl RpcClient {
     fn request_cells(
         &self,
         search_key: json::SearchKey,
+        order: Order,
         limit: u32,
         cursor: Option<JsonBytes>,
     ) -> Rpc<json::Pagination<json::Cell>> {
-        let order = Order::Asc;
+        let order = json_order(order);
         let limit = Uint32::from(limit);
         let future = jsonrpc!(
             "get_cells",
@@ -245,10 +246,11 @@ impl RpcClient {
     fn request_transactions(
         &self,
         search_key: json::SearchKey,
+        order: Order,
         limit: u32,
         cursor: Option<JsonBytes>,
     ) -> Rpc<json::Pagination<json::Tx>> {
-        let order = Order::Asc;
+        let order = json_order(order);
         let limit = Uint32::from(limit);
         let future = jsonrpc!(
             "get_transactions",
@@ -428,6 +430,13 @@ fn packed_header(header: HeaderView) -> packed::Header {
     header.inner.into()
 }
 
+fn json_order(order: Order) -> JsonOrder {
+    match order {
+        Order::Asc => JsonOrder::Asc,
+        Order::Desc => JsonOrder::Desc,
+    }
+}
+
 impl Node for RpcClient {
     fn network(&self) -> Network {
         self.network.clone()
@@ -495,12 +504,13 @@ impl Indexer for RpcClient {
     fn get_cells(
         &self,
         search_key: &SearchKey,
+        order: Order,
         limit: u32,
         cursor: Option<&[u8]>,
     ) -> error::Result<Pagination<LiveCell>> {
         let json_key: json::SearchKey = search_key.clone().into();
         let cursor = cursor.map(|c| JsonBytes::from_vec(c.to_vec()));
-        let page = block_on_rpc(self.request_cells(json_key, limit, cursor))?;
+        let page = block_on_rpc(self.request_cells(json_key, order, limit, cursor))?;
         Ok(Pagination {
             objects: page.objects.into_iter().map(Into::into).collect(),
             last_cursor: page.last_cursor.into_bytes().to_vec(),
@@ -510,12 +520,13 @@ impl Indexer for RpcClient {
     fn get_transactions(
         &self,
         search_key: &SearchKey,
+        order: Order,
         limit: u32,
         cursor: Option<&[u8]>,
     ) -> error::Result<Pagination<Tx>> {
         let json_key: json::SearchKey = search_key.clone().into();
         let cursor = cursor.map(|c| JsonBytes::from_vec(c.to_vec()));
-        let page = block_on_rpc(self.request_transactions(json_key, limit, cursor))?;
+        let page = block_on_rpc(self.request_transactions(json_key, order, limit, cursor))?;
         Ok(Pagination {
             objects: page
                 .objects

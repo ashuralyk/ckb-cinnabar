@@ -12,7 +12,7 @@ use alloc::vec::Vec;
 
 use crate::kernel::{
     error::{CalculatorError, Result},
-    indexer::{Indexer, ScriptType, SearchKey, SearchMode},
+    indexer::{Indexer, Order, ScriptType, SearchKey, SearchMode},
     rpc::Node,
     types::packed,
 };
@@ -39,7 +39,7 @@ impl<T: Node + Indexer> Source for T {
             with_data: Some(false),
             group_by_transaction: None,
         };
-        let page = self.get_cells(&key, 1, None)?;
+        let page = self.get_cells(&key, Order::Asc, 1, None)?;
         page.objects
             .into_iter()
             .next()

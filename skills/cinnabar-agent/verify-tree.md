@@ -30,8 +30,9 @@ fail or be reused:
 Do not start from user verbs. Verbs become **recipes** after the relation
 table exists.
 
-Show this split in the confirmation pack ([confirm.md](confirm.md)) and wait.
-The catalog there is the bar for “have we thought about it”.
+Compose this tree only after the ingredients in [confirm.md](confirm.md) are
+enough, then show the tree and wait. The catalog there is the agent’s bar
+for “have we thought about it”, not a list to read to the user.
 
 ## Relations
 
@@ -87,7 +88,7 @@ Rules:
 - Later nodes **read Context**; they do not reload the same cells.
 - Off-chain uses the **same byte types**. Put them in `protocol/` /
   `core/common/` when more than one crate needs them. Decode with the serde
-  plan from the confirmation pack. The default is **serde_molecule**
+  plan recorded on the accepted tree. The default is **serde_molecule**
   (`from_slice` into Context). Their own plan uses the entry point they
   named. Any decode failure returns the project's single molecule
   `define_errors!` code. Dual-written constants (block windows, code hashes)
@@ -163,7 +164,7 @@ cinnabar_main!(
 
 ## Optional SSRI door
 
-Add this only when section 0 of the confirmation pack is **SSRI**
+Add this only when section 0 of the accepted tree is **SSRI**
 ([confirm.md](confirm.md)). That choice also puts `calculator/` in kernel
 mode ([calculate.md](calculate.md)); guest wrappers call those kernel
 `Instruction`s. Feature `ssri` is the verifier default. The **non-SSRI**
@@ -178,8 +179,11 @@ expands `program_entry`, `should_fallback`, and `ssri_methods!`.
 
 Each right-hand side is an expression `export` turns into bytes: a guest
 function, `&[u8]`, `u8`, `Vec<u8>`, or `Result`. Hop `verify()` stays on the
-tree. `SsriSource` implements kernel `Source` (`find_out_point_by_type`,
-`find_cell_by_out_point`, `find_cell_data_by_out_point`). `SsriArgs` holds
+tree. `SsriSource` implements kernel `RPC` for `network`, `get_live_cell`,
+`get_header`, `get_header_by_number`, `get_block_hash`,
+`get_transaction_block_hash`, and `get_cells`. `get_tip_header`,
+`get_tip_block_number`, `min_fee_rate`, and `get_transactions` return
+`SourceUnavailable`. `Source` lookups still come from that `RPC`. `SsriArgs` holds
 hex-decoded slots. Slot 0 is the method path. Later slots follow that
 method's own definition; read them with `SsriArgs::bytes(index)`.
 
@@ -279,7 +283,8 @@ Create Order      → no Verify hop   (lock only in outputs)
   elapsed
 - Recipes: `Instruction::new` per row. Calculator does not re-check rent.
 - Tests: always-success user locks; this contract binary; xUDT binary if that
-  type group runs; headers linked to cells
+  type group runs; headers linked to cells. Each case calls the calculator
+  recipe, then CKB-VM checks that transaction.
 
 The same pattern covers a game global + session in one binary: args select
 identity, input/output counts select create/update/settle, Context holds
@@ -301,7 +306,8 @@ define_errors!(TokenError, {
 ```
 
 Match tests with `assert_verify!(&rpc, ixs, 22)` or
-`script_exit_code() == Some(22)`.
+`script_exit_code() == Some(22)`. `ixs` includes the calculator recipe;
+CKB-VM runs the transaction that recipe assembled.
 
 Molecule decode and encode failures (`serde_molecule` or the plan they
 named) share **one** custom code per generated project, for example

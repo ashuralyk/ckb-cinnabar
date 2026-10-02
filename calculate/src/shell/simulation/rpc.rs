@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     error::{self, CalculatorError},
-    indexer::{json, Indexer, LiveCell, Pagination, ScriptType, SearchKey, SearchMode, Tx},
+    indexer::{json, Indexer, LiveCell, Order, Pagination, ScriptType, SearchKey, SearchMode, Tx},
     rpc::{Host, Network, Node, Rpc, RPC},
     skeleton::CellOutputEx,
     types::{h256_to_hash, hash_to_h256, Hash256},
@@ -496,12 +496,16 @@ impl Indexer for FakeRpcClient {
     fn get_cells(
         &self,
         search_key: &SearchKey,
+        order: Order,
         limit: u32,
         cursor: Option<&[u8]>,
     ) -> error::Result<Pagination<LiveCell>> {
-        let (cells, next) = self
-            .lock()
-            .get_cells_by_search_key(search_key, limit as usize, cursor);
+        let (mut cells, next) =
+            self.lock()
+                .get_cells_by_search_key(search_key, limit as usize, cursor);
+        if order == Order::Desc {
+            cells.reverse();
+        }
         Ok(Pagination {
             objects: cells,
             last_cursor: next.to_le_bytes().to_vec(),
@@ -511,17 +515,22 @@ impl Indexer for FakeRpcClient {
     fn get_transactions(
         &self,
         _search_key: &SearchKey,
+        order: Order,
         _limit: u32,
         _cursor: Option<&[u8]>,
     ) -> error::Result<Pagination<Tx>> {
+        let mut objects: Vec<Tx> = self
+            .lock()
+            .fake_txs
+            .clone()
+            .into_iter()
+            .map(json::Tx::into_kernel)
+            .collect();
+        if order == Order::Desc {
+            objects.reverse();
+        }
         Ok(Pagination {
-            objects: self
-                .lock()
-                .fake_txs
-                .clone()
-                .into_iter()
-                .map(json::Tx::into_kernel)
-                .collect(),
+            objects,
             last_cursor: Vec::new(),
         })
     }
