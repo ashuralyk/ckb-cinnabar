@@ -212,6 +212,8 @@ Fields Root (or first hop) will fill; which predicates read them; what is
   `argv[offset + index]`, offset defaults to 0), and
   `SsriSource` as kernel `RPC` (`network`, `get_live_cell`, headers, block
   hashes, `get_cells`; tip, fee, and `get_transactions` are unavailable).
+  Each guest function’s rustdoc lists those arguments (index, meaning,
+  converter or encoding) and matches the reads in the body.
 - **Out of Verify (will not check on-chain):** e.g. UX strings, APY text,
   display DNA, Fiber multiaddr in witness.
 

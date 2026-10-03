@@ -7,6 +7,10 @@ shared logic with outputs folded into `Context`**. The tree is that method
 made executable. It is a **flowchart** (each node once), not an RPC router
 and not a mandatory `intent::*` list.
 
+The generated verifier’s crate docs and every node’s `///` state why that
+node is in the tree and what it checks. Same rule for the calculator in
+[calculate.md](calculate.md). Full table: [SKILL.md](SKILL.md).
+
 ## Walk semantics
 
 `cinnabar_main!` starts at `TREE_ROOT`. Each node is visited **once** (removed
@@ -197,6 +201,13 @@ The method body is a guest wrapper. It decodes `SsriArgs` and runs a kernel
 `Instruction` (verifier feature `ssri` depends on the calculator kernel).
 A `std` host recipe is a shell type and stays on the host.
 
+Every guest function in the `SSRI { }` arm has a rustdoc. Purpose and
+functionality come first. Then the argument list. `argv[0]` is the method
+id. Each later slot is one line: index after the offset the body uses, what
+it means, and the converter or encoding. The list matches the `bytes` /
+`get` / `molecule` calls in the body. A method with no caller arguments
+says so. A constant RHS (`"UDT.name" => "Example"`) has no argument list.
+
 ```rust
 use alloc::vec::Vec;
 use ckb_cinnabar_verifier::{
@@ -204,6 +215,15 @@ use ckb_cinnabar_verifier::{
     Error, Result,
 };
 
+/// Mint units to one recipient.
+///
+/// Purpose: an on-chain caller asks this contract to assemble a mint.
+/// Builds that mint `Instruction` and returns the wire bytes.
+///
+/// `argv[0]` is the method id (`method_path`). Arguments use `with_offset(1)`:
+///
+/// - 0: recipient, ckb2021 address (`address`)
+/// - 1: capacity in shannons, 8 little-endian bytes (`capacity`)
 fn mint(_source: &SsriSource, args: SsriArgs) -> Result<Vec<u8>> {
     let _path = args.method_path()?;
     let args = args.with_offset(1);

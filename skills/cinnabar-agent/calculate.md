@@ -211,7 +211,10 @@ Each identity module has the same shape. Read any one of them the same way:
    of those operations. No other identity’s recipes.
 
 `calculator/src/lib.rs` is only the index: `mod` plus `pub use` of the
-recipes. No recipe bodies there.
+recipes. No recipe bodies there. Its `//!` still states which identities
+this crate assembles. Each identity file’s `//!`, and each recipe’s `///`,
+state that identity’s purpose and what the recipe places. See the rustdoc
+rule in [SKILL.md](SKILL.md).
 
 ```text
 calculator/src/lib.rs          # pub mod issue; pub use issue::seal;

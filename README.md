@@ -98,7 +98,9 @@ for `FromSsriArg` and any molecule `Entity`. Built-in converters: `hash`,
 `script`, `address`, `capacity` (shannons, 8 little-endian bytes), `utf8`,
 and `transaction`. The method body is a guest wrapper: it reads `SsriArgs`
 and runs a kernel `Instruction` (the verifier's calculator dependency is
-`--no-default-features`). The generated contract template stays hop-only.
+`--no-default-features`). Each guest function’s rustdoc lists its arguments
+(index, meaning, converter or encoding) and matches those reads. The
+generated contract template stays hop-only.
 
 ### Contract project template
 

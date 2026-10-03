@@ -226,6 +226,8 @@ Rules:
   not a single filtered test unless you are mid-debug — acceptance is still
   the full suite afterward.
 - Quote the commands and their exit status in the reply when you claim done.
+- Before that claim, walk [After generation](#after-generation-checklist)
+  at the end of this file. An open item means fix and re-check.
 
 ## Decompose (always this order)
 
@@ -273,12 +275,35 @@ cinnabar_main!(
 ## Verify node contract
 
 ```rust
+/// Spend a sealed box.
+///
+/// Purpose: only the holder may move a box that has not been opened.
+/// Checks that the holder’s lock is in the inputs and that the sealed
+/// payload is unchanged.
 fn verify(&mut self, name: &str, ctx: &mut Context) -> Result<Option<&str>> {
     // Ok(Some("next_hop")) — continue (intent::* or domain string)
     // Ok(None) — success, stop
     // Err(MyError::Foo.into()) — script i8
 }
 ```
+
+## Rustdoc on every generated calculator and verifier
+
+Every generated calculator and every generated verifier carries rustdoc for
+its design purpose and its functionality. The template’s generic comments
+are the shape; rewrite them for this contract. A later module, recipe, or
+node without that comment is not done.
+
+| Item | Comment | What it says |
+| --- | --- | --- |
+| `calculator/src/lib.rs` and each calculator module | `//!` | Which identities this crate assembles, and how a caller runs a recipe |
+| Each public recipe and each custom `Operation` | `///` | Which hop it realizes, and what cells, deps, or witnesses it places |
+| Contract `main.rs` and each verifier module | `//!` | Which tree this binary is, and how Root classifies |
+| `Context`, `Root`, and every hop struct | `///` | Which product rule the node exists for, and what it checks or passes on |
+
+Purpose is why it is in the tree. Functionality is what it assembles or
+what it checks. An SSRI guest function keeps its argument list in the same
+rustdoc, after those two sentences. Do not restate the identifier and stop.
 
 ## Calculate + test + deploy
 
@@ -343,16 +368,26 @@ setup: [calculate.md](calculate.md).
 - Record non-SSRI and serde_molecule on the tree unless an ingredient needs
   on-chain methods (SSRI, kernel calculator) or they already named a codec
   and both entry points.
+- When SSRI methods are implemented, put an argument list in each guest
+  function’s rustdoc: index, meaning, and converter or encoding. It matches
+  the `SsriArgs` reads. `argv[0]` is the method id.
 - Test each recipe by running it, then checking the assembled transaction
   in CKB-VM (`assert_verify!` or `TransactionSimulator`).
 - When the calculator lists more than one identity, split Verify, Calculate,
   and tests by that identity. Each module holds that identity’s operations
   (type and impl together) and one recipe per hop. `calculator/src/lib.rs`
   only re-exports.
+- Write rustdoc on every generated calculator and verifier: crate and module
+  `//!`, and `///` on each recipe, custom operation, `Context`, and hop.
+  State design purpose and functionality for this contract.
 
 **Don't**
 
 - Start from bare `ckb-std` + Capsule unless the user forbids Cinnabar.
+- Ship a generated calculator or verifier item with no rustdoc, or with a
+  comment that only repeats its name. Purpose and functionality are required
+  on the crate, each module, each recipe, each custom operation, and each
+  hop.
 - Show the verification tree, batch the interview into one questionnaire, or
   start coding while any product detail is still unspoken.
 - Implement from an unconfirmed tree, or silently widen scope while coding.
@@ -364,6 +399,8 @@ setup: [calculate.md](calculate.md).
 - Replace foreign protocol scripts with always-success.
 - Register hop `verify()` as an SSRI method, or pass a `std` host recipe as
   an `SSRI { }` right-hand side.
+- Implement an SSRI guest function without a rustdoc argument list, or let
+  that list disagree with the `SsriArgs` reads in the body.
 - Hand-write `program_entry`, `should_fallback`, or `ssri_methods!`. Put the
   wire table in `cinnabar_main!`'s `SSRI { "Wire.name" => expr }` arm. Each
   name is a string literal in that arm.
@@ -397,3 +434,53 @@ kernel so a guest method can assemble.
 
 Humans: install this folder with [INSTALL.md](INSTALL.md) so the skill works
 outside a Cinnabar checkout.
+
+## After generation (checklist)
+
+Walk this after the project exists, and again after every later change,
+before calling the work done. Check the generated files. An open item means
+fix it and re-check. Do not deploy while any item is open.
+
+### Tree
+
+- [ ] Implementation matches the accepted verification tree. No hop, recipe, or test the tree did not allow.
+
+### Profile and codec
+
+- [ ] **non-SSRI:** calculator stays the default shell. `cinnabar_main!` is hop-only. No `SSRI { }` arm.
+- [ ] **SSRI:** `calculator` is `#![no_std]` with `default-features = false` and kernel operations only. `tests/` stays on `std`. Guest wrappers call those kernel `Instruction`s from the `SSRI { }` arm.
+- [ ] One serde plan on both sides. serde_molecule unless they named a crate and both entry points. No second codec for the same bytes.
+- [ ] Every molecule or serde failure maps to one custom error (`CUSTOM_ERROR_START` or later). Not one code per variant.
+- [ ] Application imports use crate-root paths (`instruction`, `operation`, `rpc`, `skeleton`, `address`). No `kernel::` or `shell::`.
+
+### Verifier
+
+- [ ] `Context`, `Root`, and every hop are registered in `cinnabar_main!`. No cycle.
+- [ ] `intent::*` only when that hop is exactly Create, Transfer, or Burn of this script. Otherwise domain hop names.
+- [ ] A lock’s Create is not a hop that expects this script to run.
+- [ ] Shared parses sit in `Context`. Later nodes read it and do not reload those cells.
+
+### Calculator
+
+- [ ] One recipe per accepted hop. It assembles the transition. It does not re-implement Verify.
+- [ ] More than one identity: Verify, Calculate, and tests use that same cut. Each custom `Operation`’s type and impl stay in its identity module. `calculator/src/lib.rs` only re-exports.
+
+### Rustdoc
+
+- [ ] Calculator crate, each calculator module, each recipe, and each custom operation: design purpose and functionality.
+- [ ] Verifier crate, each verifier module, `Context`, `Root`, and each hop: design purpose and functionality.
+- [ ] The comments describe this contract. They do not only repeat the item’s name, and they do not leave the template’s generic text in place.
+- [ ] Each SSRI guest function lists its arguments in that same rustdoc (index, meaning, converter or encoding), matching the `SsriArgs` reads. `argv[0]` is the method id.
+
+### Tests
+
+- [ ] Each case calls a calculator recipe, then CKB-VM (`assert_verify!` or `TransactionSimulator`).
+- [ ] Every hop Verify runs has a success exit `0`. Each important error is asserted with `script_exit_code()`, not by scraping logs.
+- [ ] User locks are always-success. Spore, Cluster, xUDT, and type-burn that Verify executes come from this skill’s `binaries/`.
+- [ ] No test accepts a hand-built business transaction, a skeleton-only check, or a host call to `verify()`.
+
+### Commands
+
+- [ ] `make build` exits 0 and writes the RISC-V binary under `build/release/`.
+- [ ] `make test` exits 0 for the full suite, after that build.
+- [ ] The reply quotes both commands and their exit status.
