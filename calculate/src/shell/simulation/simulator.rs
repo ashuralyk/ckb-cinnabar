@@ -1,3 +1,4 @@
+use core::panic::Location;
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{
@@ -7,19 +8,20 @@ use crate::{
     rpc::RPC,
     skeleton::TransactionSkeleton,
     types::hash_to_h256,
+    TYPE_ID_CODE_HASH,
 };
 use ckb_chain_spec::consensus::{Consensus, ConsensusBuilder};
-use ckb_script::{ScriptError, TransactionScriptError, TransactionScriptsVerifier, TxVerifyEnv};
+use ckb_script::{ScriptError, ScriptGroup, TransactionScriptsVerifier, TxVerifyEnv};
 use ckb_traits::{CellDataProvider, ExtensionProvider, HeaderProvider};
 use ckb_types::{
     bytes::Bytes,
     core::{
         cell::{CellMeta, ResolvedTransaction},
         hardfork::{HardForks, CKB2021, CKB2023},
-        Cycle, HeaderBuilder, HeaderView, TransactionInfo,
+        Cycle, HeaderBuilder, HeaderView, ScriptHashType, TransactionInfo,
     },
     packed::{self, Byte32, OutPoint},
-    prelude::{IntoHeaderView, Unpack},
+    prelude::{Entity, IntoHeaderView, Unpack},
     H256,
 };
 
@@ -155,25 +157,42 @@ impl TransactionSimulator {
 
     /// Synchronous wrapper of [`TransactionSimulator::async_verify`] on a
     /// fresh current-thread runtime.
+    #[track_caller]
     pub fn verify<T: RPC>(
         self,
         rpc: &T,
         instructions: Vec<Instruction<T>>,
         max_cycles: u64,
     ) -> CalcResult<Cycle> {
+        let caller = Location::caller();
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|e| CalculatorError::Other(e.to_string()))?
-            .block_on(self.async_verify(rpc, instructions, max_cycles))
+            .block_on(self.async_verify_at(caller, rpc, instructions, max_cycles))
     }
 
     /// Run `instructions` against `rpc`, resolve the resulting transaction,
     /// and execute every script group in a native CKB-VM. Returns consumed
     /// cycles on success; script rejections surface as
     /// [`CalculatorError::ScriptValidation`].
+    ///
+    /// Prints `[ckb-vm] file:line consumed cycles: N`, including when a script
+    /// exits non-zero. `file:line` is this function when called directly;
+    /// [`crate::assert_verify`] prints the test line.
     pub async fn async_verify<T: RPC>(
         self,
+        rpc: &T,
+        instructions: Vec<Instruction<T>>,
+        max_cycles: u64,
+    ) -> CalcResult<Cycle> {
+        self.async_verify_at(vm_call_site(), rpc, instructions, max_cycles)
+            .await
+    }
+
+    async fn async_verify_at<T: RPC>(
+        self,
+        caller: &Location<'static>,
         rpc: &T,
         instructions: Vec<Instruction<T>>,
         max_cycles: u64,
@@ -212,27 +231,120 @@ impl TransactionSimulator {
                 println!("[contract debug] {}", msg);
             }),
         );
-        verifier.verify(max_cycles).map_err(|error| {
-            error
-                .root_cause()
-                .downcast_ref::<TransactionScriptError>()
-                .map(|error| calculator_error_from_script_error(error.script_error().clone()))
-                .unwrap_or_else(|| CalculatorError::Simulation(error.to_string()))
-        })
+        let (cycles, result) = execute_groups(&verifier, max_cycles);
+        println!(
+            "[ckb-vm] {}:{} consumed cycles: {cycles}",
+            caller.file(),
+            caller.line()
+        );
+        result
     }
+}
+
+/// Run each script group. A non-zero exit still counts that group's cycles.
+fn execute_groups(
+    verifier: &TransactionScriptsVerifier<Context>,
+    max_cycles: u64,
+) -> (u64, CalcResult<Cycle>) {
+    let groups: Vec<ScriptGroup> = verifier.groups().map(|(_, group)| group.clone()).collect();
+    let mut cycles = 0u64;
+    for group in groups {
+        let remain = match max_cycles.checked_sub(cycles) {
+            Some(remain) => remain,
+            None => {
+                return (
+                    cycles,
+                    Err(CalculatorError::Simulation(format!(
+                        "cycles overflow after {cycles}"
+                    ))),
+                );
+            }
+        };
+        match run_group(verifier, &group, remain) {
+            Ok(used) => match cycles.checked_add(used) {
+                Some(total) => cycles = total,
+                None => {
+                    return (
+                        cycles,
+                        Err(CalculatorError::Simulation(format!(
+                            "cycles overflow after {cycles}"
+                        ))),
+                    );
+                }
+            },
+            Err((used, error)) => {
+                let total = cycles.saturating_add(used);
+                return (total, Err(error));
+            }
+        }
+    }
+    (cycles, Ok(cycles))
+}
+
+fn run_group(
+    verifier: &TransactionScriptsVerifier<Context>,
+    group: &ScriptGroup,
+    max_cycles: u64,
+) -> Result<u64, (u64, CalculatorError)> {
+    if is_type_id(&group.script) {
+        let hash = group.script.calc_script_hash();
+        return match verifier.verify_single(group.group_type, &hash, max_cycles) {
+            Ok(used) => Ok(used),
+            Err(error) => Err((0, calculator_error_from_script_error(error))),
+        };
+    }
+    match verifier.detailed_run(group, max_cycles) {
+        Ok(result) if result.exit_code == 0 => Ok(result.consumed_cycles),
+        Ok(result) => Err((
+            result.consumed_cycles,
+            calculator_error_from_script_error(ScriptError::validation_failure(
+                &group.script,
+                result.exit_code,
+            )),
+        )),
+        Err(error) => Err((0, calculator_error_from_script_error(error))),
+    }
+}
+
+fn is_type_id(script: &packed::Script) -> bool {
+    let hash_type: u8 = script.hash_type().into();
+    script.code_hash().as_slice() == TYPE_ID_CODE_HASH.as_slice()
+        && hash_type == ScriptHashType::Type as u8
+}
+
+/// Location of the VM run that should appear in the cycles line.
+///
+/// Synchronous so `#[track_caller]` records the caller. [`crate::assert_verify`]
+/// calls this at the test.
+#[doc(hidden)]
+#[track_caller]
+pub fn vm_call_site() -> &'static Location<'static> {
+    Location::caller()
 }
 
 /// Assemble `instructions` and assert the CKB-VM exit code.
 ///
-/// `expected_exit_code` `0` means success (returns consumed cycles). Non-zero
-/// matches an on-chain script `i8` (see `define_errors!`).
+/// Returns consumed cycles when the exit code matches. `0` is success.
+/// Non-zero matches an on-chain script `i8` (see `define_errors!`).
+/// The VM run prints `[ckb-vm] file:line consumed cycles: N`.
 pub async fn expect_verify<T: RPC>(
     rpc: &T,
     instructions: Vec<Instruction<T>>,
     expected_exit_code: i8,
 ) -> CalcResult<u64> {
+    expect_verify_at(vm_call_site(), rpc, instructions, expected_exit_code).await
+}
+
+/// [`expect_verify`] with an explicit callsite for the cycles line.
+#[doc(hidden)]
+pub async fn expect_verify_at<T: RPC>(
+    caller: &'static Location<'static>,
+    rpc: &T,
+    instructions: Vec<Instruction<T>>,
+    expected_exit_code: i8,
+) -> CalcResult<u64> {
     let result = TransactionSimulator::default()
-        .async_verify(rpc, instructions, DEFAULT_MAX_CYCLES)
+        .async_verify_at(caller, rpc, instructions, DEFAULT_MAX_CYCLES)
         .await;
     match (expected_exit_code, result) {
         (0, Ok(cycles)) => Ok(u64::from(cycles)),

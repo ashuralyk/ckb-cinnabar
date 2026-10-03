@@ -183,9 +183,15 @@ tree. `SsriSource` implements kernel `RPC` for `network`, `get_live_cell`,
 `get_header`, `get_header_by_number`, `get_block_hash`,
 `get_transaction_block_hash`, and `get_cells`. `get_tip_header`,
 `get_tip_block_number`, `min_fee_rate`, and `get_transactions` return
-`SourceUnavailable`. `Source` lookups still come from that `RPC`. `SsriArgs` holds
-hex-decoded slots. Slot 0 is the method path. Later slots follow that
-method's own definition; read them with `SsriArgs::bytes(index)`.
+`SourceUnavailable`. `Source` lookups still come from that `RPC`. `SsriArgs`
+copies each slot's hex and decodes a slot when a reader runs. `method_path()`
+reads `argv[0]` as the 8-byte method id. Argument `n` is `argv[offset + n]`,
+and `offset` starts at 0 (`with_offset(1)` makes argument 0 the first slot
+after the method path). `bytes(index, convert)` passes that one slot to
+`FnOnce(&[u8]) -> Result<T, E>` and returns the converter's error unchanged.
+`as_bytes(index)` is the decoded slice. `get` (`FromSsriArg`) and `molecule`
+(`Entity`) wrap `bytes`. Built-in converters: `hash`, `script`, `address`,
+`capacity` (shannons, 8 little-endian bytes), `utf8`, `transaction`.
 
 The method body is a guest wrapper. It decodes `SsriArgs` and runs a kernel
 `Instruction` (verifier feature `ssri` depends on the calculator kernel).
@@ -194,13 +200,19 @@ A `std` host recipe is a shell type and stays on the host.
 ```rust
 use alloc::vec::Vec;
 use ckb_cinnabar_verifier::{
-    ssri::{SsriArgs, SsriSource},
-    Result,
+    ssri::{address, capacity, SsriArgs, SsriSource},
+    Error, Result,
 };
 
 fn mint(_source: &SsriSource, args: SsriArgs) -> Result<Vec<u8>> {
-    let _to = args.bytes(1)?;
-    let _amount = args.bytes(2)?;
+    let _path = args.method_path()?;
+    let args = args.with_offset(1);
+    let _to = args
+        .bytes(0, address)
+        .map_err(|err| err.map_convert(|_| Error::Custom(20)))?;
+    let _ckb = args
+        .bytes(1, capacity)
+        .map_err(|err| err.map_convert(|_| Error::Custom(20)))?;
     // assemble with a kernel Instruction, then return wire bytes
     Ok(Vec::new())
 }

@@ -11,9 +11,8 @@ use crate::{
     types::{h256_to_hash, hash_to_h256, Hash256},
 };
 use ckb_jsonrpc_types::{
-    BlockNumber, BlockView, CellData, CellInfo, CellWithStatus, ChainInfo, HeaderView, JsonBytes,
-    OutPoint, OutputsValidator, ResponseFormat, Status, Transaction, TransactionView,
-    TransactionWithStatusResponse, TxStatus,
+    BlockNumber, BlockView, ChainInfo, HeaderView, OutPoint, OutputsValidator, ResponseFormat,
+    Status, Transaction, TransactionView, TransactionWithStatusResponse, TxStatus,
 };
 use ckb_types::{
     core, packed,
@@ -162,27 +161,6 @@ impl FakeProvider {
             }
         }
         (objects, offset)
-    }
-
-    fn get_cell_by_outpoint(&self, out_point: &OutPoint) -> Option<CellWithStatus> {
-        let (_, cell) = self
-            .fake_cells
-            .iter()
-            .find(|(value, _)| value == out_point)?;
-        let cell_with_status = CellWithStatus {
-            cell: Some(CellInfo {
-                data: Some(CellData {
-                    content: JsonBytes::from_vec(cell.data.clone()),
-                    hash: H256::default(),
-                }),
-                output: cell.output.clone().into(),
-            }),
-            status: "live".to_owned(),
-            // Fake cells have no recorded block; newer ckb-jsonrpc-types
-            // requires the field, so leave it unknown.
-            block_hash: None,
-        };
-        Some(cell_with_status)
     }
 
     fn get_header_by_hash(&self, block_hash: &H256) -> Option<HeaderView> {

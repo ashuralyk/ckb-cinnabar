@@ -77,8 +77,9 @@ impl<T: Default> TransactionVerifier<T> {
 ///
 /// Each RHS is any expression `ssri::export` can turn into bytes: a
 /// `fn(&SsriSource, SsriArgs) -> Result<R>`, a `&[u8]` / `str` constant, a
-/// `u8`, a `Vec<u8>` local, or a `Result`. The guest fn reads each slot with
-/// `SsriArgs::get` or `SsriArgs::molecule`.
+/// `u8`, a `Vec<u8>` local, or a `Result`. The guest fn reads one slot with
+/// `SsriArgs::bytes(index, convert)`. `get` and `molecule` wrap that call.
+/// `as_bytes` is the decoded slice. `method_path` reads `argv[0]`.
 /// `ssri_methods!` always emits `SSRI.version`, `SSRI.get_methods`, and
 /// `SSRI.has_methods`. Do not repeat those wire strings in the block.
 ///

@@ -208,7 +208,8 @@ Fields Root (or first hop) will fill; which predicates read them; what is
 - SSRI follows section 0. **non-SSRI:** hop-only, no `SSRI { }` arm.
   **SSRI:** wire names in `cinnabar_main!`'s `SSRI { }` arm (string literals),
   each RHS (`&[u8]` / `u8` / guest fn that calls a kernel `Instruction`),
-  argv slots (`SsriArgs::bytes`; slot 0 is the method path), and
+  argv slots (`method_path()` is argv[0]; `bytes(index, convert)` reads
+  `argv[offset + index]`, offset defaults to 0), and
   `SsriSource` as kernel `RPC` (`network`, `get_live_cell`, headers, block
   hashes, `get_cells`; tip, fee, and `get_transactions` are unavailable).
 - **Out of Verify (will not check on-chain):** e.g. UX strings, APY text,

@@ -69,6 +69,7 @@ pub use types::{SHANNONS_PER_BYTE, TYPE_ID_CODE_HASH};
 /// Assert CKB-VM exit code after assembling `instructions` against `rpc`.
 ///
 /// Must be used inside an `async` test or runtime. `0` means success.
+/// Prints `[ckb-vm] file:line consumed cycles: N` for this call.
 ///
 /// ```ignore
 /// ckb_cinnabar_calculator::assert_verify!(&rpc, instructions, 0).unwrap();
@@ -76,9 +77,10 @@ pub use types::{SHANNONS_PER_BYTE, TYPE_ID_CODE_HASH};
 #[cfg(feature = "std")]
 #[macro_export]
 macro_rules! assert_verify {
-    ($rpc:expr, $instructions:expr, $expected_exit:expr) => {
-        $crate::simulation::expect_verify($rpc, $instructions, $expected_exit).await
-    };
+    ($rpc:expr, $instructions:expr, $expected_exit:expr) => {{
+        let caller = $crate::simulation::vm_call_site();
+        $crate::simulation::expect_verify_at(caller, $rpc, $instructions, $expected_exit).await
+    }};
 }
 
 /// Re-exports to eliminate the need for downstream dependencies to specify the

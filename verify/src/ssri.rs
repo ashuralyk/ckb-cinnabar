@@ -6,8 +6,18 @@
 //! the SSRI syscall catalog (`network`, live cell, headers, block hashes,
 //! `get_cells`). Tip, fee rate, and `get_transactions` are not in that catalog.
 
-use alloc::{borrow::Cow, format, string::String, vec, vec::Vec};
-use core::ffi::CStr;
+use alloc::{
+    borrow::Cow,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+use core::{
+    cell::{Ref, RefCell},
+    ffi::CStr,
+    fmt, str,
+};
 
 use ckb_cinnabar_calculator::{
     indexer::{
@@ -17,7 +27,7 @@ use ckb_cinnabar_calculator::{
     network::Network,
     rpc::{Node, RPC},
     types::{packed, Builder, Entity, Hash256, Pack, ScriptHashType},
-    CalculatorError, Result as CalcResult,
+    Address, CalculatorError, Result as CalcResult,
 };
 use ckb_ssri_std::{
     high_level::{self, Network as SsriNetwork},
@@ -231,57 +241,378 @@ impl Indexer for SsriSource {
 
 impl RPC for SsriSource {}
 
-/// Parsed, hex-decoded SSRI argument slots. Slot `0` is always the method path.
+/// Slot failure from [`SsriArgs`], or the error returned by a converter.
 ///
-/// The mapping from slot indices to argument semantics is determined by each method's
-/// definition. This structure stores the argument bytes only. Access argument slot
-/// data directly via [`Self::bytes`], which returns the decoded bytes for a given slot.
+/// A missing slot and a bad hex string are [`ArgError::Args`]. Whatever the
+/// converter returns is [`ArgError::Convert`] and is not rewritten.
+#[derive(Debug)]
+pub enum ArgError<E> {
+    /// Missing slot, offset overflow, or hex that does not decode.
+    Args(Error),
+    /// `convert` rejected the decoded bytes.
+    Convert(E),
+}
+
+impl<E> ArgError<E> {
+    /// Keep a slot failure. Map a converter failure with `f`.
+    pub fn map_convert(self, f: impl FnOnce(E) -> Error) -> Error {
+        match self {
+            ArgError::Args(err) => err,
+            ArgError::Convert(err) => f(err),
+        }
+    }
+}
+
+impl<E> From<ArgError<E>> for Error
+where
+    Error: From<E>,
+{
+    fn from(value: ArgError<E>) -> Self {
+        match value {
+            ArgError::Args(err) => err,
+            ArgError::Convert(err) => err.into(),
+        }
+    }
+}
+
+/// Build `T` from one decoded argument slot.
+pub trait FromSsriArg: Sized {
+    /// Failure owned by this conversion.
+    type Error;
+
+    /// Decode `bytes` into `Self`.
+    fn from_ssri_arg(bytes: &[u8]) -> core::result::Result<Self, Self::Error>;
+}
+
+/// 32-byte hash whose length was not 32.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InvalidHash {
+    /// Length of the decoded slot.
+    pub len: usize,
+}
+
+impl fmt::Display for InvalidHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "hash must be 32 bytes, got {}", self.len)
+    }
+}
+
+/// CKB capacity in shannons.
+///
+/// Wire form is molecule `uint64`: exactly 8 little-endian bytes, the same
+/// layout as a cell output's capacity.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Capacity(u64);
+
+impl Capacity {
+    /// Shannons stored in this capacity.
+    pub fn shannons(self) -> u64 {
+        self.0
+    }
+}
+
+impl From<Capacity> for u64 {
+    fn from(value: Capacity) -> Self {
+        value.0
+    }
+}
+
+/// Capacity slot whose length was not 8.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InvalidCapacity {
+    /// Length of the decoded slot.
+    pub len: usize,
+}
+
+impl fmt::Display for InvalidCapacity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "capacity must be 8 bytes, got {}", self.len)
+    }
+}
+
+/// Bech32m address text that did not parse.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InvalidAddress {
+    detail: String,
+}
+
+impl InvalidAddress {
+    /// Parser message.
+    pub fn detail(&self) -> &str {
+        &self.detail
+    }
+}
+
+impl fmt::Display for InvalidAddress {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.detail)
+    }
+}
+
+/// Molecule `Entity::from_slice` rejected the slot.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MoleculeError {
+    detail: String,
+}
+
+impl MoleculeError {
+    /// Molecule verifier message.
+    pub fn detail(&self) -> &str {
+        &self.detail
+    }
+}
+
+impl fmt::Display for MoleculeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.detail)
+    }
+}
+
+fn molecule_error(err: impl fmt::Display) -> MoleculeError {
+    MoleculeError {
+        detail: err.to_string(),
+    }
+}
+
+/// 32 raw bytes into [`Hash256`].
+pub fn hash(bytes: &[u8]) -> core::result::Result<Hash256, InvalidHash> {
+    bytes
+        .try_into()
+        .map_err(|_| InvalidHash { len: bytes.len() })
+}
+
+/// Molecule `Script`.
+pub fn script(bytes: &[u8]) -> core::result::Result<packed::Script, MoleculeError> {
+    packed::Script::from_slice(bytes).map_err(molecule_error)
+}
+
+/// UTF-8 bech32m address (`ckb1…` / `ckt1…`).
+pub fn address(bytes: &[u8]) -> core::result::Result<Address, InvalidAddress> {
+    let text = str::from_utf8(bytes).map_err(|err| InvalidAddress {
+        detail: err.to_string(),
+    })?;
+    text.parse().map_err(|detail| InvalidAddress { detail })
+}
+
+/// Molecule `uint64` capacity, in shannons.
+pub fn capacity(bytes: &[u8]) -> core::result::Result<Capacity, InvalidCapacity> {
+    let raw: [u8; 8] = bytes
+        .try_into()
+        .map_err(|_| InvalidCapacity { len: bytes.len() })?;
+    Ok(Capacity(u64::from_le_bytes(raw)))
+}
+
+/// UTF-8 text.
+pub fn utf8(bytes: &[u8]) -> core::result::Result<String, str::Utf8Error> {
+    str::from_utf8(bytes).map(ToString::to_string)
+}
+
+/// Molecule `Transaction`.
+pub fn transaction(bytes: &[u8]) -> core::result::Result<packed::Transaction, MoleculeError> {
+    packed::Transaction::from_slice(bytes).map_err(molecule_error)
+}
+
+impl FromSsriArg for Hash256 {
+    type Error = InvalidHash;
+
+    fn from_ssri_arg(bytes: &[u8]) -> core::result::Result<Self, Self::Error> {
+        hash(bytes)
+    }
+}
+
+impl FromSsriArg for packed::Script {
+    type Error = MoleculeError;
+
+    fn from_ssri_arg(bytes: &[u8]) -> core::result::Result<Self, Self::Error> {
+        script(bytes)
+    }
+}
+
+impl FromSsriArg for Address {
+    type Error = InvalidAddress;
+
+    fn from_ssri_arg(bytes: &[u8]) -> core::result::Result<Self, Self::Error> {
+        address(bytes)
+    }
+}
+
+impl FromSsriArg for Capacity {
+    type Error = InvalidCapacity;
+
+    fn from_ssri_arg(bytes: &[u8]) -> core::result::Result<Self, Self::Error> {
+        capacity(bytes)
+    }
+}
+
+impl FromSsriArg for String {
+    type Error = str::Utf8Error;
+
+    fn from_ssri_arg(bytes: &[u8]) -> core::result::Result<Self, Self::Error> {
+        utf8(bytes)
+    }
+}
+
+impl FromSsriArg for packed::Transaction {
+    type Error = MoleculeError;
+
+    fn from_ssri_arg(bytes: &[u8]) -> core::result::Result<Self, Self::Error> {
+        transaction(bytes)
+    }
+}
+
+#[derive(Clone, Debug)]
+struct Slot {
+    hex: Vec<u8>,
+    decoded: RefCell<Option<Vec<u8>>>,
+}
+
+/// SSRI `argv` as an argument extractor.
+///
+/// `from_argv` copies each slot's hex text and does not decode it. Decoding
+/// runs when [`Self::method_path`], [`Self::as_bytes`], or [`Self::bytes`]
+/// reads that slot.
+///
+/// [`Self::method_path`] always reads `argv[0]` as the 8-byte method id.
+/// Argument `index` selects `argv[offset + index]`. `offset` starts at 0.
+/// One call reads one slot. [`Self::bytes`] passes the decoded bytes to a
+/// converter (`FnOnce(&[u8]) -> Result<T, E>`). The converter's error is
+/// returned unchanged. [`Self::get`] and [`Self::molecule`] are that call for
+/// [`FromSsriArg`] and any molecule [`Entity`].
+///
+/// Built-in converters: [`hash`], [`script`], [`address`], [`capacity`],
+/// [`utf8`], [`transaction`].
 ///
 /// # Example
 /// ```ignore
 /// fn mint(_source: &SsriSource, args: SsriArgs) -> Result<Vec<u8>> {
-///     let tx_bytes = args.bytes(1)?;
-///     let to_bytes = args.bytes(2)?;
-///     let amount_bytes = args.bytes(3)?;
-///     // decode/parse as required here
-///     // ...
-///     Ok(Vec::new()) // placeholder
+///     let _path = args.method_path()?;
+///     let args = args.with_offset(1);
+///     let _to = args
+///         .bytes(0, address)
+///         .map_err(|err| err.map_convert(|_| Error::Custom(20)))?;
+///     let _ckb = args
+///         .bytes(1, capacity)
+///         .map_err(|err| err.map_convert(|_| Error::Custom(20)))?;
+///     Ok(Vec::new())
 /// }
 /// ```
 #[derive(Clone, Debug, Default)]
 pub struct SsriArgs {
-    argv: Vec<Vec<u8>>,
+    slots: Vec<Slot>,
+    offset: usize,
 }
 
 impl SsriArgs {
-    /// Hex-decode every `argv` slot.
+    /// Copy each `argv` slot's hex text. Decoding waits until a reader runs.
     pub fn from_argv(argv: &[Arg]) -> Result<Self> {
-        let argv = argv
+        let slots = argv
             .iter()
-            .map(|v| unsafe {
-                decode_hex(CStr::from_ptr(v.as_ptr())).map_err(|_| Error::SSRIMethodsArgsInvalid)
+            .map(|arg| Slot {
+                hex: unsafe { CStr::from_ptr(arg.as_ptr()) }.to_bytes().to_vec(),
+                decoded: RefCell::new(None),
             })
-            .collect::<Result<_>>()?;
-        Ok(SsriArgs { argv })
+            .collect();
+        Ok(SsriArgs { slots, offset: 0 })
     }
 
-    /// Number of slots, including the method path.
+    /// Method id in `argv[0]`: 8 little-endian bytes, the value `ssri_methods!` matches.
+    ///
+    /// This does not use [`Self::offset`].
+    pub fn method_path(&self) -> Result<u64> {
+        let bytes = self.decode_slot(0)?;
+        let raw: [u8; 8] = (&*bytes)
+            .try_into()
+            .map_err(|_| Error::SSRIMethodsArgsInvalid)?;
+        Ok(u64::from_le_bytes(raw))
+    }
+
+    /// Base added to an argument index before choosing an `argv` slot.
+    pub fn offset(&self) -> usize {
+        self.offset
+    }
+
+    /// Set the argument base. Argument `0` then reads `argv[offset]`.
+    pub fn set_offset(&mut self, offset: usize) {
+        self.offset = offset;
+    }
+
+    /// [`Self::set_offset`] and return `self`.
+    pub fn with_offset(mut self, offset: usize) -> Self {
+        self.offset = offset;
+        self
+    }
+
+    /// How many slots are addressable at the current offset.
     pub fn len(&self) -> usize {
-        self.argv.len()
+        self.slots.len().saturating_sub(self.offset)
     }
 
-    /// `true` when [`Self::from_argv`] received an empty `argv`.
+    /// `true` when [`Self::len`] is 0.
     pub fn is_empty(&self) -> bool {
-        self.argv.is_empty()
+        self.len() == 0
     }
 
-    /// Raw bytes of slot `index`.
-    pub fn bytes(&self, index: usize) -> Result<&[u8]> {
-        self.argv
-            .get(index)
-            .map(Vec::as_slice)
+    /// Hex-decode argument `index` and return the bytes.
+    pub fn as_bytes(&self, index: usize) -> Result<Ref<'_, [u8]>> {
+        self.decode_slot(self.argv_index(index)?)
+    }
+
+    /// Hex-decode argument `index`, then `convert`.
+    ///
+    /// `convert` receives one slot. Its `Err` is [`ArgError::Convert`]. A
+    /// missing slot or bad hex is [`ArgError::Args`] and `convert` is not called.
+    pub fn bytes<T, E, F>(&self, index: usize, convert: F) -> core::result::Result<T, ArgError<E>>
+    where
+        F: FnOnce(&[u8]) -> core::result::Result<T, E>,
+    {
+        let raw = self.as_bytes(index).map_err(ArgError::Args)?;
+        convert(&raw).map_err(ArgError::Convert)
+    }
+
+    /// [`Self::bytes`] with [`FromSsriArg`].
+    pub fn get<T: FromSsriArg>(&self, index: usize) -> core::result::Result<T, ArgError<T::Error>> {
+        self.bytes(index, T::from_ssri_arg)
+    }
+
+    /// [`Self::bytes`] with molecule [`Entity::from_slice`].
+    pub fn molecule<T: Entity>(
+        &self,
+        index: usize,
+    ) -> core::result::Result<T, ArgError<MoleculeError>> {
+        self.bytes(index, |raw| T::from_slice(raw).map_err(molecule_error))
+    }
+
+    fn argv_index(&self, index: usize) -> Result<usize> {
+        self.offset
+            .checked_add(index)
             .ok_or(Error::SSRIMethodsArgsInvalid)
     }
+
+    fn decode_slot(&self, argv_index: usize) -> Result<Ref<'_, [u8]>> {
+        let slot = self
+            .slots
+            .get(argv_index)
+            .ok_or(Error::SSRIMethodsArgsInvalid)?;
+        {
+            let mut cell = slot.decoded.borrow_mut();
+            if cell.is_none() {
+                *cell = Some(decode_stored(&slot.hex)?);
+            }
+        }
+        let borrowed = slot.decoded.borrow();
+        Ref::filter_map(borrowed, |cell| cell.as_deref()).map_err(|_| Error::SSRIMethodsArgsInvalid)
+    }
+}
+
+fn decode_stored(hex: &[u8]) -> Result<Vec<u8>> {
+    if str::from_utf8(hex).is_err() {
+        return Err(Error::SSRIMethodsArgsInvalid);
+    }
+    let mut buf = Vec::with_capacity(hex.len() + 1);
+    buf.extend_from_slice(hex);
+    buf.push(0);
+    let cstr = CStr::from_bytes_with_nul(&buf).map_err(|_| Error::SSRIMethodsArgsInvalid)?;
+    decode_hex(cstr).map_err(|_| Error::SSRIMethodsArgsInvalid)
 }
 
 fn to_std<T: Entity, U: StdEntity>(value: &T) -> CalcResult<U> {
@@ -467,6 +798,97 @@ mod tests {
 
     fn method_arg() -> Arg {
         hex_of(&[0u8; 8])
+    }
+
+    fn argv_of(parts: &[&[u8]]) -> SsriArgs {
+        let argv: Vec<Arg> = parts.iter().copied().map(hex_of).collect();
+        SsriArgs::from_argv(&argv).unwrap()
+    }
+
+    #[test]
+    fn args_decode_when_read_and_offset_starts_at_zero() {
+        let path = 0x1122_3344_5566_7788u64.to_le_bytes();
+        let args = argv_of(&[&path, b"hello"]);
+        assert_eq!(args.offset(), 0);
+        assert_eq!(args.len(), 2);
+        assert!(!args.is_empty());
+        assert_eq!(args.method_path().unwrap(), 0x1122_3344_5566_7788);
+        assert_eq!(&*args.as_bytes(0).unwrap(), &path);
+        assert_eq!(args.bytes(1, utf8).unwrap(), "hello");
+
+        let shifted = args.with_offset(1);
+        assert_eq!(shifted.method_path().unwrap(), 0x1122_3344_5566_7788);
+        assert_eq!(shifted.len(), 1);
+        assert_eq!(&*shifted.as_bytes(0).unwrap(), b"hello");
+        assert!(shifted.as_bytes(1).is_err());
+    }
+
+    #[test]
+    fn bad_hex_stays_a_slot_error_until_read() {
+        let args = SsriArgs::from_argv(&[leak_cstr("0g")]).unwrap();
+        let err = args.bytes(0, hash).unwrap_err();
+        assert!(matches!(err, ArgError::Args(Error::SSRIMethodsArgsInvalid)));
+    }
+
+    #[test]
+    fn converter_error_is_left_intact() {
+        let args = argv_of(&[b"nope"]);
+        let err = args.bytes(0, |_raw| Err::<u8, &str>("nope")).unwrap_err();
+        assert!(matches!(err, ArgError::Convert("nope")));
+
+        let mapped = args
+            .bytes(0, hash)
+            .unwrap_err()
+            .map_convert(|_| Error::Custom(20));
+        assert_eq!(i8::from(mapped), 20);
+    }
+
+    #[test]
+    fn builtin_converters_round_trip() {
+        use ckb_cinnabar_calculator::{AddressPayload, Network};
+
+        let digest = [0xabu8; 32];
+        let lock = packed::Script::new_builder()
+            .code_hash(digest.pack())
+            .hash_type(ScriptHashType::Type)
+            .args(vec![1u8, 2, 3].pack())
+            .build();
+        let tx = packed::Transaction::new_builder().build();
+        let ckb = Capacity(1_000);
+        let payload = AddressPayload::new_full(ScriptHashType::Data1, digest, vec![9, 8]);
+        let addr = Address::new(Network::Testnet, payload);
+        let addr_text = addr.to_string();
+
+        let args = argv_of(&[
+            &digest,
+            lock.as_slice(),
+            addr_text.as_bytes(),
+            &1_000u64.to_le_bytes(),
+            b"name",
+            tx.as_slice(),
+        ]);
+
+        assert_eq!(args.bytes(0, hash).unwrap(), digest);
+        assert_eq!(args.get::<Hash256>(0).unwrap(), digest);
+        assert_eq!(args.bytes(1, script).unwrap().as_slice(), lock.as_slice());
+        assert_eq!(
+            args.molecule::<packed::Script>(1).unwrap().as_slice(),
+            lock.as_slice()
+        );
+        assert_eq!(args.bytes(2, address).unwrap(), addr);
+        assert_eq!(args.get::<Address>(2).unwrap(), addr);
+        assert_eq!(args.bytes(3, capacity).unwrap().shannons(), 1_000);
+        assert_eq!(args.get::<Capacity>(3).unwrap(), ckb);
+        assert_eq!(args.bytes(4, utf8).unwrap(), "name");
+        assert_eq!(args.get::<String>(4).unwrap(), "name");
+        assert_eq!(
+            args.bytes(5, transaction).unwrap().as_slice(),
+            tx.as_slice()
+        );
+        assert_eq!(
+            args.get::<packed::Transaction>(5).unwrap().as_slice(),
+            tx.as_slice()
+        );
     }
 
     fn mint(_source: &SsriSource, _args: SsriArgs) -> Result<Vec<u8>> {

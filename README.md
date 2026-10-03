@@ -89,11 +89,16 @@ tree. `SsriSource` implements kernel `RPC` for `network`, `get_live_cell`,
 `get_transaction_block_hash`, and `get_cells`. `get_tip_header`,
 `get_tip_block_number`, `min_fee_rate`, and `get_transactions` return
 `SourceUnavailable`. `Source` lookups still come from that `RPC`.
-`SsriArgs::bytes(index)` returns one hex-decoded slot; slot 0 is the method
-path, and later slots follow that method's own layout. The method body is a
-guest wrapper: it reads `SsriArgs` and runs a kernel `Instruction` (the
-verifier's calculator dependency is `--no-default-features`). The generated
-contract template stays hop-only.
+`SsriArgs` copies each slot's hex and decodes it when a reader runs.
+`method_path()` reads `argv[0]` as the 8-byte method id. Argument `n` is
+`argv[offset + n]`, and `offset` starts at 0. `bytes(index, convert)` runs
+`FnOnce(&[u8]) -> Result<T, E>` and returns the converter's error unchanged.
+`as_bytes(index)` is the decoded slice. `get` and `molecule` wrap `bytes`
+for `FromSsriArg` and any molecule `Entity`. Built-in converters: `hash`,
+`script`, `address`, `capacity` (shannons, 8 little-endian bytes), `utf8`,
+and `transaction`. The method body is a guest wrapper: it reads `SsriArgs`
+and runs a kernel `Instruction` (the verifier's calculator dependency is
+`--no-default-features`). The generated contract template stays hop-only.
 
 ### Contract project template
 
