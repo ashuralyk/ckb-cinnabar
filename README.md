@@ -6,12 +6,12 @@ Cinnabar is a framework that aims to find a most reasonable way to bring CKB a b
 
 In a short, Cinnabar takes advantage of `Calculate` and `Verify` separation design, which is the core concept of CKB Cell model, to fill in the missing parts of existing CKB programming.
 
+> [!IMPORTANT]
+> **Use the Cinnabar skill.** Install [cinnabar-agent](skills/cinnabar-agent/INSTALL.md) once with `npx skills add ashuralyk/ckb-cinnabar -g -a cursor -s cinnabar-agent -y`, or from a local clone with `npx skills add /path/to/cinnabar -g -a cursor -s cinnabar-agent -y`. Then describe your product in your own words. [What you do, what you get, and a short example](#ai-agent-friendly) are next.
+
 ## AI-agent friendly
 
-Cinnabar is now built so coding agents can generate, test, and deploy a CKB contract without a TTY, without scraping logs, and without inventing a Capsule / `deployment.toml` flow.
-
-The golden path lives in [AGENTS.md](AGENTS.md). Isolated skill (no framework
-checkout): after this tree is on GitHub,
+You start from a product sentence. The skill asks you the missing product rules, shows them back as a verification tree, and writes the contract only after you accept that tree. A global install works in an empty folder. After this tree is on GitHub:
 
 ```bash
 npx skills add ashuralyk/ckb-cinnabar -g -a cursor -s cinnabar-agent -y
@@ -19,22 +19,37 @@ npx skills add ashuralyk/ckb-cinnabar -g -a cursor -s cinnabar-agent -y
 
 From a local clone: `npx skills add /path/to/cinnabar -g -a cursor -s cinnabar-agent -y`.
 Details: [skills/cinnabar-agent/INSTALL.md](skills/cinnabar-agent/INSTALL.md).
-A prompt like “write a CKB lock script”, or a product sentence such as “a
-blind box that issues my handmade art”, should then load Cinnabar even in an
-empty folder. The agent asks one product question at a time until the user
-has said every missing product rule, then shows a **verification tree** and
-implements only after they confirm it. Recipes and FakeRpc tests are derived
-from the accepted tree.
 
+**What you do.** Describe the product in your own words. The agent asks one product question per message. Answer that question, then the next. You stay in product language; the agent chooses the script shape and records it on the tree. When every product rule has been said, it shows the verification tree and waits. Read it. Correct a rule in your own words, or tell it to implement that tree. That yes is when coding starts.
+
+**What you get.** A contract project for the tree you accepted: on-chain checks for those rules, off-chain transactions that carry them out, and tests that run those transactions in a local CKB-VM. `make build` and `make test` both pass before a dry-run deploy. The agent’s own checklist is [AGENTS.md](AGENTS.md).
+
+### A short example
+
+```text
+You: A blind box that issues my handmade art.
+
+Agent: Who may issue a box?
+
+You: Only me.
+
+Agent: Once someone holds a box, who may open it, and can they open it again?
+
+You: Whoever holds it can open it once.
+
+Agent: (after the rest of the product rules)
+
+Root
+  → issue — only you can seal a box; the artwork stays hidden
+  → open — the holder reveals that box once
+  → transfer — the holder can give a sealed or opened box away
+  → burn — the holder can destroy it
+Never checked here: the picture file, the shop price
+
+You: Implement this.
 ```
-product demands
-    → one question at a time until every absent product detail is said
-    → user confirms the tree
-    → Verify hops (intent::* when morphology = business; else domain names)
-    → Instruction pipelines (named only on that shortcut)
-    → FakeRpc + TransactionSimulator
-    → ckb-cinnabar --json --dry-run deploy
-```
+
+That confirmation is the specification. The agent then scaffolds the project, writes the checks and the transactions, and runs the tests.
 
 ### Shared layout, optional intent shortcut
 
@@ -54,6 +69,8 @@ tree uses 10–11. An SSRI entry uses 12–18:
 
 | Code | `Error` |
 | ---- | ------- |
+| 10 | `NotFoundRootVerifier` |
+| 11 | `NotFoundBranchVerifier` (unknown next hop, or the walk cycled) |
 | 12 | `SSRIMethodsNotFound` |
 | 13 | `SSRIMethodsArgsInvalid` |
 | 14 | `SSRIMethodsNotImplemented` |
@@ -90,17 +107,19 @@ tree. `SsriSource` implements kernel `RPC` for `network`, `get_live_cell`,
 `get_tip_block_number`, `min_fee_rate`, and `get_transactions` return
 `SourceUnavailable`. `Source` lookups still come from that `RPC`.
 `SsriArgs` copies each slot's hex and decodes it when a reader runs.
-`method_path()` reads `argv[0]` as the 8-byte method id. Argument `n` is
-`argv[offset + n]`, and `offset` starts at 0. `bytes(index, convert)` runs
-`FnOnce(&[u8]) -> Result<T, E>` and returns the converter's error unchanged.
+`method_path()` reads `argv[0]` as the 8-byte method id and ignores
+`offset`. Argument `n` is `argv[offset + n]`. `offset` starts at 0;
+`with_offset` sets it. `bytes(index, convert)` is
+`FnOnce(&[u8]) -> Result<T, E>`. A missing slot or bad hex is
+`ArgError::Args`. The converter's error stays in `ArgError::Convert`.
 `as_bytes(index)` is the decoded slice. `get` and `molecule` wrap `bytes`
 for `FromSsriArg` and any molecule `Entity`. Built-in converters: `hash`,
-`script`, `address`, `capacity` (shannons, 8 little-endian bytes), `utf8`,
-and `transaction`. The method body is a guest wrapper: it reads `SsriArgs`
-and runs a kernel `Instruction` (the verifier's calculator dependency is
-`--no-default-features`). Each guest function’s rustdoc lists its arguments
-(index, meaning, converter or encoding) and matches those reads. The
-generated contract template stays hop-only.
+`script`, `address`, `capacity` (shannons, molecule `uint64`: 8
+little-endian bytes), `utf8`, and `transaction`. The method body is a guest
+wrapper: it reads `SsriArgs` and runs a kernel `Instruction` (the verifier's
+calculator dependency is `--no-default-features`). Each guest function’s
+rustdoc lists its arguments (index, meaning, converter or encoding) and
+matches those reads. The generated contract template stays hop-only.
 
 ### Contract project template
 
@@ -127,15 +146,37 @@ Agents treating a generated or edited contract as done must have both
 
 The template Makefile comes from ckb-script-templates. Agents should not hand-write RISC-V linker scripts.
 
+Rewrite the template comments for this contract. The calculator crate, the
+verifier crate, and each identity module use `//!`. Each recipe, custom
+operation, `Context`, and hop uses `///`. The comment states why that item
+exists and what it assembles or checks. An SSRI guest function’s rustdoc
+also lists its arguments, as described above. When the calculator covers
+more than one identity, split Verify, Calculate, and tests on that cut.
+Each identity module holds its operations and one recipe per hop;
+`calculator/src/lib.rs` only re-exports. Cell data uses `serde_molecule`
+unless the product already names another codec and both entry points.
+
 ### Offline simulation
 
 `FakeRpcClient` is an in-memory chain. Tests inject a compiled binary with `AddFakeContractCelldepByName`, then assert the CKB-VM exit code — no node, no faucet:
 
 ```rust
-assert_verify!(&rpc, vec![prepare, transfer_ix], 0).unwrap();
+let cycles = assert_verify!(&rpc, vec![prepare, transfer_ix], 0).unwrap();
 ```
 
-`0` means success. Non-zero is the on-chain `i8` from `define_errors!`. Script rejections are `CalculatorError::ScriptValidation`; branch on `script_exit_code()`, do not parse the display string.
+The third argument is the expected CKB-VM exit. `0` means success. Non-zero
+is the on-chain `i8` from `define_errors!`. Script rejections are
+`CalculatorError::ScriptValidation`; branch on `script_exit_code()`, do not
+parse the display string.
+
+Each run prints `[ckb-vm] file:line consumed cycles: N`, including when a
+script exits non-zero. `file:line` is the `assert_verify!` call. When the
+expected exit is `0` and the VM succeeds, `cycles` is that count. A matching
+non-zero expected exit returns `Ok(0)`; the printed line carries the count.
+`assert_verify!` caps the run at 10_000_000 cycles (`DEFAULT_MAX_CYCLES`,
+about the CKB testnet per-transaction limit). `TransactionSimulator::verify`
+and `async_verify` take an explicit `max_cycles` and return consumed cycles
+on success.
 
 ### Structured errors and headless CLI
 
@@ -177,6 +218,12 @@ skeleton. FakeRpc and `assert_verify!` are shell-only.
 `TransactionSkeleton::get_input_by_index`, `get_output_by_index`, and
 `get_celldep_by_index` take a `usize`. A Lua-style relative index is
 `(-n) as usize` (`-1` is the last cell).
+
+`Indexer::get_cells` and `get_transactions` take `Order` (`Asc = 0`, oldest
+first; `Desc = 1`, newest first) on `RpcClient`, `FakeRpcClient`, and
+`SsriSource`. `GetCellsIter`, operation helpers, and the built-in recipes
+request `Asc`. `CellQueryOptions::order` (`QueryOrder`) stays a hint on
+that options struct; converting to `SearchKey` leaves it there.
 
 ## Background
 
