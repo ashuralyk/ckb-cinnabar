@@ -1,0 +1,28 @@
+{
+  "$schema": "https://context7.com/schema/context7.json",
+  "projectTitle": "Cinnabar",
+  "description": "Rust framework for Nervos CKB smart contracts. Calculate assembles a transaction off chain. Verify checks that transaction on chain.",
+  "folders": [
+    "docs",
+    "examples",
+    "templates/contract",
+    "skills/cinnabar-agent",
+    "llms-full.txt"
+  ],
+  "excludeFolders": [
+    "target",
+    ".cursor",
+    "skills/cinnabar-agent/binaries",
+    "examples/scenarios/tests",
+    "examples/scenarios/build",
+    "templates/contract/tests"
+  ],
+  "rules": [
+    "Scaffold a contract from templates/contract. Do not start from ckb-cinnabar-scripts-template.",
+    "Calculate is an Instruction of Operations off chain. Verify is a cinnabar_main! tree on chain.",
+    "Use intent names only when a hop is exactly create, transfer, or burn. Otherwise use a domain string and Instruction::new.",
+    "Custom script errors start at 20. System codes are 1-5, the verify tree uses 10-11, and SSRI uses 12-18.",
+    "Accept the work only when make build and make test both exit 0. Deploy with ckb-cinnabar --json --dry-run.",
+    "Install the CLI with cargo install --git https://github.com/ashuralyk/ckb-cinnabar. SSRI is the default verifier feature."
+  ]
+}

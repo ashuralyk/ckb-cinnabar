@@ -10,8 +10,3 @@ default = true
 type = "string"
 prompt = "Path to local cinnabar (if use_local_cinnabar)"
 default = "../cinnabar"
-
-[placeholders.cinnabar_version]
-type = "string"
-prompt = "crates.io version when use_local_cinnabar is false"
-default = "0.1.0"

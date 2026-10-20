@@ -5,19 +5,6 @@ edition = "2021"
 description = "Off-chain CKB transaction assembly for Cinnabar (no_std kernel plus std shell)"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/ashuralyk/ckb-cinnabar"
-homepage = "https://github.com/ashuralyk/ckb-cinnabar"
-documentation = "https://docs.rs/ckb-cinnabar-calculator"
-readme = "../README.md"
-keywords = ["ckb", "nervos", "smart-contract", "riscv", "blockchain"]
-categories = ["cryptography::cryptocurrencies", "no-std"]
-
-# docs.rs builds the host target with all features (including experimental
-# `spore`). The kernel profile (`--no-default-features`) is what
-# `riscv64imac-unknown-none-elf` guests link. Do not set that riscv target
-# together with `all-features`: the shell needs `std`.
-[package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
 default = ["std"]

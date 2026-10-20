@@ -5,14 +5,3 @@ edition = "2021"
 description = "Shared no_std intent vocabulary for the Cinnabar CKB contract framework"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/ashuralyk/ckb-cinnabar"
-homepage = "https://github.com/ashuralyk/ckb-cinnabar"
-documentation = "https://docs.rs/ckb-cinnabar-core"
-readme = "../README.md"
-keywords = ["ckb", "nervos", "smart-contract", "riscv", "blockchain"]
-categories = ["cryptography::cryptocurrencies", "no-std"]
-
-# Host docs.rs build. The crate is `no_std` and is the same source linked into
-# `riscv64imac-unknown-none-elf` scripts via `ckb-cinnabar-verifier`.
-[package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]

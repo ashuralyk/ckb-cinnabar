@@ -66,7 +66,7 @@ impl WireTable {
         let names = self.methods.iter().map(|method| &method.name);
         let bodies = self.methods.iter().map(|method| &method.body);
         quote! {
-            ckb_cinnabar_verifier_ssri::ssri_methods!(
+            ckb_cinnabar_verifier::ssri_methods!(
                 argv: #argv,
                 invalid_method: #invalid_method,
                 invalid_args: #invalid_args,

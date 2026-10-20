@@ -17,7 +17,7 @@ jobs:
       - name: Formatting
         run: cargo fmt --all -- --check
       - name: Native tests
-        run: cargo test --workspace --exclude ckb-cinnabar-verifier --exclude ckb-cinnabar-verifier-ssri --exclude ckb-cinnabar-ssri-smoke
+        run: cargo test --workspace --exclude ckb-cinnabar-verifier
       - name: Spore feature tests
         run: cargo test -p ckb-cinnabar-calculator --features spore
       - name: Kernel calculator (no_std host + RISC-V)
@@ -32,15 +32,12 @@ jobs:
       - name: Verifier RISC-V check
         run: |
           cargo check -p ckb-cinnabar-verifier --target riscv64imac-unknown-none-elf
-          cargo check -p ckb-cinnabar-verifier-ssri --target riscv64imac-unknown-none-elf
-          cargo check -p ckb-cinnabar-ssri-smoke --target riscv64imac-unknown-none-elf
+          cargo check -p ckb-cinnabar-verifier --features ssri --target riscv64imac-unknown-none-elf
         env:
           CARGO_TERM_COLOR: always
           TARGET_CC: clang
-      - name: Verifier and SSRI native tests
-        run: |
-          cargo test -p ckb-cinnabar-verifier
-          cargo test -p ckb-cinnabar-verifier-ssri
+      - name: Verifier SSRI native tests
+        run: cargo test -p ckb-cinnabar-verifier --features ssri
         env:
           CARGO_TERM_COLOR: always
       - name: Scenario contracts

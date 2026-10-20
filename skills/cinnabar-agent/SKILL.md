@@ -342,10 +342,8 @@ the version they picked before generate:
 - **SSRI** — kernel, `--no-default-features` (`no_std` + `alloc`, including
   ckb2021 `Address`). Guest methods call these kernel `Instruction`s.
 
-The `SSRI { }` arm is not a verifier feature flag. It expands to
-`ckb-cinnabar-verifier-ssri` (unpublished; git `ckb-ssri-std` at ckb-std 1.1).
-Hop-only contracts depend only on `ckb-cinnabar-verifier`. Use the arm only
-for the SSRI version. Empty `argv` runs the tree; `argv` with raw
+Feature `ssri` stays the verifier default. Use the `SSRI { }` arm only for
+the SSRI version. Empty `argv` runs the tree; `argv` with raw
 `vm_version == u64::MAX` runs that block. Guest methods take `&SsriSource`
 (kernel `RPC` for `network`, live cell, headers, block hashes, and
 `get_cells`; tip, fee, and `get_transactions` are unavailable) plus
@@ -421,22 +419,22 @@ setup: [calculate.md](calculate.md).
 
 ## Crates
 
-Prefer version dependencies once `0.1.0` is on crates.io. Until then, path
-deps against a checkout, or git deps of `ckb-cinnabar`,
+Git dependencies (isolated projects): `ckb-cinnabar`,
 `ckb-cinnabar-calculator`, and `ckb-cinnabar-verifier` from
-`https://github.com/ashuralyk/ckb-cinnabar`. The template comments that git
-fallback next to the version lines. Target: `riscv64imac-unknown-none-elf`.
-Root re-exports: `Address`, `Instruction`, `TransactionCalculator`,
-`TransactionSkeleton`, `Network`, `RpcClient`, `CalculatorError`, `intent`.
+`https://github.com/ashuralyk/ckb-cinnabar`. The template uses those git
+dependencies unless `use_local_cinnabar` is true. Target:
+`riscv64imac-unknown-none-elf`. Root re-exports: `Address`, `Instruction`,
+`TransactionCalculator`, `TransactionSkeleton`, `Network`, `RpcClient`,
+`CalculatorError`, `intent`. Install the CLI with
+`cargo install --git https://github.com/ashuralyk/ckb-cinnabar`.
 
 `ckb-cinnabar-core` owns the shared `no_std` intent names. Calculator
 `kernel` (always on; `--no-default-features`) is the `no_std` assembler:
 sync `RPC`, `Source`, packed skeleton, operations, ckb2021 `Address`.
 Calculator `shell` (default `std`) adds `RpcClient`, FakeRpc, signing,
-recipes, and `assert_verify!`. The published verifier is hop-only. The
-`SSRI { }` door, `SsriSource`, and `SsriArgs` live in
-`ckb-cinnabar-verifier-ssri` (not published; it keeps the git `ckb-ssri-std`
-pin). A guest method still assembles with the calculator kernel.
+recipes, and `assert_verify!`. Verifier feature `ssri` (default) adds the
+`SSRI { }` door, `SsriSource`, and `SsriArgs`, and depends on the calculator
+kernel so a guest method can assemble.
 
 Humans: install this folder with [INSTALL.md](INSTALL.md) so the skill works
 outside a Cinnabar checkout.

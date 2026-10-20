@@ -318,8 +318,20 @@ name = "ckb-cinnabar-verifier"
 version = "0.1.0"
 dependencies = [
  "blake2b-ref",
+ "ckb-cinnabar-calculator",
  "ckb-cinnabar-core",
+ "ckb-cinnabar-verifier-macros",
+ "ckb-ssri-std",
  "ckb-std",
+]
+
+[[package]]
+name = "ckb-cinnabar-verifier-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -605,6 +617,28 @@ dependencies = [
  "tokio-util",
  "tokio_with_wasm",
  "web-time",
+]
+
+[[package]]
+name = "ckb-ssri-std"
+version = "0.0.1"
+source = "git+https://github.com/ashuralyk/ckb-ssri-std?rev=8c2c245#8c2c24555e064cff3db138ec330de49797c5f18e"
+dependencies = [
+ "ckb-ssri-std-proc-macro",
+ "ckb-std",
+ "serde",
+ "serde_molecule",
+]
+
+[[package]]
+name = "ckb-ssri-std-proc-macro"
+version = "0.0.1"
+source = "git+https://github.com/ashuralyk/ckb-ssri-std?rev=8c2c245#8c2c24555e064cff3db138ec330de49797c5f18e"
+dependencies = [
+ "ckb-hash",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -2655,6 +2689,15 @@ dependencies = [
  "serde",
  "serde_core",
  "zmij",
+]
+
+[[package]]
+name = "serde_molecule"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2bc06f0c67a492a3969744eb47ce58a86529140fba6b395c83b9dea432032503"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

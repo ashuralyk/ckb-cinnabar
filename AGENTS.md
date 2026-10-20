@@ -42,9 +42,8 @@ make build     # writes build/release/<crate>
 make test
 ```
 
-Until the crates are on crates.io, generate with
-`--define use_local_cinnabar=true`. The version-dependency fallback and the
-git fallback are in the template README.
+Pass `--define use_local_cinnabar=true` to depend on a local checkout.
+Otherwise the template uses git dependencies on this repository.
 
 Hard accept: after generate and after every later change, `make build` and
 `make test` (full suite) must both exit 0 before the work is done.
@@ -86,7 +85,7 @@ Morphology-scale Root dispatches with `this_script_pattern(ScriptPlace::Lock)` o
 
 Target: `riscv64imac-unknown-none-elf`. Error codes: [docs/error-codes.md](docs/error-codes.md).
 
-SSRI (`SSRI { "Wire.name" => expr }` on `cinnabar_main!`) needs a dependency on `ckb-cinnabar-verifier-ssri`. That crate is not on crates.io. Hop-only contracts do not depend on it. Do not register hop `verify()` as an SSRI method. `ssri_methods!` already emits `SSRI.version`, `get_methods`, and `has_methods`.
+SSRI is the verifier feature `ssri` (on by default): `SSRI { "Wire.name" => expr }` on `cinnabar_main!`. Do not register hop `verify()` as an SSRI method. `ssri_methods!` already emits `SSRI.version`, `get_methods`, and `has_methods`. The feature depends on git `ckb-ssri-std` at `8c2c245`.
 
 ## Write the off-chain assembler
 
@@ -166,11 +165,9 @@ System 1–5, verify tree 10–11, SSRI 12–18, custom ≥ 20 (`CUSTOM_ERROR_ST
 
 - `ckb-cinnabar-core` — shared `no_std` intent names.
 - `ckb-cinnabar-calculator` — assembly, FakeRpc, simulator.
-- `ckb-cinnabar-verifier` — `no_std` verification tree.
+- `ckb-cinnabar-verifier` — `no_std` verification tree. Feature `ssri` (default) is the guest door.
 - `ckb-cinnabar-verifier-macros` — SSRI wire-name proc macro.
-- `ckb-cinnabar-verifier-ssri` — SSRI guest door. Not published (git `ckb-ssri-std`).
-- `ckb-cinnabar` — deploy / migrate / consume / list CLI.
-- `ckb-cinnabar-mcp` — local MCP server (`scaffold_project`, `build`, `test`, `simulate`, `explain_error`, `list_operations`, `get_docs`, `deploy_dry_run`, …).
+- `ckb-cinnabar` — deploy / migrate / consume / list CLI. Install with `cargo install --git https://github.com/ashuralyk/ckb-cinnabar`.
 
 Root re-exports: `Address`, `Instruction`, `TransactionCalculator`, `TransactionSkeleton`, `Network`, `RpcClient`, `CalculatorError`, `intent`.
 

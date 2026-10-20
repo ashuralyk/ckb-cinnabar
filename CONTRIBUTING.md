@@ -8,31 +8,18 @@ changing the framework itself.
 ```bash
 rustup target add riscv64imac-unknown-none-elf
 cargo fmt --all -- --check
-cargo test --workspace --exclude ckb-cinnabar-verifier --exclude ckb-cinnabar-verifier-ssri --exclude ckb-cinnabar-ssri-smoke
+cargo test --workspace --exclude ckb-cinnabar-verifier
 cargo test -p ckb-cinnabar-calculator --features spore
 cargo test -p ckb-cinnabar-calculator --no-default-features
-cargo test -p ckb-cinnabar-verifier
-cargo test -p ckb-cinnabar-verifier-ssri
-cargo check -p ckb-cinnabar-verifier --target riscv64imac-unknown-none-elf
-cargo check -p ckb-cinnabar-ssri-smoke --target riscv64imac-unknown-none-elf
+cargo test -p ckb-cinnabar-verifier --features ssri
+cargo check -p ckb-cinnabar-verifier --features ssri --target riscv64imac-unknown-none-elf
 make -C examples/scenarios
 ```
 
 `TARGET_CC=clang` is required for the RISC-V `ckb-std` build. The contract
 Makefile passes `-C passes=lower-atomic`.
 
-Publish order, when cutting a release (do not publish the SSRI crate until
-`ckb-ssri-std` has a crates.io release built on ckb-std 1.1):
-
-1. `ckb-cinnabar-core`
-2. `ckb-cinnabar-verifier-macros`
-3. `ckb-cinnabar-verifier`
-4. `ckb-cinnabar-calculator`
-5. `ckb-cinnabar`
-6. `ckb-cinnabar-mcp`
-
-`cargo publish --dry-run` only succeeds for a crate whose path dependencies
-are already on crates.io. `ckb-cinnabar-verifier-ssri` is `publish = false`.
+Install the CLI from git: `cargo install --git https://github.com/ashuralyk/ckb-cinnabar`.
 
 ## Style
 
@@ -103,10 +90,9 @@ bytes, then ASCII `TYPE_ID`.
 
 ## SSRI
 
-`cinnabar_main!`’s `SSRI { }` arm expands to
-`ckb_cinnabar_verifier_ssri`. The crate depends on git
-`https://github.com/ashuralyk/ckb-ssri-std` at `8c2c245` because crates.io
-`ckb-ssri-std` 0.0.1 pins ckb-std 0.16. Empty `argv` is on-chain verify.
+`cinnabar_main!`’s `SSRI { }` arm is verifier feature `ssri` (default). It
+depends on git `https://github.com/ashuralyk/ckb-ssri-std` at `8c2c245`
+(ckb-std 1.1). Empty `argv` is on-chain verify.
 `argv` plus raw `vm_version == u64::MAX` is SSRI. Do not hand-write
 `program_entry` for generated SSRI contracts.
 

@@ -24,9 +24,9 @@ never reach the VM use `CalculatorError::kind()` instead.
 
 ## SSRI
 
-Used when the contract depends on `ckb-cinnabar-verifier-ssri` and the run is
-an SSRI call (`argv` set and `vm_version == u64::MAX`). Hop-only scripts do
-not return these.
+Used when verifier feature `ssri` is on (the default) and the run is an SSRI
+call (`argv` set and `vm_version == u64::MAX`). A hop-only script that never
+enters that arm does not return these.
 
 | Code | `Error` | Meaning |
 | --- | --- | --- |
@@ -42,7 +42,7 @@ not return these.
 
 | Code | Meaning |
 | --- | --- |
-| ≥ 20 | Declared with `define_errors!`. The first variant should be `= CUSTOM_ERROR_START`. Later variants increment by one. The contract’s own rustdoc or error enum is the lookup table. The MCP tool `explain_error` echoes a `contract` name but does not guess these codes. |
+| ≥ 20 | Declared with `define_errors!`. The first variant should be `= CUSTOM_ERROR_START`. Later variants increment by one. The contract’s own rustdoc or error enum is the lookup table. |
 
 ## Assembly (`CalculatorError::kind()`)
 

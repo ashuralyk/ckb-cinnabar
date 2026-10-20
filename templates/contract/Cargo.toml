@@ -14,15 +14,9 @@ ckb-cinnabar = { path = "{{cinnabar_path}}" }
 ckb-cinnabar-calculator = { path = "{{cinnabar_path}}/calculate" }
 ckb-cinnabar-verifier = { path = "{{cinnabar_path}}/verify" }
 {% else %}
-# crates.io. Until 0.1.0 is published, regenerate with
-# --define use_local_cinnabar=true --define cinnabar_path=../ckb-cinnabar
-# or replace the three lines below with the git fallback:
-# ckb-cinnabar = { git = "https://github.com/ashuralyk/ckb-cinnabar" }
-# ckb-cinnabar-calculator = { git = "https://github.com/ashuralyk/ckb-cinnabar" }
-# ckb-cinnabar-verifier = { git = "https://github.com/ashuralyk/ckb-cinnabar" }
-ckb-cinnabar = { version = "{{cinnabar_version}}" }
-ckb-cinnabar-calculator = { version = "{{cinnabar_version}}" }
-ckb-cinnabar-verifier = { version = "{{cinnabar_version}}" }
+ckb-cinnabar = { git = "https://github.com/ashuralyk/ckb-cinnabar" }
+ckb-cinnabar-calculator = { git = "https://github.com/ashuralyk/ckb-cinnabar" }
+ckb-cinnabar-verifier = { git = "https://github.com/ashuralyk/ckb-cinnabar" }
 {% endif %}
 
 [package]

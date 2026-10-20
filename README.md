@@ -79,14 +79,11 @@ tree uses 10–11. An SSRI entry uses 12–18:
 | 17 | `SSRIAssembleFailed` |
 | 18 | `SSRISourceUnavailable` |
 
-The SSRI arm of `cinnabar_main!` resolves
-[`ckb-cinnabar-verifier-ssri`](ssri), which depends on
-[`ckb-ssri-std`](https://github.com/ashuralyk/ckb-ssri-std) at `8c2c245`
-(ckb-std 1.1). That crate is not published: crates.io `ckb-ssri-std` 0.0.1
-still pins ckb-std 0.16. Hop-only contracts depend only on
-`ckb-cinnabar-verifier`. Empty `argv`
-runs the verify tree. `argv` together with raw `vm_version == u64::MAX` runs
-SSRI. Append a wire table when this binary serves methods:
+The SSRI arm of `cinnabar_main!` is verifier feature `ssri` (on by default).
+It depends on [`ckb-ssri-std`](https://github.com/ashuralyk/ckb-ssri-std) at
+`8c2c245` (ckb-std 1.1). Empty `argv` runs the verify tree. `argv` together
+with raw `vm_version == u64::MAX` runs SSRI. Append a wire table when this
+binary serves methods:
 
 ```rust
 cinnabar_main!(
@@ -152,10 +149,8 @@ The template Makefile comes from ckb-script-templates. Agents should not hand-wr
 
 The separate repository `ckb-cinnabar-scripts-template` is not the scaffold
 (its README was left as a TODO). Generate from `templates/contract` in this
-repository. When the crates are on crates.io, omit `use_local_cinnabar` and
-the template depends on version `0.1.0`. Until then, pass
-`--define use_local_cinnabar=true`, or replace the version lines with the git
-fallback commented in the generated `Cargo.toml`.
+repository. Pass `--define use_local_cinnabar=true` for a path dependency.
+Otherwise the template depends on this repository over git.
 
 Rewrite the template comments for this contract. The calculator crate, the
 verifier crate, and each identity module use `//!`. Each recipe, custom
@@ -427,20 +422,13 @@ It's very easy to distinguish how a CKB contract works because of the clear modu
 
 ## Deployment Module
 
-Install Cinnabar binary:
+Install the Cinnabar binary from git:
 
 ```bash
-$ git clone https://github.com/ashuralyk/ckb-cinnabar
-$ cd ckb-cinnabar
-$ cargo install --path .
-
-# need to install ckb-cli to sign transaction if use Cinnabar to deploy contract
-$ git clone https://github.com/nervosnetwork/ckb-cli
-$ cd ckb-cli
-$ cargo install --path .
-
-# or install from https://github.com/nervosnetwork/ckb-cli/releases
+cargo install --git https://github.com/ashuralyk/ckb-cinnabar
 ```
+
+Live send still needs [ckb-cli](https://github.com/nervosnetwork/ckb-cli/releases) to sign. `--dry-run` and `--privkey-env` do not.
 
 Run help:
 
@@ -510,6 +498,4 @@ For specific usage scenarios, please refer to [demos](https://github.com/ashural
 
 **How do I run this without installing the RISC-V target by hand?** [Dockerfile](Dockerfile) and [.devcontainer/devcontainer.json](.devcontainer/devcontainer.json) install Rust, `clang`, the `riscv64imac-unknown-none-elf` target, `cargo-generate`, and `ckb-cli`.
 
-**How does an agent call this without reading the repo?** [llms.txt](llms.txt) is the short map. [llms-full.txt](llms-full.txt) inlines the README and AGENTS.md. `ckb-cinnabar-mcp` (`cargo run -p ckb-cinnabar-mcp`) exposes scaffold, build, test, simulate, explain_error, and the docs as MCP tools and resources.
-
-**Are the crates on crates.io?** Not yet. Publish order is `ckb-cinnabar-core`, `ckb-cinnabar-verifier-macros`, `ckb-cinnabar-verifier`, `ckb-cinnabar-calculator`, `ckb-cinnabar`, then `ckb-cinnabar-mcp`. `ckb-cinnabar-verifier-ssri` stays unpublished until `ckb-ssri-std` on crates.io supports ckb-std 1.1.
+**How does an agent read this without cloning first?** [llms.txt](llms.txt) is the short map. [llms-full.txt](llms-full.txt) inlines the README and AGENTS.md. [context7.json](context7.json) tells [Context7](https://context7.com/docs/library-owners) which of those docs to index. Add `use context7` in the agent prompt after the library is submitted at [context7.com/add-library](https://context7.com/add-library).
