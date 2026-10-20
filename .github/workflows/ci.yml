@@ -46,7 +46,7 @@ jobs:
           CARGO_TERM_COLOR: always
           TARGET_CC: clang
       - name: Install cargo-generate
-        run: cargo install cargo-generate --version 0.20.0 --locked
+        run: cargo install cargo-generate --version 0.20.0
       - name: Generated contract end-to-end
         run: |
           cargo generate \

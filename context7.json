@@ -6,16 +6,19 @@
     "docs",
     "examples",
     "templates/contract",
-    "skills/cinnabar-agent",
-    "llms-full.txt"
+    "skills/cinnabar-agent"
   ],
   "excludeFolders": [
     "target",
     ".cursor",
-    "skills/cinnabar-agent/binaries",
     "examples/scenarios/tests",
-    "examples/scenarios/build",
-    "templates/contract/tests"
+    "examples/scenarios/build"
+  ],
+  "excludeFiles": [
+    "cluster",
+    "spore",
+    "type_burn",
+    "xudt"
   ],
   "rules": [
     "Scaffold a contract from templates/contract. Do not start from ckb-cinnabar-scripts-template.",

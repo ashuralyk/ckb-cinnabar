@@ -331,14 +331,21 @@ locks only.
 
 ```bash
 ckb-cinnabar --json --dry-run --privkey-env CINNABAR_PRIVKEY \
-  deploy --contract-name my_lock --tag v0.1.0 --payer-address ckt1...
+  deploy --contract-name my_lock --tag v0.1.0 \
+  --payer-address ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq28phxutezqvjgfv5q38gn5kwek4m9km3cmajeqs
 ```
 
+Global flags go before the subcommand. `--dry-run` still needs a reachable
+indexer. JSON field `record` holds the deployment record; the file under
+`deployment/<network>/` is written only when the transaction is sent.
+
 `--json`: one object on stdout; failures `ok: false`, empty stderr, non-zero
-exit; script failures include `error.exit_code`.
-`--dry-run`: no send, no `ckb-cli`.
+exit; script failures include `error.exit_code`. Kinds are in `docs/error-codes.md`
+(`io` and `network` for a missing binary and a dead node; `configuration` and
+`invalid_input` are CLI-only).
+`--dry-run`: no send, no `ckb-cli`, but the indexer is still required.
 `--privkey-env`: hex secp256k1; live send without it prompts `ckb-cli`.
-Records: `deployment/<network>/<name>.json`.
+The file `deployment/<network>/<name>.json` is written only on send.
 
 Install CLI: `cargo install --git https://github.com/ashuralyk/ckb-cinnabar`.
 

@@ -25,7 +25,7 @@ npx skills add ashuralyk/ckb-cinnabar -g
 Direct tree URL:
 
 ```bash
-npx skills add https://github.com/ashuralyk/ckb-cinnabar/tree/main/skills/cinnabar-agent -g -a cursor -y
+npx skills add https://github.com/ashuralyk/ckb-cinnabar/tree/master/skills/cinnabar-agent -g -a cursor -y
 ```
 
 Until the skill is pushed, GitHub listing returns “No skills found”.

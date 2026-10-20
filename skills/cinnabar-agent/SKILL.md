@@ -171,8 +171,17 @@ If `cargo-generate` is missing: `cargo install cargo-generate`, or clone
 `https://github.com/ashuralyk/ckb-cinnabar` and run
 `cargo generate --path <clone>/templates/contract --name <project> -d use_local_cinnabar=false`.
 
-Inside an existing Cinnabar checkout, prefer
-`cargo generate --path templates/contract --name <project>` (local path deps OK).
+Inside an existing Cinnabar checkout, path dependencies need an absolute
+`cinnabar_path` (the checkout root, not `../cinnabar`):
+
+```bash
+cargo generate --path templates/contract --name <project> \
+  -d use_local_cinnabar=true -d cinnabar_path="$PWD"
+```
+
+The template default is git dependencies. Omit the defines, or pass
+`-d use_local_cinnabar=false`, when the project should track this repository
+over git.
 
 Then apply the version they chose:
 

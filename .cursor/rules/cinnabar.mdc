@@ -1,6 +1,10 @@
 ---
 description: Cinnabar CKB contracts. Follow AGENTS.md when editing Cargo.toml or contract sources.
-globs: "**/Cargo.toml,contracts/**"
+globs:
+  - "**/Cargo.toml"
+  - "contracts/**"
+  - "calculator/**"
+  - "tests/**"
 alwaysApply: false
 ---
 

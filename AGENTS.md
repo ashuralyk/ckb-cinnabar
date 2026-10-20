@@ -22,7 +22,7 @@ product demands
  → Instruction::new (or named on that shortcut)
  → FakeRpc + TransactionSimulator
  → make build && make test (hard accept; every change)
- → ckb-cinnabar deploy --json --dry-run
+ → ckb-cinnabar --json --dry-run deploy
 ```
 
 `Instruction` is a pipeline of `Operation`s (Inputs / Outputs / CellDeps / Headers /
@@ -35,15 +35,19 @@ Scaffold from `templates/contract` in this repository. The old
 `ckb-cinnabar-scripts-template` repository is not the path.
 
 ```bash
-cargo generate --path /path/to/cinnabar/templates/contract --name my-lock
+# inside a checkout of this repository (absolute path to the checkout)
+cargo generate --path templates/contract --name my-lock \
+  --define use_local_cinnabar=true --define cinnabar_path="$PWD"
 cd my-lock
 make prepare   # rustup target add riscv64imac-unknown-none-elf
 make build     # writes build/release/<crate>
 make test
 ```
 
-Pass `--define use_local_cinnabar=true` to depend on a local checkout.
-Otherwise the template uses git dependencies on this repository.
+The template default is git dependencies (`use_local_cinnabar=false`).
+Pass both defines above to depend on a local checkout. `cinnabar_path`
+must be absolute: Cargo resolves it from the generated project, and the
+old relative default `../cinnabar` does not point at this repository.
 
 Hard accept: after generate and after every later change, `make build` and
 `make test` (full suite) must both exit 0 before the work is done.
@@ -91,15 +95,25 @@ SSRI is the verifier feature `ssri` (on by default): `SSRI { "Wire.name" => expr
 
 ```rust
 use ckb_cinnabar_calculator::{
-    intent, instruction::Instruction, operation::basic::*, rpc::RPC,
+    address::Address, intent, instruction::Instruction,
+    operation::basic::{AddInputCellByAddress, AddOutputCell}, rpc::RPC,
 };
 
-pub fn transfer<T: RPC>(from: Address, to: Address, ckb: u64) -> Instruction<T> {
+/// `capacity` is absolute shannons. Shell profile (`std`) only:
+/// `AddInputCellByAddress` is not in the kernel (`--no-default-features`).
+pub fn transfer<T: RPC>(from: Address, to: Address, capacity: u64) -> Instruction<T> {
     Instruction::named(
         intent::TRANSFER, // morphology-scale only; protocol-scale uses Instruction::new
         vec![
             Box::new(AddInputCellByAddress { address: from }),
-            Box::new(AddOutputCell { /* ... */ }),
+            Box::new(AddOutputCell {
+                lock_script: to.into(),
+                type_script: None,
+                data: vec![],
+                capacity,
+                absolute_capacity: true,
+                type_id: false,
+            }),
         ],
     )
 }
@@ -117,23 +131,40 @@ One recipe per hop. Log keys live in `ckb_cinnabar_calculator::intent::log`.
 use ckb_cinnabar_calculator::{
     assert_verify,
     instruction::Instruction,
+    operation::basic::AddOutputCell,
     simulation::{
-        AddFakeAlwaysSuccessCelldep, AddFakeContractCelldepByName, AddFakeInputCell,
-        FakeRpcClient,
+        always_success_script, AddFakeAlwaysSuccessCelldep, AddFakeContractCelldepByName,
+        AddFakeInputCell, FakeRpcClient,
     },
 };
 
 #[tokio::test]
 async fn transfer_ok() {
     let rpc = FakeRpcClient::default();
+    let lock = always_success_script(vec![]);
     let prepare = Instruction::new(vec![
+        Box::new(AddFakeAlwaysSuccessCelldep {}),
         Box::new(AddFakeContractCelldepByName {
             contract: "my_lock".into(),
             type_id_args: None,
             contract_binary_path: "../build/release".into(),
         }),
-        Box::new(AddFakeInputCell { /* lock = the contract */ .. }),
+        Box::new(AddFakeInputCell {
+            lock_script: lock.clone().into(),
+            type_script: None,
+            data: vec![],
+            capacity: 200_000_000_000,
+            absolute_capacity: true,
+        }),
     ]);
+    let transfer_ix = Instruction::new(vec![Box::new(AddOutputCell {
+        lock_script: lock.into(),
+        type_script: None,
+        data: vec![],
+        capacity: 100_000_000_000,
+        absolute_capacity: true,
+        type_id: false,
+    })]);
     assert_verify!(&rpc, vec![prepare, transfer_ix], 0).unwrap();
 }
 ```
@@ -148,14 +179,17 @@ Script failures use `CalculatorError::ScriptValidation`; inspect
 
 ```bash
 ckb-cinnabar --json --dry-run --privkey-env CINNABAR_PRIVKEY \
-  deploy --contract-name my_lock --tag v0.1.0 --payer-address ckt1...
+  deploy --contract-name my_lock --tag v0.1.0 \
+  --payer-address ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq28phxutezqvjgfv5q38gn5kwek4m9km3cmajeqs
 
 ckb-cinnabar --json list --contract-name my_lock
 ```
 
-`--privkey-env` reads a hex secp256k1 key. Without it, live send still uses interactive `ckb-cli`. `--dry-run` skips send and skips ckb-cli. Records go to `deployment/<network>/<name>.json`.
+Global flags (`--json`, `--dry-run`, `--privkey-env`, `-n`) go before the subcommand.
 
-With `--json`, success and failure both print one JSON object to stdout. Failures set `ok: false`, include `error.kind` / `error.message`, keep stderr empty, and exit non-zero. Contract validation failures also include `error.exit_code`.
+`--privkey-env` reads a hex secp256k1 key. Without it, live send still uses interactive `ckb-cli`. `--dry-run` skips send and skips ckb-cli. It still asks the network indexer for the payer's live cells, so a node must be reachable. A successful JSON object includes `record`. The file `deployment/<network>/<name>.json` is written only when the transaction is sent.
+
+With `--json`, success and failure both print one JSON object to stdout. Failures set `ok: false`, include `error.kind` / `error.message`, keep stderr empty, and exit non-zero (`2` for invalid input, `1` otherwise). Contract validation failures also include `error.exit_code`. Kinds: [docs/error-codes.md](docs/error-codes.md).
 
 ## Error codes
 

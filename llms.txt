@@ -18,12 +18,13 @@ cargo generate --path templates/contract --name my-lock \
   --define use_local_cinnabar=true --define cinnabar_path=$PWD
 cd my-lock && make prepare && make build && make test
 ckb-cinnabar --json --dry-run --privkey-env CINNABAR_PRIVKEY \
-  deploy --contract-name my-lock --tag v0.1.0 --payer-address ckt1...
+  deploy --contract-name my-lock --tag v0.1.0 \
+  --payer-address ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq28phxutezqvjgfv5q38gn5kwek4m9km3cmajeqs
 ```
 
 Without `use_local_cinnabar`, the template depends on this repository over git. The old `ckb-cinnabar-scripts-template` repository is not maintained; use `templates/contract`.
 
-Toolchain: Rust, `clang` 16+, target `riscv64imac-unknown-none-elf`, `cargo-generate`. `Dockerfile` and `.devcontainer/devcontainer.json` preinstall them, plus `ckb-cli`.
+Toolchain: Rust, `clang` 16+ (the Dockerfile installs clang 18; Debian bookworm's `clang` metapackage is older than 16), target `riscv64imac-unknown-none-elf`, `cargo-generate`. `Dockerfile` and `.devcontainer/devcontainer.json` preinstall them, plus `ckb-cli`.
 
 ## Golden path
 
@@ -32,6 +33,8 @@ One product question at a time until every product rule has been said. Show the 
 `intent::*` only when the hop is exactly create, transfer, or burn. Custom errors start at 20. Verifier feature `ssri` (default) is the on-chain method door. Details: `AGENTS.md`, `docs/error-codes.md`.
 
 ## Docs
+
+The links below point at `master`. They resolve after this branch is merged. Until then, open the same paths on the pull-request branch.
 
 - [AGENTS.md](https://github.com/ashuralyk/ckb-cinnabar/blob/master/AGENTS.md): agent golden path
 - [skills/cinnabar-agent/SKILL.md](https://github.com/ashuralyk/ckb-cinnabar/blob/master/skills/cinnabar-agent/SKILL.md): installable skill

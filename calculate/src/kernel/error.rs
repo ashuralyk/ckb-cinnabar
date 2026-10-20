@@ -134,6 +134,19 @@ impl CalculatorError {
             || (lower.contains("script") && lower.contains("error"))
         {
             Self::Simulation(msg.to_string())
+        } else if lower.contains("bad ckb request")
+            || lower.contains("error sending request")
+            || lower.contains("connection refused")
+            || lower.contains("failed to parse json response")
+            || lower.contains("failed to get response from ckb rpc")
+        {
+            Self::Network(msg.to_string())
+        } else if lower.contains("no such file")
+            || lower.contains("os error")
+            || lower.contains("permission denied")
+            || lower.contains("not a directory")
+        {
+            Self::Io(msg.to_string())
         } else {
             Self::Other(msg.to_string())
         }
@@ -243,5 +256,23 @@ mod tests {
             "ValidationFailure: see error code -7 on page https://example.invalid",
         );
         assert_eq!(displayed.script_exit_code(), Some(-7));
+    }
+
+    #[test]
+    fn classifies_transport_and_missing_file() {
+        assert_eq!(
+            CalculatorError::from_message(
+                "bad ckb request url: error sending request for url (http://127.0.0.1:9/)"
+            )
+            .kind(),
+            "network"
+        );
+        assert_eq!(
+            CalculatorError::from_message(
+                "No such file or directory (os error 2):build/release/my_lock"
+            )
+            .kind(),
+            "io"
+        );
     }
 }

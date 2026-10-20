@@ -97,8 +97,12 @@ pub fn load_contract_binary(
     binary_path: &str,
 ) -> eyre::Result<(Vec<u8>, [u8; 32])> {
     let contract_path = PathBuf::new().join(binary_path).join(contract_name);
-    let contract_binary = fs::read(&contract_path)
-        .map_err(|e| eyre::eyre!("{e}:{}", contract_path.to_string_lossy()))?;
+    let contract_binary = fs::read(&contract_path).map_err(|e| {
+        eyre::Report::new(CalculatorError::Io(format!(
+            "{e}:{}",
+            contract_path.to_string_lossy()
+        )))
+    })?;
     let contract_hash = blake2b_256(&contract_binary);
     Ok((contract_binary, contract_hash))
 }
