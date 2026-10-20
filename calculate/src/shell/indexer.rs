@@ -248,7 +248,9 @@ pub mod json {
     #[derive(Serialize, Deserialize, Clone, Debug)]
     #[serde(untagged)]
     pub enum Tx {
+        /// One input or output marker.
         Ungrouped(TxWithCell),
+        /// Every matching io marker for one transaction.
         Grouped(TxWithCells),
     }
 
@@ -332,7 +334,9 @@ pub mod json {
     #[derive(Serialize, Deserialize, Clone, Debug)]
     #[serde(rename_all = "snake_case")]
     pub enum IOType {
+        /// Script appeared on an input cell.
         Input,
+        /// Script appeared on an output cell.
         Output,
     }
 

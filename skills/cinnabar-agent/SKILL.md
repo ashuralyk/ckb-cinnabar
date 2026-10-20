@@ -197,7 +197,7 @@ layout and add:
 | `contracts/<name>/`                    | `no_std` Verify (`cinnabar_main!`)                             |
 | `calculator/`                          | Recipes. One file for one identity; otherwise one module per tree identity ([calculate.md](calculate.md)) |
 | `tests/`                               | FakeRpc universe + VM                                          |
-| `tests/binaries/` or `tests/fixtures/` | Foreign protocol RISC-V (copy from this skill’s `binaries/`)   |
+| `tests/binaries/` or `tests/fixtures/` | Foreign protocol RISC-V (`binaries/download.sh`, then copy) |
 | `deployment/`                          | CLI JSON records                                               |
 | `build/release/`                       | This contract’s RISC-V (`--contract-path` default)             |
 | root `runner`                          | Optional `ckb_cinnabar::dispatch()` for deploy/migrate/consume |
@@ -319,8 +319,9 @@ See [calculate.md](calculate.md). Minimum:
   after every change: `make build` then `make test` (all cases). Failures
   are not accepted.
 - User locks in FakeRpc: always-success. Spore / Cluster / xUDT / type-burn:
-  this skill’s [binaries/](binaries/) (used in **WarSporeSaga** FakeRpc cases
-  to check real composition before on-chain submit).
+  run [binaries/download.sh](binaries/download.sh), then load the checked
+  files (used in **WarSporeSaga** FakeRpc cases to check real composition
+  before on-chain submit). They are not committed.
 - Failures: `CalculatorError::script_exit_code()`, never scrape logs.
 - Live deps: `AddCellDepByTypeId`. CLI:
   `ckb-cinnabar --json --dry-run --privkey-env CINNABAR_PRIVKEY deploy …`
@@ -341,8 +342,10 @@ the version they picked before generate:
 - **SSRI** — kernel, `--no-default-features` (`no_std` + `alloc`, including
   ckb2021 `Address`). Guest methods call these kernel `Instruction`s.
 
-Feature `ssri` stays the verifier default. Use the `SSRI { }` arm only for
-the SSRI version. Empty `argv` runs the tree; `argv` with raw
+The `SSRI { }` arm is not a verifier feature flag. It expands to
+`ckb-cinnabar-verifier-ssri` (unpublished; git `ckb-ssri-std` at ckb-std 1.1).
+Hop-only contracts depend only on `ckb-cinnabar-verifier`. Use the arm only
+for the SSRI version. Empty `argv` runs the tree; `argv` with raw
 `vm_version == u64::MAX` runs that block. Guest methods take `&SsriSource`
 (kernel `RPC` for `network`, live cell, headers, block hashes, and
 `get_cells`; tip, fee, and `get_transactions` are unavailable) plus
@@ -361,8 +364,8 @@ setup: [calculate.md](calculate.md).
 - After generate and after every change: `make build` and full `make test`
   both exit 0 before claiming done.
 - Put shared parse results in `Context`; keep children syscall-light.
-- Load this skill’s `binaries/` when Verify will execute Spore, Cluster, xUDT,
-  or type-burn.
+- Run `binaries/download.sh` and load those files when Verify will execute
+  Spore, Cluster, xUDT, or type-burn.
 - Load https://github.com/Opticrum/ckb-contract-script when you need a solid
   protocol-scale Cinnabar example (tree, recipes, FakeRpc tests).
 - Record non-SSRI and serde_molecule on the tree unless an ingredient needs
@@ -418,19 +421,22 @@ setup: [calculate.md](calculate.md).
 
 ## Crates
 
-Git deps (isolated projects): `ckb-cinnabar`, `ckb-cinnabar-calculator`,
-`ckb-cinnabar-verifier` from `https://github.com/ashuralyk/ckb-cinnabar`.
-Target: `riscv64imac-unknown-none-elf`. Root re-exports: `Address`,
-`Instruction`, `TransactionCalculator`, `TransactionSkeleton`, `Network`,
-`RpcClient`, `CalculatorError`, `intent`.
+Prefer version dependencies once `0.1.0` is on crates.io. Until then, path
+deps against a checkout, or git deps of `ckb-cinnabar`,
+`ckb-cinnabar-calculator`, and `ckb-cinnabar-verifier` from
+`https://github.com/ashuralyk/ckb-cinnabar`. The template comments that git
+fallback next to the version lines. Target: `riscv64imac-unknown-none-elf`.
+Root re-exports: `Address`, `Instruction`, `TransactionCalculator`,
+`TransactionSkeleton`, `Network`, `RpcClient`, `CalculatorError`, `intent`.
 
 `ckb-cinnabar-core` owns the shared `no_std` intent names. Calculator
 `kernel` (always on; `--no-default-features`) is the `no_std` assembler:
 sync `RPC`, `Source`, packed skeleton, operations, ckb2021 `Address`.
 Calculator `shell` (default `std`) adds `RpcClient`, FakeRpc, signing,
-recipes, and `assert_verify!`. Verifier feature `ssri` (default) adds the
-`SSRI { }` door, `SsriSource`, and `SsriArgs`, and depends on the calculator
-kernel so a guest method can assemble.
+recipes, and `assert_verify!`. The published verifier is hop-only. The
+`SSRI { }` door, `SsriSource`, and `SsriArgs` live in
+`ckb-cinnabar-verifier-ssri` (not published; it keeps the git `ckb-ssri-std`
+pin). A guest method still assembles with the calculator kernel.
 
 Humans: install this folder with [INSTALL.md](INSTALL.md) so the skill works
 outside a Cinnabar checkout.
@@ -476,7 +482,7 @@ fix it and re-check. Do not deploy while any item is open.
 
 - [ ] Each case calls a calculator recipe, then CKB-VM (`assert_verify!` or `TransactionSimulator`).
 - [ ] Every hop Verify runs has a success exit `0`. Each important error is asserted with `script_exit_code()`, not by scraping logs.
-- [ ] User locks are always-success. Spore, Cluster, xUDT, and type-burn that Verify executes come from this skill’s `binaries/`.
+- [ ] User locks are always-success. Spore, Cluster, xUDT, and type-burn that Verify executes come from `binaries/download.sh` (checksums in `checksums.sha256`).
 - [ ] No test accepts a hand-built business transaction, a skeleton-only check, or a host call to `verify()`.
 
 ### Commands

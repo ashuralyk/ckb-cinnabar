@@ -198,7 +198,7 @@ after the method path). `bytes(index, convert)` passes that one slot to
 `capacity` (shannons, 8 little-endian bytes), `utf8`, `transaction`.
 
 The method body is a guest wrapper. It decodes `SsriArgs` and runs a kernel
-`Instruction` (verifier feature `ssri` depends on the calculator kernel).
+`Instruction` (`ckb-cinnabar-verifier-ssri` depends on the calculator kernel).
 A `std` host recipe is a shell type and stays on the host.
 
 Every guest function in the `SSRI { }` arm has a rustdoc. Purpose and
@@ -348,7 +348,7 @@ return that same `i8`. Do not declare one `define_errors!` variant per
 molecule error. Business failures (wrong issuer, bad amount) stay their own
 codes.
 
-SSRI framework codes (feature `ssri`):
+SSRI framework codes (`ckb-cinnabar-verifier-ssri`; the variants stay on `ckb-cinnabar-verifier`):
 
 | Code | `Error` |
 | ---- | ------- |

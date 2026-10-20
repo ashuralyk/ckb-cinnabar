@@ -67,8 +67,11 @@ impl<T: Default> TransactionVerifier<T> {
 
 /// Register the verification tree, and optionally an SSRI door.
 ///
-/// Hop-only form is unchanged. Enable crate feature `ssri` and append
-/// `SSRI { "Wire.name" => expr, ... }` to emit a second entry: empty `argv`
+/// Hop-only form needs only this crate. Append
+/// `SSRI { "Wire.name" => expr, ... }` to emit a second entry. That arm
+/// resolves `ckb_cinnabar_verifier_ssri` in the caller, so the contract
+/// must depend on `ckb-cinnabar-verifier-ssri` (path or git; not on
+/// crates.io until `ckb-ssri-std` publishes a ckb-std 1.1 build). Empty `argv`
 /// walks the hop tree; SSRI VM (`argv` + `vm_version == u64::MAX`) dispatches
 /// the wire table. `SSRI { }` is the door plus an explicit wire table, not a
 /// protocol identity. Each left-hand side is a string literal written in this
@@ -152,8 +155,8 @@ macro_rules! cinnabar_main {
         }
 
         fn program_entry_inner() -> ckb_cinnabar_verifier::Result<()> {
-            if ckb_cinnabar_verifier::re_exports::ckb_ssri_std::should_fallback()
-                .map_err(ckb_cinnabar_verifier::Error::from)?
+            if ckb_cinnabar_verifier_ssri::should_fallback()
+                .map_err(ckb_cinnabar_verifier_ssri::from_ssri_error)?
             {
                 let mut ctx = <$ctx>::default();
                 let mut verifier = ckb_cinnabar_verifier::TransactionVerifier::default();
@@ -168,11 +171,11 @@ macro_rules! cinnabar_main {
                     // `ssri_methods!` emits `Result<T, Error>`. Shadow the
                     // verifier's one-argument `Result` alias if the contract imported it.
                     use core::result::Result;
-                    ckb_cinnabar_verifier::expand_ssri_methods!(
+                    ckb_cinnabar_verifier_ssri::expand_ssri_methods!(
                         argv: &argv,
                         invalid_method: Error::SSRIMethodsNotFound,
                         invalid_args: Error::SSRIMethodsArgsInvalid,
-                        $($wire => ckb_cinnabar_verifier::ssri::export(&argv, $entry),)+
+                        $($wire => ckb_cinnabar_verifier_ssri::export(&argv, $entry),)+
                     )?
                 };
                 let pipe = ckb_std::syscalls::pipe()?;

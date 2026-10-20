@@ -1,0 +1,9 @@
+[package]
+name = "scenarios-tests"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ckb-cinnabar-calculator = { workspace = true }
+scenarios-calculator = { path = "../calculator" }
+tokio = { version = "1", features = ["macros", "rt"] }

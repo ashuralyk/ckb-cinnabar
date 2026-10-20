@@ -28,7 +28,12 @@ pub enum CalculatorError {
     Simulation(String),
     /// On-chain script rejected the transaction; `exit_code` is the script's
     /// `i8` (see `define_errors!` on the Verify side).
-    ScriptValidation { exit_code: i8, message: String },
+    ScriptValidation {
+        /// Script `i8` exit code (`define_errors!` on the Verify side).
+        exit_code: i8,
+        /// Human-readable VM or script message.
+        message: String,
+    },
     /// Misuse of the offline [`crate::simulation::FakeRpcClient`].
     FakeRpc(String),
     /// Filesystem failure (contract binary, deployment record, ...).

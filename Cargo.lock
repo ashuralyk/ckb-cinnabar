@@ -364,14 +364,29 @@ name = "ckb-cinnabar-core"
 version = "0.1.0"
 
 [[package]]
+name = "ckb-cinnabar-mcp"
+version = "0.1.0"
+dependencies = [
+ "ckb-cinnabar-calculator",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "ckb-cinnabar-ssri-smoke"
+version = "0.1.0"
+dependencies = [
+ "ckb-cinnabar-verifier",
+ "ckb-cinnabar-verifier-ssri",
+ "ckb-std",
+]
+
+[[package]]
 name = "ckb-cinnabar-verifier"
 version = "0.1.0"
 dependencies = [
  "blake2b-ref",
- "ckb-cinnabar-calculator",
  "ckb-cinnabar-core",
- "ckb-cinnabar-verifier-macros",
- "ckb-ssri-std",
  "ckb-std",
 ]
 
@@ -382,6 +397,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "ckb-cinnabar-verifier-ssri"
+version = "0.1.0"
+dependencies = [
+ "ckb-cinnabar-calculator",
+ "ckb-cinnabar-verifier",
+ "ckb-cinnabar-verifier-macros",
+ "ckb-ssri-std",
+ "ckb-std",
 ]
 
 [[package]]

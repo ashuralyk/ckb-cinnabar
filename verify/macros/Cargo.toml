@@ -2,8 +2,18 @@
 name = "ckb-cinnabar-verifier-macros"
 version = "0.1.0"
 edition = "2021"
-description = "Proc macros for ckb-cinnabar-verifier"
-publish = false
+description = "Proc macros that re-quote SSRI method names for ckb-cinnabar-verifier"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ashuralyk/ckb-cinnabar"
+homepage = "https://github.com/ashuralyk/ckb-cinnabar"
+documentation = "https://docs.rs/ckb-cinnabar-verifier-macros"
+readme = "../../README.md"
+keywords = ["ckb", "nervos", "smart-contract", "riscv", "blockchain"]
+categories = ["cryptography::cryptocurrencies", "development-tools::procedural-macro-helpers"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [lib]
 proc-macro = true

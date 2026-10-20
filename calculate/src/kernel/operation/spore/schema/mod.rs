@@ -9,6 +9,11 @@
 //! sequential variant indexes. [`SighashAll`] puts `seal` before `message` to
 //! match deployed spore/cluster binaries (cobuild-poc), as documented in
 //! `cobuild.mol`.
+//!
+//! Public fields follow that layout. Item-level rustdoc is not repeated on
+//! every molecule field.
+
+#![allow(missing_docs)]
 
 use alloc::{format, vec::Vec};
 use core::result;

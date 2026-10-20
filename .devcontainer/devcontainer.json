@@ -1,0 +1,14 @@
+{
+  "name": "ckb-cinnabar",
+  "build": {
+    "dockerfile": "../Dockerfile",
+    "context": ".."
+  },
+  "workspaceFolder": "/workspace",
+  "customizations": {
+    "vscode": {
+      "extensions": ["rust-lang.rust-analyzer"]
+    }
+  },
+  "postCreateCommand": "rustc --version && rustup target list --installed && clang --version && cargo generate --version && ckb-cli --version"
+}

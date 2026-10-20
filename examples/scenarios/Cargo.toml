@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = [
+    "calculator",
+    "tests",
+    "contracts/timelock",
+    "contracts/threshold_multisig",
+]
+
+[workspace.dependencies]
+ckb-cinnabar-calculator = { path = "../../calculate" }
+ckb-cinnabar-verifier = { path = "../../verify" }

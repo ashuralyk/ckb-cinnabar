@@ -12,5 +12,6 @@ pub mod indexer;
 pub mod instruction;
 pub mod operation;
 pub mod rpc;
+pub mod scenario;
 pub mod simulation;
 pub mod skeleton;

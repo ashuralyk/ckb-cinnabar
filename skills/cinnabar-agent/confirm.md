@@ -255,7 +255,7 @@ Each case calls a calculator recipe, then CKB-VM runs that transaction.
 The test seeds the universe; it does not rebuild the business transaction.
 
 - Universe: always-success user locks; this binary; **which** foreign
-  binaries from this skill’s `binaries/` (or named mocks and why).
+  binaries from this skill’s `binaries/` after `download.sh` (or named mocks and why).
 - Seeded cells and headers (block numbers, linking cells to headers).
 - Happy path: one VM success (`0`) per recipe that Verify actually runs.
   The instruction is the calculator function, not an inlined copy of its ops.

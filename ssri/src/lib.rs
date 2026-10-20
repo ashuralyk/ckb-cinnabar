@@ -6,6 +6,14 @@
 //! the SSRI syscall catalog (`network`, live cell, headers, block hashes,
 //! `get_cells`). Tip, fee rate, and `get_transactions` are not in that catalog.
 
+#![no_std]
+#![warn(missing_docs)]
+
+extern crate alloc;
+
+pub use ckb_cinnabar_verifier_macros::expand_ssri_methods;
+pub use ckb_ssri_std::{should_fallback, ssri_methods};
+
 use alloc::{
     borrow::Cow,
     format,
@@ -43,29 +51,33 @@ use ckb_std::{
     high_level::decode_hex,
 };
 
-use crate::{Error, Result};
+use ckb_cinnabar_verifier::{Error, Result};
 
 pub use ckb_ssri_std::SSRIError;
 
-impl From<SSRIError> for Error {
-    fn from(value: SSRIError) -> Self {
-        match value {
-            SSRIError::SSRIMethodsNotFound => Error::SSRIMethodsNotFound,
-            SSRIError::SSRIMethodsArgsInvalid => Error::SSRIMethodsArgsInvalid,
-            SSRIError::SSRIMethodsNotImplemented => Error::SSRIMethodsNotImplemented,
-            SSRIError::SSRIMethodRequireHigherLevel => Error::SSRIMethodRequireHigherLevel,
-            SSRIError::InvalidVmVersion => Error::InvalidVmVersion,
-        }
+/// Map a [`ckb_ssri_std`] method error onto the verifier exit code.
+///
+/// `From<SSRIError> for Error` cannot live in this crate: both types are
+/// foreign. Guest code that uses `?` should call this (or return [`Error`]
+/// directly).
+pub fn from_ssri_error(value: SSRIError) -> Error {
+    match value {
+        SSRIError::SSRIMethodsNotFound => Error::SSRIMethodsNotFound,
+        SSRIError::SSRIMethodsArgsInvalid => Error::SSRIMethodsArgsInvalid,
+        SSRIError::SSRIMethodsNotImplemented => Error::SSRIMethodsNotImplemented,
+        SSRIError::SSRIMethodRequireHigherLevel => Error::SSRIMethodRequireHigherLevel,
+        SSRIError::InvalidVmVersion => Error::InvalidVmVersion,
     }
 }
 
-impl From<CalculatorError> for Error {
-    fn from(value: CalculatorError) -> Self {
-        match value {
-            CalculatorError::SourceUnavailable(_) => Error::SSRISourceUnavailable,
-            CalculatorError::ScriptValidation { exit_code, .. } => Error::Custom(exit_code),
-            _ => Error::SSRIAssembleFailed,
-        }
+/// Map a kernel [`CalculatorError`] onto the SSRI exit codes (17 or 18).
+///
+/// Script validation keeps the inner `i8` as [`Error::Custom`].
+pub fn from_calculator_error(value: CalculatorError) -> Error {
+    match value {
+        CalculatorError::SourceUnavailable(_) => Error::SSRISourceUnavailable,
+        CalculatorError::ScriptValidation { exit_code, .. } => Error::Custom(exit_code),
+        _ => Error::SSRIAssembleFailed,
     }
 }
 
@@ -261,14 +273,14 @@ impl<E> ArgError<E> {
             ArgError::Convert(err) => f(err),
         }
     }
-}
 
-impl<E> From<ArgError<E>> for Error
-where
-    Error: From<E>,
-{
-    fn from(value: ArgError<E>) -> Self {
-        match value {
+    /// Collapse this slot error into [`Error`] when the converter error
+    /// already converts into [`Error`].
+    pub fn into_error(self) -> Error
+    where
+        Error: From<E>,
+    {
+        match self {
             ArgError::Args(err) => err,
             ArgError::Convert(err) => err.into(),
         }
@@ -897,23 +909,33 @@ mod tests {
 
     #[test]
     fn ssri_error_maps_honestly() {
-        assert_eq!(i8::from(Error::from(SSRIError::SSRIMethodsNotFound)), 12);
-        assert_eq!(i8::from(Error::from(SSRIError::SSRIMethodsArgsInvalid)), 13);
         assert_eq!(
-            i8::from(Error::from(SSRIError::SSRIMethodsNotImplemented)),
+            i8::from(from_ssri_error(SSRIError::SSRIMethodsNotFound)),
+            12
+        );
+        assert_eq!(
+            i8::from(from_ssri_error(SSRIError::SSRIMethodsArgsInvalid)),
+            13
+        );
+        assert_eq!(
+            i8::from(from_ssri_error(SSRIError::SSRIMethodsNotImplemented)),
             14
         );
         assert_eq!(
-            i8::from(Error::from(SSRIError::SSRIMethodRequireHigherLevel)),
+            i8::from(from_ssri_error(SSRIError::SSRIMethodRequireHigherLevel)),
             15
         );
-        assert_eq!(i8::from(Error::from(SSRIError::InvalidVmVersion)), 16);
+        assert_eq!(i8::from(from_ssri_error(SSRIError::InvalidVmVersion)), 16);
         assert_eq!(
-            i8::from(Error::from(CalculatorError::SourceUnavailable("x".into()))),
+            i8::from(from_calculator_error(CalculatorError::SourceUnavailable(
+                "x".into()
+            ))),
             18
         );
         assert_eq!(
-            i8::from(Error::from(CalculatorError::Other("assemble".into()))),
+            i8::from(from_calculator_error(CalculatorError::Other(
+                "assemble".into()
+            ))),
             17
         );
     }

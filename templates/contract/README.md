@@ -1,5 +1,11 @@
 Generated Cinnabar contract project. Agent instructions: see Cinnabar's `AGENTS.md`.
 
+This template replaces the old `ckb-cinnabar-scripts-template` repository.
+Dependencies are a path into a local checkout when `use_local_cinnabar` is
+true (the prompt default, and what to use until `0.1.0` is on crates.io).
+Otherwise they are `version = "<cinnabar_version>"`. The generated
+`Cargo.toml` comments the git fallback for that case.
+
 Cinnabar splits **Calculate** (off-chain `Instruction`s in `calculator/`) from
 **Verify** (on-chain tree in `contracts/{{crate_name}}`). Name both sides with
 the same `intent::*` constants (`create` / `transfer` / `burn` / …).

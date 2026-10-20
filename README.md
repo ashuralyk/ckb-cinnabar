@@ -79,8 +79,12 @@ tree uses 10–11. An SSRI entry uses 12–18:
 | 17 | `SSRIAssembleFailed` |
 | 18 | `SSRISourceUnavailable` |
 
-`ckb-cinnabar-verifier` feature `ssri` is on by default and pulls in
-[`ckb-ssri-std`](https://github.com/ashuralyk/ckb-ssri-std). Empty `argv`
+The SSRI arm of `cinnabar_main!` resolves
+[`ckb-cinnabar-verifier-ssri`](ssri), which depends on
+[`ckb-ssri-std`](https://github.com/ashuralyk/ckb-ssri-std) at `8c2c245`
+(ckb-std 1.1). That crate is not published: crates.io `ckb-ssri-std` 0.0.1
+still pins ckb-std 0.16. Hop-only contracts depend only on
+`ckb-cinnabar-verifier`. Empty `argv`
 runs the verify tree. `argv` together with raw `vm_version == u64::MAX` runs
 SSRI. Append a wire table when this binary serves methods:
 
@@ -145,6 +149,13 @@ Agents treating a generated or edited contract as done must have both
 | `build/release/`    | RISC-V binaries (`--contract-path` default) |
 
 The template Makefile comes from ckb-script-templates. Agents should not hand-write RISC-V linker scripts.
+
+The separate repository `ckb-cinnabar-scripts-template` is not the scaffold
+(its README was left as a TODO). Generate from `templates/contract` in this
+repository. When the crates are on crates.io, omit `use_local_cinnabar` and
+the template depends on version `0.1.0`. Until then, pass
+`--define use_local_cinnabar=true`, or replace the version lines with the git
+fallback commented in the generated `Cargo.toml`.
 
 Rewrite the template comments for this contract. The calculator crate, the
 verifier crate, and each identity module use `//!`. Each recipe, custom
@@ -487,4 +498,18 @@ $ ckb-cinnabar consume --contract-name my_contract --tag v0.1.2
 
 > note: Comparing to Capsule, Cinnabar deployment module only uses `ckb-cli` to sign transaction without creating the `deployment.toml` file as prerequisites.
 
-For specific usage scenarios, please refer to [demos](https://github.com/ashuralyk/cinnabar-examples).
+For specific usage scenarios, please refer to [demos](https://github.com/ashuralyk/cinnabar-examples). Worked examples in this repository: [xUDT, multisig, and timelock](examples/) and the VM-tested locks under [examples/scenarios](examples/scenarios).
+
+## FAQ
+
+**Where do I start?** Describe the product. The agent skill in [AGENTS.md](AGENTS.md) interviews one rule at a time, then scaffolds [templates/contract](templates/contract). Do not start from the old `ckb-cinnabar-scripts-template` repository.
+
+**What is the difference between Calculate and Verify?** Calculate builds the transaction off chain (`Instruction` of `Operation`s). Verify checks that transaction on chain (`cinnabar_main!`).
+
+**Which error code is mine?** System 1–5, verify tree 10–11, SSRI 12–18, custom errors from 20. The full table is [docs/error-codes.md](docs/error-codes.md).
+
+**How do I run this without installing the RISC-V target by hand?** [Dockerfile](Dockerfile) and [.devcontainer/devcontainer.json](.devcontainer/devcontainer.json) install Rust, `clang`, the `riscv64imac-unknown-none-elf` target, `cargo-generate`, and `ckb-cli`.
+
+**How does an agent call this without reading the repo?** [llms.txt](llms.txt) is the short map. [llms-full.txt](llms-full.txt) inlines the README and AGENTS.md. `ckb-cinnabar-mcp` (`cargo run -p ckb-cinnabar-mcp`) exposes scaffold, build, test, simulate, explain_error, and the docs as MCP tools and resources.
+
+**Are the crates on crates.io?** Not yet. Publish order is `ckb-cinnabar-core`, `ckb-cinnabar-verifier-macros`, `ckb-cinnabar-verifier`, `ckb-cinnabar-calculator`, `ckb-cinnabar`, then `ckb-cinnabar-mcp`. `ckb-cinnabar-verifier-ssri` stays unpublished until `ckb-ssri-std` on crates.io supports ckb-std 1.1.

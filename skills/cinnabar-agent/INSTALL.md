@@ -45,10 +45,10 @@ cp -R skills/cinnabar-agent ~/.cursor/skills/cinnabar-agent
 # Claude Code: cp -R skills/cinnabar-agent ~/.claude/skills/cinnabar-agent
 ```
 
-The install copies this whole folder, including `binaries/` (Spore, Cluster,
-xUDT, type-burn RISC-V scripts used in WarSporeSaga FakeRpc tests). Keep them
-next to `SKILL.md` so agents can copy them into project `tests/binaries/` (or
-`tests/fixtures/`).
+The install copies this whole folder. Spore, Cluster, xUDT, and type-burn
+RISC-V scripts are not in git. From `binaries/` next to `SKILL.md`, run
+`./download.sh` (it checks SHA-256), then copy the files into a project's
+`tests/binaries/` (or `tests/fixtures/`).
 
 After install, “写一个 CKB 锁仓合约” / “write a CKB lock script” should load
 the skill even in an empty folder.

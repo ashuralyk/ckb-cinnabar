@@ -24,6 +24,7 @@
 //! ```
 
 #![cfg_attr(not(feature = "std"), no_std)]
+#![warn(missing_docs)]
 
 extern crate alloc;
 
@@ -59,6 +60,9 @@ pub use address::{Address, AddressPayload};
 
 #[cfg(feature = "std")]
 pub use rpc::{Host, RpcClient, MAINNET_RPC_URL, TESTNET_RPC_URL};
+
+#[cfg(feature = "std")]
+pub use shell::scenario;
 
 #[cfg(feature = "std")]
 pub use instruction::DefaultInstruction;

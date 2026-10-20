@@ -200,8 +200,11 @@ impl<S: Source> Operation<S> for AddClusterOutputCell {
 
 /// Pack cobuild `Action` bytes for a script already on the skeleton.
 pub struct AddCobuildActionBytes {
+    /// Hash of the script info cell the action refers to.
     pub script_info_hash: Hash256,
+    /// Code hash of the script the action is about.
     pub script_hash: Hash256,
+    /// Raw action payload appended to the cobuild witness.
     pub data: Vec<u8>,
 }
 

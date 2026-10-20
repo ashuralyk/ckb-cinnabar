@@ -1,0 +1,14 @@
+[package]
+name = "ckb-cinnabar-ssri-smoke"
+version = "0.1.0"
+edition = "2021"
+description = "RISC-V smoke contract that expands cinnabar_main! with an SSRI wire table"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ashuralyk/ckb-cinnabar"
+homepage = "https://github.com/ashuralyk/ckb-cinnabar"
+publish = false
+
+[dependencies]
+ckb-std = "1.1.0"
+ckb-cinnabar-verifier = { version = "0.1.0", path = "../../verify" }
+ckb-cinnabar-verifier-ssri = { version = "0.1.0", path = ".." }

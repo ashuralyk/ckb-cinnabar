@@ -1,0 +1,942 @@
+# Cinnabar — full agent context
+
+This file inlines the repository docs an agent needs to scaffold, verify, calculate, simulate, and deploy a CKB contract. Prefer `llms.txt` when the context window is small.
+
+## Core API
+
+Crates (publish order): `ckb-cinnabar-core`, `ckb-cinnabar-verifier-macros`, `ckb-cinnabar-verifier`, `ckb-cinnabar-calculator`, `ckb-cinnabar`, `ckb-cinnabar-mcp`. `ckb-cinnabar-verifier-ssri` is `publish = false` because it git-depends on `ckb-ssri-std` rev `8c2c245`.
+
+- `ckb_cinnabar_core::intent` — shared hop names (`CREATE`, `TRANSFER`, `BURN`, `MINT`, `DEPOSIT`, `WITHDRAW`). Use them only when the hop is exactly that morphology.
+- `cinnabar_main!(Context, (TREE_ROOT, Root), ...)` — registers the on-chain tree. Optional trailing `SSRI { "Wire.name" => expr }` requires `ckb-cinnabar-verifier-ssri` in the contract crate.
+- `define_errors!(Name, { First = CUSTOM_ERROR_START, Second, })` — custom `i8` codes from 20.
+- `Instruction::new` / `Instruction::named` — a pipeline of `Operation`s. Import `instruction`, `operation`, `rpc`, `skeleton` from the calculator crate root.
+- `assert_verify!(&rpc, instructions, expected_exit)` — FakeRpc + native CKB-VM. `0` is success.
+- `ckb-cinnabar --json --dry-run` — headless deploy. Records go to `deployment/<network>/<name>.json`.
+- Script exits: sys 1–5, tree 10–11, SSRI 12–18, custom ≥ 20. `CalculatorError::kind()` is a separate string for JSON.
+
+Target: `riscv64imac-unknown-none-elf`, `clang` 16+, `RUSTFLAGS` include `-C passes=lower-atomic`.
+
+
+
+# README.md
+
+# Cinnabar
+
+> A bright red mineral consisting of mercury sulfide. It is the only important ore of mercury and is sometimes used as a pigment.
+
+Cinnabar is a framework that aims to find a most reasonable way to bring CKB a better programming experience.
+
+In a short, Cinnabar takes advantage of `Calculate` and `Verify` separation design, which is the core concept of CKB Cell model, to fill in the missing parts of existing CKB programming.
+
+> [!IMPORTANT]
+> **Use the Cinnabar skill.** Install [cinnabar-agent](skills/cinnabar-agent/INSTALL.md) once with `npx skills add ashuralyk/ckb-cinnabar -g -a cursor -s cinnabar-agent -y`, or from a local clone with `npx skills add /path/to/cinnabar -g -a cursor -s cinnabar-agent -y`. Then describe your product in your own words. [What you do, what you get, and a short example](#ai-agent-friendly) are next.
+
+## AI-agent friendly
+
+You start from a product sentence. The skill asks you the missing product rules, shows them back as a verification tree, and writes the contract only after you accept that tree. A global install works in an empty folder. After this tree is on GitHub:
+
+```bash
+npx skills add ashuralyk/ckb-cinnabar -g -a cursor -s cinnabar-agent -y
+```
+
+From a local clone: `npx skills add /path/to/cinnabar -g -a cursor -s cinnabar-agent -y`.
+Details: [skills/cinnabar-agent/INSTALL.md](skills/cinnabar-agent/INSTALL.md).
+
+**What you do.** Describe the product in your own words. The agent asks one product question per message. Answer that question, then the next. You stay in product language; the agent chooses the script shape and records it on the tree. When every product rule has been said, it shows the verification tree and waits. Read it. Correct a rule in your own words, or tell it to implement that tree. That yes is when coding starts.
+
+**What you get.** A contract project for the tree you accepted: on-chain checks for those rules, off-chain transactions that carry them out, and tests that run those transactions in a local CKB-VM. `make build` and `make test` both pass before a dry-run deploy. The agent’s own checklist is [AGENTS.md](AGENTS.md).
+
+### A short example
+
+```text
+You: A blind box that issues my handmade art.
+
+Agent: Who may issue a box?
+
+You: Only me.
+
+Agent: Once someone holds a box, who may open it, and can they open it again?
+
+You: Whoever holds it can open it once.
+
+Agent: (after the rest of the product rules)
+
+Root
+  → issue — only you can seal a box; the artwork stays hidden
+  → open — the holder reveals that box once
+  → transfer — the holder can give a sealed or opened box away
+  → burn — the holder can destroy it
+Never checked here: the picture file, the shop price
+
+You: Implement this.
+```
+
+That confirmation is the specification. The agent then scaffolds the project, writes the checks and the transactions, and runs the tests.
+
+### Shared layout, optional intent shortcut
+
+Coupling is the byte layout (args/data) and the transition table, not a forced
+name match. `ckb-cinnabar-core` still owns `intent::*` for the common case where
+each hop **is** Create/Transfer/Burn/Mint/Deposit/Withdraw:
+
+```rust
+Instruction::named(intent::TRANSFER, /* operations */)
+// equals
+cinnabar_main!(Context, (TREE_ROOT, Root), (intent::TRANSFER, Transfer), /* ... */);
+```
+
+Multi-identity protocols register domain hop strings instead. Custom on-chain
+errors start at `CUSTOM_ERROR_START` (20). System codes are 1–5. The verify
+tree uses 10–11. An SSRI entry uses 12–18:
+
+| Code | `Error` |
+| ---- | ------- |
+| 10 | `NotFoundRootVerifier` |
+| 11 | `NotFoundBranchVerifier` (unknown next hop, or the walk cycled) |
+| 12 | `SSRIMethodsNotFound` |
+| 13 | `SSRIMethodsArgsInvalid` |
+| 14 | `SSRIMethodsNotImplemented` |
+| 15 | `SSRIMethodRequireHigherLevel` |
+| 16 | `InvalidVmVersion` (`argv` is set and `vm_version` is not `u64::MAX`) |
+| 17 | `SSRIAssembleFailed` |
+| 18 | `SSRISourceUnavailable` |
+
+The SSRI arm of `cinnabar_main!` resolves
+[`ckb-cinnabar-verifier-ssri`](ssri), which depends on
+[`ckb-ssri-std`](https://github.com/ashuralyk/ckb-ssri-std) at `8c2c245`
+(ckb-std 1.1). That crate is not published: crates.io `ckb-ssri-std` 0.0.1
+still pins ckb-std 0.16. Hop-only contracts depend only on
+`ckb-cinnabar-verifier`. Empty `argv`
+runs the verify tree. `argv` together with raw `vm_version == u64::MAX` runs
+SSRI. Append a wire table when this binary serves methods:
+
+```rust
+cinnabar_main!(
+    Context,
+    (TREE_ROOT, Root),
+    (intent::MINT, Mint),
+    SSRI {
+        "UDT.name" => "Example",
+        "UDT.decimals" => 8u8,
+        "UDT.mint" => mint, // fn(&SsriSource, SsriArgs) -> Result<Vec<u8>>
+    },
+);
+```
+
+`ssri_methods!` always emits `SSRI.version`, `SSRI.get_methods`, and
+`SSRI.has_methods`. The `SSRI { }` block lists the contract's own methods.
+Each right-hand side is an expression `export` turns into bytes: a guest
+function, `&[u8]`, `u8`, `Vec<u8>`, or `Result`. Hop `verify()` stays on the
+tree. `SsriSource` implements kernel `RPC` for `network`, `get_live_cell`,
+`get_header`, `get_header_by_number`, `get_block_hash`,
+`get_transaction_block_hash`, and `get_cells`. `get_tip_header`,
+`get_tip_block_number`, `min_fee_rate`, and `get_transactions` return
+`SourceUnavailable`. `Source` lookups still come from that `RPC`.
+`SsriArgs` copies each slot's hex and decodes it when a reader runs.
+`method_path()` reads `argv[0]` as the 8-byte method id and ignores
+`offset`. Argument `n` is `argv[offset + n]`. `offset` starts at 0;
+`with_offset` sets it. `bytes(index, convert)` is
+`FnOnce(&[u8]) -> Result<T, E>`. A missing slot or bad hex is
+`ArgError::Args`. The converter's error stays in `ArgError::Convert`.
+`as_bytes(index)` is the decoded slice. `get` and `molecule` wrap `bytes`
+for `FromSsriArg` and any molecule `Entity`. Built-in converters: `hash`,
+`script`, `address`, `capacity` (shannons, molecule `uint64`: 8
+little-endian bytes), `utf8`, and `transaction`. The method body is a guest
+wrapper: it reads `SsriArgs` and runs a kernel `Instruction` (the verifier's
+calculator dependency is `--no-default-features`). Each guest function’s
+rustdoc lists its arguments (index, meaning, converter or encoding) and
+matches those reads. The generated contract template stays hop-only.
+
+### Contract project template
+
+Scaffold with cargo-generate (or copy `templates/contract` and replace placeholders):
+
+```bash
+cargo generate --path templates/contract --name my-lock
+cd my-lock
+make prepare   # rustup target add riscv64imac-unknown-none-elf
+make build     # writes build/release/<crate>
+make test
+```
+
+Agents treating a generated or edited contract as done must have both
+`make build` and the full `make test` suite exit 0.
+
+| Path                | Role                                        |
+| ------------------- | ------------------------------------------- |
+| `contracts/<name>/` | `no_std` Verify script (`cinnabar_main!`)   |
+| `calculator/`       | Off-chain `Instruction` helpers             |
+| `tests/`            | `FakeRpcClient` + `assert_verify!`          |
+| `deployment/`       | JSON records from `ckb-cinnabar`            |
+| `build/release/`    | RISC-V binaries (`--contract-path` default) |
+
+The template Makefile comes from ckb-script-templates. Agents should not hand-write RISC-V linker scripts.
+
+The separate repository `ckb-cinnabar-scripts-template` is not the scaffold
+(its README was left as a TODO). Generate from `templates/contract` in this
+repository. When the crates are on crates.io, omit `use_local_cinnabar` and
+the template depends on version `0.1.0`. Until then, pass
+`--define use_local_cinnabar=true`, or replace the version lines with the git
+fallback commented in the generated `Cargo.toml`.
+
+Rewrite the template comments for this contract. The calculator crate, the
+verifier crate, and each identity module use `//!`. Each recipe, custom
+operation, `Context`, and hop uses `///`. The comment states why that item
+exists and what it assembles or checks. An SSRI guest function’s rustdoc
+also lists its arguments, as described above. When the calculator covers
+more than one identity, split Verify, Calculate, and tests on that cut.
+Each identity module holds its operations and one recipe per hop;
+`calculator/src/lib.rs` only re-exports. Cell data uses `serde_molecule`
+unless the product already names another codec and both entry points.
+
+### Offline simulation
+
+`FakeRpcClient` is an in-memory chain. Tests inject a compiled binary with `AddFakeContractCelldepByName`, then assert the CKB-VM exit code — no node, no faucet:
+
+```rust
+let cycles = assert_verify!(&rpc, vec![prepare, transfer_ix], 0).unwrap();
+```
+
+The third argument is the expected CKB-VM exit. `0` means success. Non-zero
+is the on-chain `i8` from `define_errors!`. Script rejections are
+`CalculatorError::ScriptValidation`; branch on `script_exit_code()`, do not
+parse the display string.
+
+Each run prints `[ckb-vm] file:line consumed cycles: N`, including when a
+script exits non-zero. `file:line` is the `assert_verify!` call. When the
+expected exit is `0` and the VM succeeds, `cycles` is that count. A matching
+non-zero expected exit returns `Ok(0)`; the printed line carries the count.
+`assert_verify!` caps the run at 10_000_000 cycles (`DEFAULT_MAX_CYCLES`,
+about the CKB testnet per-transaction limit). `TransactionSimulator::verify`
+and `async_verify` take an explicit `max_cycles` and return consumed cycles
+on success.
+
+### Structured errors and headless CLI
+
+`CalculatorError::kind()` is a stable string (`cell_dep_not_found`, `script_validation`, …) for JSON / agent branching.
+
+The `ckb-cinnabar` CLI is usable from a script or agent:
+
+- `--json` — success and failure both print **one** JSON object on stdout. Failures set `ok: false`, include `error.kind` / `error.message`, keep stderr empty, and exit non-zero. Contract validation failures also include `error.exit_code`.
+- `--dry-run` — assemble (and optionally sign) without sending, and skip interactive `ckb-cli`.
+- `--privkey-env VAR` — hex secp256k1 key from an environment variable. Without it, live send still prompts `ckb-cli`.
+
+```bash
+ckb-cinnabar --json --dry-run --privkey-env CINNABAR_PRIVKEY \
+  deploy --contract-name my_lock --tag v0.1.0 --payer-address ckt1...
+```
+
+Root crate re-exports the types agents typically need: `Address`, `Instruction`, `TransactionCalculator`, `TransactionSkeleton`, `Network`, `RpcClient`, `CalculatorError`, `intent`.
+
+### Calculate layers
+
+One formula on both profiles: an `Instruction` of `Operation`s, then
+`TransactionCalculator`, then `TransactionSkeleton`. Import them from the
+crate root (`instruction`, `operation`, `rpc`, `skeleton`, `address`).
+
+| Profile | How | What you get |
+| ------- | --- | ------------ |
+| Kernel | `--no-default-features` | Always-on `no_std` + `alloc` assembler: sync `RPC` (`Node` + `Indexer`), `Source`, packed skeleton, operations, ckb2021 `Address` (`ckb1…` / `ckt1…` bech32m, [RFC-0021](https://github.com/nervosnetwork/rfcs/blob/master/rfcs/0021-ckb-address-format/0021-ckb-address-format.md)) |
+| Shell | default `std` | The kernel, plus `RpcClient`, FakeRpc, CKB-VM, signing, predefined recipes, and `assert_verify!` |
+
+`Source` is `find_out_point_by_type`, `find_cell_by_out_point`, and
+`find_cell_data_by_out_point`. Every `RPC` implements it.
+`UnsupportedSource` answers every lookup with `SourceUnavailable`. Inject-only
+assembly uses it when the caller already has the cells to place on the
+skeleton. FakeRpc and `assert_verify!` are shell-only.
+
+`--features spore` (experimental) encodes Spore and Cluster cells with
+`serde_molecule` through `operation::spore::schema`.
+
+`TransactionSkeleton::get_input_by_index`, `get_output_by_index`, and
+`get_celldep_by_index` take a `usize`. A Lua-style relative index is
+`(-n) as usize` (`-1` is the last cell).
+
+`Indexer::get_cells` and `get_transactions` take `Order` (`Asc = 0`, oldest
+first; `Desc = 1`, newest first) on `RpcClient`, `FakeRpcClient`, and
+`SsriSource`. `GetCellsIter`, operation helpers, and the built-in recipes
+request `Asc`. `CellQueryOptions::order` (`QueryOrder`) stays a hint on
+that options struct; converting to `SearchKey` leaves it there.
+
+## Background
+
+### The Counter-intuitive of CKB
+
+In contrast of Account model based block chains, like Ethereum and Solana, `Calculate` and `Verify` are fully on-chain implemented and not separated, thus the contract takes the responsibility of processing calculation and verification logic simultanously, because of that, the transaction, which can be recognized as the contract trigger, is so simple that only contains several commands or intentions.
+
+However, CKB is an UTXO based block chain, which `Calculate` and `Verify` are separated here, and only put `Verify` part on-chain, so the contract only takes the responsibility of verification but throws the responsibility of calculation out off-chain. For most programmers, this is counterintuitive.
+
+For above reason, transaction of CKB has high cognitive cost, it's not as simple as a container of multiple commands or intentions, but the `RESULT` of off-chain calculation, this is the core barrier for most programmers to understand CKB programming.
+
+### Turn Counter-intuitive into Intuitive
+
+CKB contracts act as a role of on-chain verifier to verify the result of off-chain calculation, which is the transaction, but the responsibility of assembling transaction misses its taker, in most cases, this responsiblity unreasonably gives to the terminal programmers.
+
+Terminal programmers are not only programmers, but more importantly our customers, they should be given the least burden and take the best experience. In a most reasonable way, the responsibility of transaction assembly should be given to contract writters, just like those from Ethereum and Solana.
+
+However, like Bitcoin UTXO model, the advanced CKB Cell model allows a transaction to have maximum flexibility and composability, but in contrast, the contract writters only define minimum operating conditions about successfully running a transaction. So considering this paradox, we need to intruduce a transaction assembly framework that splits composability into pieces.
+
+### Simplicity
+
+Current toolchains and SDKs in CKB ecosystem lack simplicity, for instance, writting and deploying CKB contracts are always challenging for most newcommers, and it's a nightmare testing contracts as well.
+
+## Modules in Cinnabar
+
+Cinnabar framework provides `Calculate` module and `Verify` module, in addition, contract deployment related commands are also integrated, known as `Deployment` module.
+
+### Calculate Module
+
+CKB transaction contains few fields, they are:
+
+- CellDeps
+- HeaderDeps
+- Inputs
+- Outputs
+- Witnesses
+
+The calculation is to assembly transaction with a set of instructions about fulfilling fields with proper data, for example, a typical calculation instruction comes up with the input and output, filling into `Inputs` and `Outputs` fields respectively.
+
+A transaction can contain multiple instructions, like creating Spore DOBs or transfering xUDT assets, they are totally settled by a batch of transaction fields fullfill operations. So, a complete process of transaction assembly can be parsed into below format:
+
+- Transaction calculation
+  - Instruction 1: create one Spore DOB asset for user A
+    - Operation 1: add an existing cell owned by user A into "Inputs" field
+    - Operation 2: add a Spore DOB cell into "Outputs" field
+    - Operation 3: add the existing Spore Cluster cell into "Inputs" and "Outputs" fields
+    - Operation 4: add Spore and Cluster contract cells into "CellDeps" field
+  - Instruction 2: transfer xUDT asset from user A to user B
+    - Operation 1: add an existing xUDT cells from user A into "Inputs" field
+    - Operation 2: add a xUDT cell of user B into "Outputs" field
+    - Operation 3: add xUDT contract cell into "CellDeps" field
+  - Instruction 3: balance transaction
+    - Operation 1: add existing cells of user A into "Inputs" field
+    - Operation 2: add change cell of user A into "Outputs" field
+  - Instruction 4: sign transaction
+    - Operation 1: sign transaction with user A
+    - Operation 2: put signature into "Witnesses" field
+
+As shown above, the calculation of a transaction is a set of instructions, and an instruction is a set of operations, finally, an operation indicates how to fullfill transaciton's fields.
+
+Contract writters should provide instructions to cover up their contracts assembly requirement details for terminal programmers, and no need to worry about the next, because the responsibility of composing instructions to generate transaction is for those terminal programmers.
+
+A diagram of Calculate module design:
+
+![alt text](assets/calculate.png)
+
+Run [tranfer](examples/secp256k1_transfer.rs) example:
+
+```bash
+$ cargo run --example secp256k1_transfer ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqfqmf4hphl9jkrw3934mwe6m3a2nx88rzgdlw820 ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqtz32u8mgzk57zdtt6n62z4y2zyh8egkdcahyxk3 1000.0 <secret_key>
+
+# if no <secret_key> provided, then need `ckb-cli` to be installed
+```
+
+Run [spore](examples/spore.rs) example:
+
+```bash
+$ cargo run --example spore --features spore -- spore mint --minter ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqfqmf4hphl9jkrw3934mwe6m3a2nx88rzgdlw820 --content-type "text/plain" --content "hello, cinnabar"
+
+# other commands please see help
+$ cargo run --example spore
+```
+
+Run DAO example:
+
+```bash
+$ cargo run --example dao -- --operator ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqfqmf4hphl9jkrw3934mwe6m3a2nx88rzgdlw820 deposit --ckb 1000.0
+
+# other commands please see help
+$ cargo run --example dao
+```
+
+> note: Instruction can be compared to the interface provided by contracts from those Account model based block chains.
+
+## Verify Module
+
+Writting a contract is to verify wether the structure of a transaction is valid, generally speaking, this isn't difficult, but when the transaction structure becoming complex, contract code might be bloated.
+
+If contract writters want to better manage their scripts code, modulization is essential and cannot be ignored. Here would introduce a practical modulization method from Cinnabar, it's called the `Verification Tree`.
+
+Verification tree needs to split a whole verification process into multiple small pieces, and then manage them in a tree structure, working like a flowchart.
+
+For example, a simplified version of flowchart for verifying a Spore creation transaction:
+
+![alt text](assets/spore.png)
+
+Each flowchart node on diagram can be treated as a tree node from verification tree:
+
+```rust
+#![no_main]
+#![no_std]
+
+use ckb_cinnabar_verifier::{
+    cinnabar_main, define_errors, Result, Verification, CUSTOM_ERROR_START, TREE_ROOT
+};
+use ckb_std::debug;
+
+define_errors!(
+    SporeError,
+    {
+        InvalidSporeId = CUSTOM_ERROR_START,
+        NoClusterOwnerExists,
+        NoClusterProxyExists,
+        NoClusterProxyOwnerExists,
+    }
+);
+
+#[derive(Default)]
+struct Context {
+    // ...
+}
+
+#[derive(Default)]
+struct CheckSporeId {}
+
+impl Verification<Context> for CheckSporeId {
+    fn verify(&mut self, name: &str, ctx: &mut Context) -> Result<Option<&str>> {
+        debug!("verify: {name}");
+        // ...
+        // if spore id is valid
+        Ok(Some("check_cluster"))
+        // else
+        Err(SporeError::InvalidSporeId)
+    }
+}
+
+#[derive(Default)]
+struct CheckCluster {}
+
+impl Verification<Context> for CheckCluster {
+    fn verify(&mut self, name: &str, ctx: &mut Context) -> Result<Option<&str>> {
+        debug!("verify: {name}");
+        // ...
+        // if no cluster
+        Ok(None)
+        // if cluster not exists in CellDep
+        Ok(Some("check_proxy"))
+        // if cluster owner exists in Inputs and Outputs
+        Ok(None)
+        // else
+        Err(SporeError::NoClusterOwnerExists)
+    }
+}
+
+#[derive(Default)]
+struct CheckClusterProxy {}
+
+impl Verification<Context> for CheckClusterProxy {
+    fn verify(&mut self, name: &str, ctx: &mut Context) -> Result<Option<&str>> {
+        debug!("verify: {name}");
+        // ...
+        // if cluster proxy not exists in CellDep
+        Err(SporeError::NoClusterProxyExists)
+        // if cluster proxy owner exists in Inputs and Outputs
+        Err(SporeError::NoClusterProxyOwnerExists)
+        // else
+        Ok(None)
+    }
+}
+
+cinnabar_main!(
+    Context,
+    (TREE_ROOT, CheckSporeId),
+    ("check_cluster", CheckCluster),
+    ("check_proxy", CheckClusterProxy)
+)
+```
+
+It's very easy to distinguish how a CKB contract works because of the clear modular design.
+
+## Deployment Module
+
+Install Cinnabar binary:
+
+```bash
+$ git clone https://github.com/ashuralyk/ckb-cinnabar
+$ cd ckb-cinnabar
+$ cargo install --path .
+
+# need to install ckb-cli to sign transaction if use Cinnabar to deploy contract
+$ git clone https://github.com/nervosnetwork/ckb-cli
+$ cd ckb-cli
+$ cargo install --path .
+
+# or install from https://github.com/nervosnetwork/ckb-cli/releases
+```
+
+Run help:
+
+```bash
+$ ckb-cinnabar
+
+Usage: ckb-cinnabar [OPTIONS] <COMMAND>
+
+Commands:
+  deploy   Upload contract to CKB
+  migrate  Update on-chain contract from old version to new version
+  consume  Consume on-chain contract to release the capacity
+  list     List deployment records
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+  -n, --network <NETWORK>
+          CKB network, options are `mainnet`, `testnet` or URL (e.g. http://localhost:8114) [default: testnet]
+      --deployment-path <DEPLOYMENT_PATH>
+          Directory of the contract deployment information [default: deployment]
+      --contract-path <CONTRACT_PATH>
+          Directory of the compiled contract binary [default: build/release]
+      --json
+          Print a JSON object (agents should always pass this)
+      --dry-run
+          Assemble without sending
+      --privkey-env <VAR>
+          Hex secp256k1 key in this environment variable (headless signing)
+  -h, --help
+          Print help
+  -V, --version
+          Print version
+```
+
+With `--json`, both success and failure are emitted as one JSON object on
+stdout. Failures keep stderr empty, set `ok` to `false`, include a stable
+`error.kind` and `error.message` (plus `error.exit_code` for contract
+validation failures), and return a non-zero process status.
+
+Examples:
+
+```bash
+# dry-run a deploy (no send, JSON, env key)
+$ ckb-cinnabar --json --dry-run --privkey-env CINNABAR_PRIVKEY deploy --contract-name my_contract --tag v0.1.1 --payer-address ckt1... --type-id
+
+# deploy a new compiled contract with type_id
+$ ckb-cinnabar deploy --contract-name my_contract --tag v0.1.1 --payer-address ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq28phxutezqvjgfv5q38gn5kwek4m9km3cmajeqs --type-id
+
+# upgrade an existing contract with type_id removed
+$ ckb-cinnabar migrate --contract-name my_contract --from-tag v0.1.1 --to-tag v0.1.2 --type-id-mode remove
+
+# consume an existing contract
+$ ckb-cinnabar consume --contract-name my_contract --tag v0.1.2
+```
+
+> note: Comparing to Capsule, Cinnabar deployment module only uses `ckb-cli` to sign transaction without creating the `deployment.toml` file as prerequisites.
+
+For specific usage scenarios, please refer to [demos](https://github.com/ashuralyk/cinnabar-examples). Worked examples in this repository: [xUDT, multisig, and timelock](examples/) and the VM-tested locks under [examples/scenarios](examples/scenarios).
+
+## FAQ
+
+**Where do I start?** Describe the product. The agent skill in [AGENTS.md](AGENTS.md) interviews one rule at a time, then scaffolds [templates/contract](templates/contract). Do not start from the old `ckb-cinnabar-scripts-template` repository.
+
+**What is the difference between Calculate and Verify?** Calculate builds the transaction off chain (`Instruction` of `Operation`s). Verify checks that transaction on chain (`cinnabar_main!`).
+
+**Which error code is mine?** System 1–5, verify tree 10–11, SSRI 12–18, custom errors from 20. The full table is [docs/error-codes.md](docs/error-codes.md).
+
+**How do I run this without installing the RISC-V target by hand?** [Dockerfile](Dockerfile) and [.devcontainer/devcontainer.json](.devcontainer/devcontainer.json) install Rust, `clang`, the `riscv64imac-unknown-none-elf` target, `cargo-generate`, and `ckb-cli`.
+
+**How does an agent call this without reading the repo?** [llms.txt](llms.txt) is the short map. [llms-full.txt](llms-full.txt) inlines the README and AGENTS.md. `ckb-cinnabar-mcp` (`cargo run -p ckb-cinnabar-mcp`) exposes scaffold, build, test, simulate, explain_error, and the docs as MCP tools and resources.
+
+**Are the crates on crates.io?** Not yet. Publish order is `ckb-cinnabar-core`, `ckb-cinnabar-verifier-macros`, `ckb-cinnabar-verifier`, `ckb-cinnabar-calculator`, `ckb-cinnabar`, then `ckb-cinnabar-mcp`. `ckb-cinnabar-verifier-ssri` stays unpublished until `ckb-ssri-std` on crates.io supports ckb-std 1.1.
+
+
+# AGENTS.md
+
+# AGENTS.md
+
+Cinnabar is a CKB contract framework: **Calculate** assembles transactions off-chain, **Verify** checks them on-chain. Use this file as the golden path when generating a contract project. Maintainer conventions live in [CONTRIBUTING.md](CONTRIBUTING.md). The interview method is [skills/cinnabar-agent/SKILL.md](skills/cinnabar-agent/SKILL.md).
+
+## Mental model
+
+Split CKB physics and the user’s rules into **minimal modules**, design how those
+modules **relate** (identities, legal transitions, auth, neighbors, time), then
+fold shared parse/compute **outputs into `Context`**. Verify is that flowchart
+on-chain; Calculate is an `Operation` pipeline that lands on one relation.
+A product sentence is not enough to start. One product question at a time,
+until the user has emptied every absent product detail in their own words.
+Only then show the verification tree and wait for confirmation before
+generating or coding (`skills/cinnabar-agent/confirm.md`). Calculate recipes
+and FakeRpc cases come from the accepted tree.
+
+```
+product demands
+ → one question at a time until every absent product detail is said
+ → user confirms the tree
+ → cinnabar_main! hops (intent::* only when morphology = business)
+ → Instruction::new (or named on that shortcut)
+ → FakeRpc + TransactionSimulator
+ → make build && make test (hard accept; every change)
+ → ckb-cinnabar deploy --json --dry-run
+```
+
+`Instruction` is a pipeline of `Operation`s (Inputs / Outputs / CellDeps / Headers /
+Witnesses). Coupling is the shared byte layout and the transition table, not a
+mandatory name match.
+
+## Generate a project
+
+Scaffold from `templates/contract` in this repository. The old
+`ckb-cinnabar-scripts-template` repository is not the path.
+
+```bash
+cargo generate --path /path/to/cinnabar/templates/contract --name my-lock
+cd my-lock
+make prepare   # rustup target add riscv64imac-unknown-none-elf
+make build     # writes build/release/<crate>
+make test
+```
+
+Until the crates are on crates.io, generate with
+`--define use_local_cinnabar=true`. The version-dependency fallback and the
+git fallback are in the template README.
+
+Hard accept: after generate and after every later change, `make build` and
+`make test` (full suite) must both exit 0 before the work is done.
+
+Or copy `templates/contract` and replace `{{placeholders}}`.
+
+| Path | Role |
+| --- | --- |
+| `contracts/<name>/` | `no_std` Verify script (`cinnabar_main!`) |
+| `calculator/` | Off-chain `Instruction` helpers |
+| `tests/` | `FakeRpcClient` + `assert_verify!` |
+| `deployment/` | JSON records from `ckb-cinnabar` |
+| `build/release/` | RISC-V binaries (`--contract-path` default) |
+
+## Write the on-chain script
+
+1. `#![no_std] #![no_main]` crate depending on `ckb-cinnabar-verifier`.
+2. `define_errors!(MyError, { First = CUSTOM_ERROR_START, Second, });`
+3. `#[derive(Default)] struct Context { ... }` — Root fills shared parses; children read it.
+4. One struct per node, `impl Verification<Context>`. Return `Ok(Some("hop"))` or `Ok(None)` or `Err(...)`.
+5. Register Root plus every hop. Use `intent::*` when each hop is exactly Create/Transfer/Burn of this script; otherwise domain strings from the transition table:
+
+```rust
+use ckb_cinnabar_verifier::{
+    cinnabar_main, define_errors, intent, this_script_pattern, Result, ScriptPattern,
+    ScriptPlace, Verification, CUSTOM_ERROR_START, TREE_ROOT,
+};
+
+cinnabar_main!(
+    Context,
+    (TREE_ROOT, Root),
+    (intent::CREATE, Create),
+    (intent::TRANSFER, Transfer),
+    (intent::BURN, Burn),
+);
+```
+
+Morphology-scale Root dispatches with `this_script_pattern(ScriptPlace::Lock)` or `ScriptPlace::Type`. Protocol-scale Root parses identity from args/data into `Context` first.
+
+Target: `riscv64imac-unknown-none-elf`. Error codes: [docs/error-codes.md](docs/error-codes.md).
+
+SSRI (`SSRI { "Wire.name" => expr }` on `cinnabar_main!`) needs a dependency on `ckb-cinnabar-verifier-ssri`. That crate is not on crates.io. Hop-only contracts do not depend on it. Do not register hop `verify()` as an SSRI method. `ssri_methods!` already emits `SSRI.version`, `get_methods`, and `has_methods`.
+
+## Write the off-chain assembler
+
+```rust
+use ckb_cinnabar_calculator::{
+    intent, instruction::Instruction, operation::basic::*, rpc::RPC,
+};
+
+pub fn transfer<T: RPC>(from: Address, to: Address, ckb: u64) -> Instruction<T> {
+    Instruction::named(
+        intent::TRANSFER, // morphology-scale only; protocol-scale uses Instruction::new
+        vec![
+            Box::new(AddInputCellByAddress { address: from }),
+            Box::new(AddOutputCell { /* ... */ }),
+        ],
+    )
+}
+```
+
+Import `instruction`, `operation`, `rpc`, and `skeleton` from the crate root. `--no-default-features` is the kernel. Default `std` is the shell (FakeRpc, recipes, `assert_verify!`).
+
+Predefined recipes (native, not wasm): `secp256k1_sighash_transfer`, `dao_deposit`, `dao_withdraw_phase_one`, `dao_withdraw_phase_two`, `mint_xudt`, `transfer_xudt`. Spore helpers are experimental (`--features spore`).
+
+One recipe per hop. Log keys live in `ckb_cinnabar_calculator::intent::log`.
+
+## Local simulation (no chain)
+
+```rust
+use ckb_cinnabar_calculator::{
+    assert_verify,
+    instruction::Instruction,
+    simulation::{
+        AddFakeAlwaysSuccessCelldep, AddFakeContractCelldepByName, AddFakeInputCell,
+        FakeRpcClient,
+    },
+};
+
+#[tokio::test]
+async fn transfer_ok() {
+    let rpc = FakeRpcClient::default();
+    let prepare = Instruction::new(vec![
+        Box::new(AddFakeContractCelldepByName {
+            contract: "my_lock".into(),
+            type_id_args: None,
+            contract_binary_path: "../build/release".into(),
+        }),
+        Box::new(AddFakeInputCell { /* lock = the contract */ .. }),
+    ]);
+    assert_verify!(&rpc, vec![prepare, transfer_ix], 0).unwrap();
+}
+```
+
+`0` = success. Non-zero = on-chain `i8` from `define_errors!`.
+Script failures use `CalculatorError::ScriptValidation`; inspect
+`script_exit_code()` instead of parsing the display message.
+
+`assert_verify!` prints `[ckb-vm] <file>:<line> consumed cycles: N`. The template `make test` passes `--nocapture`.
+
+## Deploy (headless)
+
+```bash
+ckb-cinnabar --json --dry-run --privkey-env CINNABAR_PRIVKEY \
+  deploy --contract-name my_lock --tag v0.1.0 --payer-address ckt1...
+
+ckb-cinnabar --json list --contract-name my_lock
+```
+
+`--privkey-env` reads a hex secp256k1 key. Without it, live send still uses interactive `ckb-cli`. `--dry-run` skips send and skips ckb-cli. Records go to `deployment/<network>/<name>.json`.
+
+With `--json`, success and failure both print one JSON object to stdout. Failures set `ok: false`, include `error.kind` / `error.message`, keep stderr empty, and exit non-zero. Contract validation failures also include `error.exit_code`.
+
+## Error codes
+
+System 1–5, verify tree 10–11, SSRI 12–18, custom ≥ 20 (`CUSTOM_ERROR_START`). Full table: [docs/error-codes.md](docs/error-codes.md). `CalculatorError::kind()` is the stable string for assembly failures (`cell_dep_not_found`, `script_validation`, …).
+
+## Public crates
+
+- `ckb-cinnabar-core` — shared `no_std` intent names.
+- `ckb-cinnabar-calculator` — assembly, FakeRpc, simulator.
+- `ckb-cinnabar-verifier` — `no_std` verification tree.
+- `ckb-cinnabar-verifier-macros` — SSRI wire-name proc macro.
+- `ckb-cinnabar-verifier-ssri` — SSRI guest door. Not published (git `ckb-ssri-std`).
+- `ckb-cinnabar` — deploy / migrate / consume / list CLI.
+- `ckb-cinnabar-mcp` — local MCP server (`scaffold_project`, `build`, `test`, `simulate`, `explain_error`, `list_operations`, `get_docs`, `deploy_dry_run`, …).
+
+Root re-exports: `Address`, `Instruction`, `TransactionCalculator`, `TransactionSkeleton`, `Network`, `RpcClient`, `CalculatorError`, `intent`.
+
+## Don'ts
+
+- Do not invent a Capsule flow or a `deployment.toml`. Deploy with `ckb-cinnabar`.
+- Do not treat `examples/*.rs` in this repo as the contract scaffold. They are CLI or layout demos. Full projects come from `templates/contract`. Worked locks: `examples/scenarios`.
+- Do not use `intent::*` for a hop that is not exactly that morphology. Protocol-scale hops use domain strings and `Instruction::new`.
+- Do not use FakeRpc or `assert_verify!` on the kernel profile (`--no-default-features`).
+- Do not shrink `RPC` to the SSRI subset. Tip, fee, and `get_transactions` stay on the trait and return `SourceUnavailable` from `SsriSource`.
+- Do not add recipe-level `insert_index` or `relative_index`.
+- Do not map each molecule error code. One shared custom error (for example `InvalidData`) covers decode and encode failures.
+- Do not call the work done until `make build` and the full `make test` both exit 0.
+- Foreign Spore, Cluster, xUDT, and type-burn binaries are not committed. Run `skills/cinnabar-agent/binaries/download.sh` and load them as cell deps when a test must execute those scripts.
+
+
+# docs/error-codes.md
+
+# Error codes
+
+On-chain scripts return an `i8`. `define_errors!` starts custom codes at
+`CUSTOM_ERROR_START` (20) so they do not collide with system or framework
+codes. `assert_verify!`’s third argument is this `i8`. Assembly failures that
+never reach the VM use `CalculatorError::kind()` instead.
+
+## System (ckb-std `SysError`)
+
+| Code | `Error` | Meaning |
+| --- | --- | --- |
+| 1 | `IndexOutOfBound` | A syscall index was out of range. |
+| 2 | `ItemMissing` | The requested item (cell, witness, header, …) is absent. |
+| 3 | `LengthNotEnough` | A buffer was shorter than the syscall needed. |
+| 4 | `Encoding` | Molecule or syscall bytes did not decode. |
+| 5 | `UnknownSystemError` | Any other `SysError`. |
+
+## Verify tree
+
+| Code | `Error` | Meaning |
+| --- | --- | --- |
+| 10 | `NotFoundRootVerifier` | No node was registered under `"root"` (`TREE_ROOT`). |
+| 11 | `NotFoundBranchVerifier` | A node returned a next name that is not registered, or the walk cycled. |
+
+## SSRI
+
+Used when the contract depends on `ckb-cinnabar-verifier-ssri` and the run is
+an SSRI call (`argv` set and `vm_version == u64::MAX`). Hop-only scripts do
+not return these.
+
+| Code | `Error` | Meaning |
+| --- | --- | --- |
+| 12 | `SSRIMethodsNotFound` | `argv[0]` is not in the `SSRI { }` table. |
+| 13 | `SSRIMethodsArgsInvalid` | A method argument failed to decode. |
+| 14 | `SSRIMethodsNotImplemented` | The method id is known but this contract does not implement it. |
+| 15 | `SSRIMethodRequireHigherLevel` | The host execution level is too low. |
+| 16 | `InvalidVmVersion` | `argv` is set but `vm_version` is not `u64::MAX`. |
+| 17 | `SSRIAssembleFailed` | A kernel `Instruction` failed while serving the method. |
+| 18 | `SSRISourceUnavailable` | A guest `Source` lookup failed. |
+
+## Custom
+
+| Code | Meaning |
+| --- | --- |
+| ≥ 20 | Declared with `define_errors!`. The first variant should be `= CUSTOM_ERROR_START`. Later variants increment by one. The contract’s own rustdoc or error enum is the lookup table. The MCP tool `explain_error` echoes a `contract` name but does not guess these codes. |
+
+## Assembly (`CalculatorError::kind()`)
+
+These strings are stable for `--json` and for agents. They are not script
+exit codes. A failed script is `script_validation` plus `script_exit_code()`.
+
+| `kind()` | When |
+| --- | --- |
+| `cell_dep_not_found` | A cell dep could not be located. |
+| `input_cell_not_found` | No live input matched the query. |
+| `output_cell_not_found` | An output index is missing. |
+| `insufficient_capacity` | Inputs cannot cover outputs and the fee. |
+| `no_available_cells` | The indexer returned nothing usable. |
+| `network` | RPC or transport failure. |
+| `signing` | Key or ckb-cli signing failure. |
+| `simulation` | Skeleton or VM failure without a script exit code. |
+| `script_validation` | The script returned a non-zero `i8` (`exit_code`). |
+| `fake_rpc` | Misuse of `FakeRpcClient`. |
+| `io` | Filesystem failure (binary, deployment record). |
+| `source_unavailable` | `Source` is unset or the lookup is not implemented. |
+| `other` | Anything else. |
+
+## FAQ
+
+**The script exited 11.** A `verify` returned `Ok(Some(name))` and `name` is
+not registered in `cinnabar_main!`, or the walk visited that name twice.
+
+**The script exited 4.** A molecule decode failed inside a syscall. Generated
+contracts should map their own codec failures to one custom code such as
+`InvalidData` (20 or above), not to code 4.
+
+**`kind` is `script_validation` but I parsed the display string.** Read
+`error.exit_code` in `--json` output, or `CalculatorError::script_exit_code()`.
+
+
+# CONTRIBUTING.md
+
+# Contributing
+
+Agent-facing instructions are [AGENTS.md](AGENTS.md). This file is for people
+changing the framework itself.
+
+## Build
+
+```bash
+rustup target add riscv64imac-unknown-none-elf
+cargo fmt --all -- --check
+cargo test --workspace --exclude ckb-cinnabar-verifier --exclude ckb-cinnabar-verifier-ssri --exclude ckb-cinnabar-ssri-smoke
+cargo test -p ckb-cinnabar-calculator --features spore
+cargo test -p ckb-cinnabar-calculator --no-default-features
+cargo test -p ckb-cinnabar-verifier
+cargo test -p ckb-cinnabar-verifier-ssri
+cargo check -p ckb-cinnabar-verifier --target riscv64imac-unknown-none-elf
+cargo check -p ckb-cinnabar-ssri-smoke --target riscv64imac-unknown-none-elf
+make -C examples/scenarios
+```
+
+`TARGET_CC=clang` is required for the RISC-V `ckb-std` build. The contract
+Makefile passes `-C passes=lower-atomic`.
+
+Publish order, when cutting a release (do not publish the SSRI crate until
+`ckb-ssri-std` has a crates.io release built on ckb-std 1.1):
+
+1. `ckb-cinnabar-core`
+2. `ckb-cinnabar-verifier-macros`
+3. `ckb-cinnabar-verifier`
+4. `ckb-cinnabar-calculator`
+5. `ckb-cinnabar`
+6. `ckb-cinnabar-mcp`
+
+`cargo publish --dry-run` only succeeds for a crate whose path dependencies
+are already on crates.io. `ckb-cinnabar-verifier-ssri` is `publish = false`.
+
+## Style
+
+- Collapse sibling `use` items that share a prefix into one braced import.
+  Inline type paths are at most two segments. The first segment is never
+  `crate`. Longer paths belong in `use`.
+- Rustdoc explains behavior. A comment that only repeats the item name does
+  not count. Generated calculators and verifiers get `//!` on the crate and
+  each identity module, and `///` on each recipe, custom operation,
+  `Context`, and hop. An SSRI guest function’s rustdoc lists its arguments
+  (index, meaning, converter or encoding) matching the `SsriArgs` reads.
+  `argv[0]` is the method id.
+- Prefer Chinese for product and strategy discussion. Implementation tasks
+  may be in English.
+- When a generated calculator covers more than one identity, split Verify,
+  Calculate, and tests on that cut. Each identity module holds its operations
+  and one recipe per hop. `calculator/src/lib.rs` only re-exports. A single
+  Create/Transfer/Burn identity stays in one file.
+- Skill users may state only a product demand. Interview one product-language
+  question per message until every absent product detail has been said.
+  “ok”, “you decide”, a batch, a sketched tree, or “this product is simple
+  enough” leaves the interview open. Show the tree only when that list is
+  empty, then wait. Shell versus kernel, serde, and FakeRpc are recorded on
+  the tree, not asked: non-SSRI and `serde_molecule` unless a demand needs
+  on-chain methods or they already named a codec and both entry points.
+- `SKILL.md` ends with an after-generation checklist. Walk it after the
+  project exists and after every later change.
+- Keep `templates/`, `AGENTS.md`, and `README.md` aligned with current
+  Calculate APIs. Do not add recipe-level `insert_index` or `relative_index`.
+- Breaking public API, error types, and CLI output is acceptable when it
+  makes the framework easier for an agent to discover and use. Keep
+  agent-readiness work in this repository. Treat `cinnabar-examples` as
+  reference only.
+
+## Layout
+
+Each layer is one complete runnable instance, packed in one tree and named
+for what it is (`kernel`, `shell`). Adapters live outside the kernel tree.
+Do not split a type from its impl, reimplement the same type per environment,
+or wrap an already-layer-owned file in nested `mod` / `cfg` theater.
+
+Calculate packs the `no_std` assembler into `calculate/src/kernel/` and the
+`std` host into `calculate/src/shell/`. Crate-root `instruction` /
+`operation` / `rpc` / `skeleton` alias the shell on `std` and the kernel on
+`--no-default-features`. Application code does not name `kernel::` or
+`shell::`. One `impl<C: RPC>` (or `S: Source` when only the three lookups
+run) per kernel type. Do not XOR-compile a second `impl<T: RPC>` on the same
+struct. Shell operation files only compile on `std`.
+
+`Address` (ckb2021 bech32m) lives in the kernel. `Source` is a derivable
+subset of `Node` + `Indexer`. `SsriSource` implements kernel `RPC` for
+`network`, `get_live_cell`, headers, block hashes, and `get_cells`.
+
+`TransactionSkeleton` getters accept Lua-style `-n` as `(-n) as usize`.
+`resolve_get_index` returns `(Option<usize>, empty)` and callers own the
+error strings.
+
+`Indexer::get_cells` and `get_transactions` take `Order` (`Asc = 0`,
+`Desc = 1`). Helpers and recipes keep requesting `Asc`.
+`CellQueryOptions::order` is not copied onto `SearchKey`.
+
+Experimental `--features spore` encodes with `serde_molecule` via
+`kernel::operation::spore::schema`. `authority_mode` lives on
+`AddClusterCelldepByClusterId`. Named spore recipes are shell-only.
+
+`TYPE_ID_CODE_HASH` matches `h256!("0x545950455f4944")`: 25 leading zero
+bytes, then ASCII `TYPE_ID`.
+
+## SSRI
+
+`cinnabar_main!`’s `SSRI { }` arm expands to
+`ckb_cinnabar_verifier_ssri`. The crate depends on git
+`https://github.com/ashuralyk/ckb-ssri-std` at `8c2c245` because crates.io
+`ckb-ssri-std` 0.0.1 pins ckb-std 0.16. Empty `argv` is on-chain verify.
+`argv` plus raw `vm_version == u64::MAX` is SSRI. Do not hand-write
+`program_entry` for generated SSRI contracts.
+
+`SsriArgs` keeps each slot as hex and decodes it when a reader runs.
+`method_path()` reads `argv[0]` as the 8-byte method id. Argument `n` is
+`argv[offset + n]`. `bytes(index, convert)` is
+`FnOnce(&[u8]) -> Result<T, E>`. Built-in converters: `hash`, `script`,
+`address`, `capacity`, `utf8`, `transaction`.
+
+## References that are not delivery scope
+
+- `cinnabar-examples` (upstream `ashuralyk/cinnabar-examples`).
+- WarSporeSaga contracts and Opticrum’s public tree
+  (https://github.com/Opticrum/ckb-contract-script).
+- Local SSRI prototypes under a maintainer checkout (`ssri-udt`,
+  `pausable-udt`). Use them as a pattern source only.
+
+Protocol binaries for FakeRpc composition are downloaded, not committed.
+See [skills/cinnabar-agent/binaries/README.md](skills/cinnabar-agent/binaries/README.md).

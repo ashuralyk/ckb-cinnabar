@@ -1,4 +1,5 @@
 //! Re-quote SSRI method names for `ssri_methods!`.
+#![warn(missing_docs)]
 //!
 //! `cinnabar_main!` captures each wire name as a `macro_rules` literal. Pasting
 //! that capture into `ssri_methods!` wraps the literal in an invisible group,
@@ -65,7 +66,7 @@ impl WireTable {
         let names = self.methods.iter().map(|method| &method.name);
         let bodies = self.methods.iter().map(|method| &method.body);
         quote! {
-            ckb_cinnabar_verifier::ssri_methods!(
+            ckb_cinnabar_verifier_ssri::ssri_methods!(
                 argv: #argv,
                 invalid_method: #invalid_method,
                 invalid_args: #invalid_args,

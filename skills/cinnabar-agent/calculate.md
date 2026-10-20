@@ -68,7 +68,7 @@ headers, block hashes, and `get_cells`. `get_tip_header`,
 `SourceUnavailable`.
 
 FakeRpc, `assert_verify!`, and the predefined recipes exist on the shell
-profile. An SSRI guest links the kernel profile (verifier feature `ssri`
+profile. An SSRI guest links the kernel profile (`ckb-cinnabar-verifier-ssri`
 depends on `ckb-cinnabar-calculator` with default features off) and calls the
 kernel calculator crate from the version table above.
 
@@ -288,7 +288,7 @@ filtered `cargo test <name>` is not acceptance.
 
 ## Bundled protocol binaries (`binaries/`)
 
-This skill ships RISC-V next to `SKILL.md`:
+This skill downloads RISC-V next to `SKILL.md` (`binaries/download.sh`, SHA-256 in `checksums.sha256`):
 
 | File                 | Protocol                    |
 | -------------------- | --------------------------- |
