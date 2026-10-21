@@ -494,7 +494,7 @@ $ ckb-cinnabar consume --contract-name my_contract --tag v0.1.2
 
 > note: Comparing to Capsule, Cinnabar deployment module only uses `ckb-cli` to sign transaction without creating the `deployment.toml` file as prerequisites.
 
-For specific usage scenarios, please refer to [demos](https://github.com/ashuralyk/cinnabar-examples). Worked examples in this repository: [xUDT, multisig, and timelock](examples/) and the VM-tested locks under [examples/scenarios](examples/scenarios).
+For specific usage scenarios, please refer to [demos](https://github.com/ashuralyk/cinnabar-examples). CLI demos in this repository are [examples](examples/) (`secp256k1_transfer`, `dao`, `spore`). VM-tested locks are [examples/scenarios](examples/scenarios). xUDT mint and transfer are the `mint_xudt` / `transfer_xudt` recipes, checked by `calculate/tests/scenarios.rs`.
 
 ## FAQ
 
@@ -506,4 +506,4 @@ For specific usage scenarios, please refer to [demos](https://github.com/ashural
 
 **How do I run this without installing the RISC-V target by hand?** [Dockerfile](Dockerfile) and [.devcontainer/devcontainer.json](.devcontainer/devcontainer.json) install Rust, `clang` 18 (the contract build needs clang 16+), the `riscv64imac-unknown-none-elf` target, `cargo-generate`, and `ckb-cli`.
 
-**How does an agent read this without cloning first?** [llms.txt](llms.txt) is the short map. [llms-full.txt](llms-full.txt) inlines the README and AGENTS.md. [context7.json](context7.json) tells [Context7](https://context7.com/docs/library-owners) which of those docs to index. Add `use context7` in the agent prompt after the library is submitted at [context7.com/add-library](https://context7.com/add-library).
+**How does an agent read this without cloning first?** [llms.txt](llms.txt) is the short map. [llms-full.txt](llms-full.txt) inlines the README, AGENTS.md, error codes, and contributing notes. `make llms-full` regenerates that file; CI fails if the committed copy drifts. [context7.json](context7.json) tells [Context7](https://context7.com/docs/library-owners) which of those docs to index. Add `use context7` in the agent prompt after the library is submitted at [context7.com/add-library](https://context7.com/add-library).

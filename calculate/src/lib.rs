@@ -62,9 +62,6 @@ pub use address::{Address, AddressPayload};
 pub use rpc::{Host, RpcClient, MAINNET_RPC_URL, TESTNET_RPC_URL};
 
 #[cfg(feature = "std")]
-pub use shell::scenario;
-
-#[cfg(feature = "std")]
 pub use instruction::DefaultInstruction;
 pub use instruction::{Instruction, TransactionCalculator};
 pub use skeleton::{ScriptEx, TransactionSkeleton};

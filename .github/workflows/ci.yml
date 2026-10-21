@@ -10,6 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: llms-full matches the generator
+        run: |
+          make llms-full
+          git diff --exit-code -- llms-full.txt
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: riscv64imac-unknown-none-elf

@@ -14,10 +14,10 @@ make           # build both RISC-V binaries, then cargo test
 | `threshold_multisig` | Lock args are `threshold \|\| count \|\| blake2b-256 hashes`. The matching witness `lock` field is 32-byte preimages. At least `threshold` distinct preimages must hit the hash list. |
 
 This multisig is a preimage threshold so the VM test does not need secp256k1.
-The genesis secp256k1 multisig witness prefix is encoded by
-`ckb_cinnabar_calculator::scenario::encode_multisig_script` and printed by
-`cargo run --example multisig` in the framework repo.
+The genesis secp256k1 multisig witness prefix
+(`0x00 | require_first_n | threshold | pubkey_count | blake160 * N`) is
+covered by the host test `calculate/tests/scenarios.rs`.
 
 xUDT mint and transfer are calculator recipes (`mint_xudt`, `transfer_xudt`),
-not a script in this folder. `cargo run --example xudt` prints their intent
-names. `calculate/tests/scenarios.rs` checks those names without a binary.
+not a script in this folder. `calculate/tests/scenarios.rs` checks those
+intent names without a binary.

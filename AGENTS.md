@@ -208,7 +208,7 @@ Root re-exports: `Address`, `Instruction`, `TransactionCalculator`, `Transaction
 ## Don'ts
 
 - Do not invent a Capsule flow or a `deployment.toml`. Deploy with `ckb-cinnabar`.
-- Do not treat `examples/*.rs` in this repo as the contract scaffold. They are CLI or layout demos. Full projects come from `templates/contract`. Worked locks: `examples/scenarios`.
+- Do not treat `examples/*.rs` in this repo as the contract scaffold. They are CLI demos (`secp256k1_transfer`, `dao`, `spore`). Full projects come from `templates/contract`. Worked locks with CKB-VM tests: `examples/scenarios`.
 - Do not use `intent::*` for a hop that is not exactly that morphology. Protocol-scale hops use domain strings and `Instruction::new`.
 - Do not use FakeRpc or `assert_verify!` on the kernel profile (`--no-default-features`).
 - Do not shrink `RPC` to the SSRI subset. Tip, fee, and `get_transactions` stay on the trait and return `SourceUnavailable` from `SsriSource`.

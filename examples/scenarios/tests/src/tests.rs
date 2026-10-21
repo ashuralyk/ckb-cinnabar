@@ -12,7 +12,6 @@ use ckb_cinnabar_calculator::{
         ckb_hash::blake2b_256,
         ckb_types::{prelude::Unpack, H256},
     },
-    scenario::absolute_timestamp_since,
     simulation::{fake_outpoint, AddFakeContractCelldepByName, FakeRpcClient},
     skeleton::{CellOutputEx, ScriptEx},
     types::{h256_to_hash, Hash256},
@@ -21,6 +20,13 @@ use scenarios_calculator::{spend_threshold, spend_timelock, TimelockInput};
 
 const IN: u64 = 200_000_000_000;
 const OUT: u64 = 100_000_000_000;
+
+/// RFC 0017 absolute unix-time `since` (timestamp metric, value in the low 56 bits).
+fn absolute_timestamp_since(unix_seconds: u64) -> u64 {
+    const TIMESTAMP_METRIC: u64 = 0x4000_0000_0000_0000;
+    const VALUE_MASK: u64 = 0x00FF_FFFF_FFFF_FFFF;
+    TIMESTAMP_METRIC | (unix_seconds & VALUE_MASK)
+}
 
 fn script(name: &str, args: Vec<u8>) -> ScriptEx {
     let path = format!("../build/release/{name}");

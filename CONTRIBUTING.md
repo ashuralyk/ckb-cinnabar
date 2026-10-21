@@ -22,7 +22,8 @@ Makefile passes `-C passes=lower-atomic`.
 Install the CLI from git: `cargo install --git https://github.com/ashuralyk/ckb-cinnabar`.
 
 Regenerate the inlined agent bundle after editing `README.md`, `AGENTS.md`,
-`docs/error-codes.md`, or this file:
+`docs/error-codes.md`, or this file, and commit the result. CI runs the same
+generator and fails when `llms-full.txt` differs:
 
 ```bash
 make llms-full

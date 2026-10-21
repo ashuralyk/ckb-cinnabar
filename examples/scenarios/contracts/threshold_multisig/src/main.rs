@@ -8,8 +8,8 @@
 //! field of the first input in the group is a concatenation of 32-byte
 //! preimages. At least `threshold` distinct preimages must match the list.
 //!
-//! The genesis secp256k1 multisig lock is a different encoding. See
-//! `ckb_cinnabar_calculator::scenario::encode_multisig_script`.
+//! The genesis secp256k1 multisig lock is a different encoding. Its witness
+//! prefix is covered by the host test `calculate/tests/scenarios.rs`.
 
 use alloc::vec;
 
