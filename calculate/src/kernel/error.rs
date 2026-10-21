@@ -36,7 +36,7 @@ pub enum CalculatorError {
     },
     /// Misuse of the offline [`crate::simulation::FakeRpcClient`].
     FakeRpc(String),
-    /// Filesystem failure (contract binary, deployment record, ...).
+    /// Filesystem or other `std::io` failure (contract binary, deployment record, ...).
     Io(String),
     /// [`crate::source::Source`] is unset or the lookup is not implemented.
     SourceUnavailable(String),
@@ -125,13 +125,15 @@ impl CalculatorError {
             Self::InsufficientCapacity(msg.to_string())
         } else if lower.contains("no available") {
             Self::NoAvailableCells(msg.to_string())
-        } else if lower.contains("sign") || lower.contains("ckb-cli") || lower.contains("password")
+        } else if !is_filesystem_message(&lower)
+            && (lower.contains("sign") || lower.contains("ckb-cli") || lower.contains("password"))
         {
             Self::Signing(msg.to_string())
         } else if lower.contains("fake") && lower.contains("rpc") {
             Self::FakeRpc(msg.to_string())
-        } else if lower.contains("simulation")
-            || (lower.contains("script") && lower.contains("error"))
+        } else if !is_filesystem_message(&lower)
+            && (lower.contains("simulation")
+                || (lower.contains("script") && lower.contains("error")))
         {
             Self::Simulation(msg.to_string())
         } else if lower.contains("bad ckb request")
@@ -141,16 +143,56 @@ impl CalculatorError {
             || lower.contains("failed to get response from ckb rpc")
         {
             Self::Network(msg.to_string())
-        } else if lower.contains("no such file")
-            || lower.contains("os error")
-            || lower.contains("permission denied")
-            || lower.contains("not a directory")
-        {
+        } else if is_filesystem_message(&lower) {
             Self::Io(msg.to_string())
         } else {
             Self::Other(msg.to_string())
         }
     }
+
+    /// Classify an [`eyre::Report`] the same way the CLI JSON fallback does.
+    ///
+    /// [`Self::from_message`] runs on the full chain text, so transport phrases
+    /// stay `network` even when a cause contains `os error`. A result that is
+    /// still [`Self::Other`] becomes `io` when the chain holds a
+    /// [`std::io::Error`] (for example `missing binary` with no OS-error text).
+    #[cfg(feature = "std")]
+    pub fn from_report(err: &eyre::Report) -> Self {
+        let text = format!("{err:#}");
+        let classified = Self::from_message(&text);
+        if matches!(classified, Self::Other(_)) && report_chain_has_io(err) {
+            Self::Io(text)
+        } else {
+            classified
+        }
+    }
+}
+
+/// Filesystem and missing-binary markers.
+///
+/// These win over the broad `sign` / `ckb-cli` / `script error` heuristics.
+/// They do not win over transport phrases (`connection refused`,
+/// `error sending request`), which are tested first.
+fn is_filesystem_message(lower: &str) -> bool {
+    lower.contains("os error")
+        || lower.contains("no such file")
+        || lower.contains("permission denied")
+        || lower.contains("not a directory")
+        || lower.contains("is a directory")
+        || lower.contains("entity not found")
+        || lower.contains("entity already exists")
+        || lower.contains("directory not empty")
+        || lower.contains("read-only file")
+        || lower.contains("no space left on device")
+        || lower.contains("no storage space")
+        || lower.contains("missing binary")
+        || (lower.contains("binary") && lower.contains("not found"))
+}
+
+#[cfg(feature = "std")]
+fn report_chain_has_io(err: &eyre::Report) -> bool {
+    err.chain()
+        .any(|cause| cause.downcast_ref::<std::io::Error>().is_some())
 }
 
 impl fmt::Display for CalculatorError {
@@ -165,7 +207,7 @@ impl std::error::Error for CalculatorError {}
 #[cfg(feature = "std")]
 impl From<eyre::Report> for CalculatorError {
     fn from(err: eyre::Report) -> Self {
-        Self::from_message(format!("{err:#}"))
+        Self::from_report(&err)
     }
 }
 
@@ -274,5 +316,65 @@ mod tests {
             .kind(),
             "io"
         );
+    }
+
+    #[test]
+    fn filesystem_markers_are_io_not_signing_or_simulation() {
+        assert_eq!(
+            CalculatorError::from_message("ckb-cli: No such file or directory (os error 2)").kind(),
+            "io"
+        );
+        assert_eq!(
+            CalculatorError::from_message("script error: entity not found").kind(),
+            "io"
+        );
+        assert_eq!(
+            CalculatorError::from_message("is a directory (os error 21)").kind(),
+            "io"
+        );
+        assert_eq!(
+            CalculatorError::from_message("missing binary: build/release/my_lock").kind(),
+            "io"
+        );
+        assert_eq!(
+            CalculatorError::from_message("contract binary not found").kind(),
+            "io"
+        );
+        assert_eq!(
+            CalculatorError::from_message("failed to sign: bad password").kind(),
+            "signing"
+        );
+        assert_eq!(
+            CalculatorError::from_message("connection refused (os error 111)").kind(),
+            "network"
+        );
+        assert_eq!(
+            CalculatorError::from_message(
+                "bad ckb request url: error sending request for url (os error 111)"
+            )
+            .kind(),
+            "network"
+        );
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn eyre_io_without_os_error_text_is_io() {
+        let missing = eyre::Report::from(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "contract file",
+        ));
+        assert_eq!(CalculatorError::from(missing).kind(), "io");
+
+        let runtime = eyre::Report::from(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Cannot start a runtime from within a runtime",
+        ));
+        assert_eq!(CalculatorError::from(runtime).kind(), "io");
+
+        let transport = eyre::eyre!(
+            "bad ckb request url: error sending request for url (http://127.0.0.1:9/) (os error 111)"
+        );
+        assert_eq!(CalculatorError::from(transport).kind(), "network");
     }
 }

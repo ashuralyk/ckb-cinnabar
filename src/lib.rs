@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 #![warn(missing_docs)]
 
+//! Rust framework for CKB smart contracts: off-chain Calculate, on-chain Verify, agent-friendly scaffold, and a headless deploy CLI
+//!
 //! Cinnabar CLI and library: deploy, migrate, consume, and list CKB contracts.
 //!
 //! # Calculate vs Verify

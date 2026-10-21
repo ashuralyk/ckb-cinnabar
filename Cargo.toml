@@ -15,7 +15,7 @@ exclude = ["examples/scenarios"]
 name = "ckb-cinnabar"
 version = "0.1.0"
 edition = "2021"
-description = "Rust framework for CKB smart contracts: off-chain Calculate, on-chain Verify, and a headless deploy CLI"
+description = "Rust framework for CKB smart contracts: off-chain Calculate, on-chain Verify, agent-friendly scaffold, and a headless deploy CLI"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/ashuralyk/ckb-cinnabar"
 

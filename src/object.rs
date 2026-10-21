@@ -330,7 +330,9 @@ impl CliErrorBody {
         }
         // String reports (for example an HTTP error that was formatted
         // before it was wrapped) use the same classifier as the library.
-        let classified = CalculatorError::from_message(format!("{error:#}"));
+        // `from_report` also promotes a nested `std::io::Error` that
+        // `from_message` would otherwise leave as `other`.
+        let classified = CalculatorError::from_report(error);
         Self {
             kind: classified.kind().to_string(),
             message: classified.message().to_string(),
@@ -399,6 +401,18 @@ mod tests {
         let report =
             eyre::eyre!("bad ckb request url: error sending request for url (http://127.0.0.1:9/)");
         assert_eq!(CliErrorBody::from_report(&report).kind, "network");
+    }
+
+    #[test]
+    fn wrapped_io_without_os_error_text_reports_io_kind() {
+        let report = eyre::Report::from(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "contract file",
+        ))
+        .wrap_err("load contract");
+        let body = CliErrorBody::from_report(&report);
+        assert_eq!(body.kind, "io");
+        assert!(body.message.contains("contract file"));
     }
 
     #[test]

@@ -412,7 +412,7 @@ pub fn block_on_rpc<T>(fut: impl Future<Output = eyre::Result<T>>) -> error::Res
             Err(_) => Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .map_err(|e| CalculatorError::Other(e.to_string()))?
+                .map_err(CalculatorError::from)?
                 .block_on(fut),
         };
         result.map_err(CalculatorError::from)
