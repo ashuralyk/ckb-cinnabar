@@ -4,14 +4,18 @@
 //! Absolute unix-time lock.
 //!
 //! Args are 8 little-endian bytes: the earliest unix second at which the
-//! cell may be spent. Every input in this lock group must carry an RFC 0017
-//! absolute timestamp `since` greater than or equal to that second.
+//! cell may be spent. The lock walks every input in its group and requires
+//! each one's RFC 0017 absolute timestamp `since` to be at or after that
+//! second. Consensus treats `since` 0 as unrestricted, so that word fails
+//! the check the same way an early or relative `since` does.
 
 use ckb_cinnabar_verifier::{
     cinnabar_main, define_errors, this_script_args, Result, Verification, CUSTOM_ERROR_START,
     TREE_ROOT,
 };
-use ckb_std::{ckb_constants::Source, ckb_types::prelude::Unpack, high_level::load_input};
+use ckb_std::{
+    ckb_constants::Source, ckb_types::prelude::Unpack, error::SysError, high_level::load_input,
+};
 
 define_errors!(
     TimelockError,
@@ -32,10 +36,18 @@ struct Root {}
 impl Verification<Context> for Root {
     fn verify(&mut self, _name: &str, _ctx: &mut Context) -> Result<Option<&str>> {
         let unlock_at = unlock_at()?;
-        let input = load_input(0, Source::GroupInput)?;
-        let since: u64 = input.since().unpack();
-        if !since_met(since, unlock_at) {
-            return Err(TimelockError::SinceNotMet.into());
+        let mut index = 0;
+        loop {
+            let input = match load_input(index, Source::GroupInput) {
+                Ok(input) => input,
+                Err(SysError::IndexOutOfBound) => break,
+                Err(err) => return Err(err.into()),
+            };
+            let since: u64 = input.since().unpack();
+            if !since_met(since, unlock_at) {
+                return Err(TimelockError::SinceNotMet.into());
+            }
+            index += 1;
         }
         Ok(None)
     }

@@ -10,7 +10,7 @@ make           # build both RISC-V binaries, then cargo test
 
 | Contract | What it checks |
 | --- | --- |
-| `timelock` | Lock args are an 8-byte little-endian unix second. Spending is allowed only when every input `since` is an absolute timestamp (RFC 0017) at or after that second. |
+| `timelock` | Lock args are an 8-byte little-endian unix second. Spending is allowed only when every input in the lock group carries an absolute timestamp `since` (RFC 0017) at or after that second. A valid `since` on the first input does not excuse `since` 0 on another cell of the same lock (`SinceNotMet`, exit 21). |
 | `threshold_multisig` | Lock args are `threshold \|\| count \|\| blake2b-256 hashes`. The matching witness `lock` field is 32-byte preimages. At least `threshold` distinct preimages must hit the hash list. |
 
 This multisig is a preimage threshold so the VM test does not need secp256k1.
