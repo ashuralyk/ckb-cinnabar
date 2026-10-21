@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+#![warn(missing_docs)]
 
 //! Cinnabar CLI and library: deploy, migrate, consume, and list CKB contracts.
 //!

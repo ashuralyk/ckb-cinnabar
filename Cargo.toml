@@ -8,10 +8,16 @@ members = [
     "verify/macros",
 ]
 
+# Standalone example workspace (its own Cargo.toml). Not a root member.
+exclude = ["examples/scenarios"]
+
 [package]
 name = "ckb-cinnabar"
 version = "0.1.0"
 edition = "2021"
+description = "Rust framework for CKB smart contracts: off-chain Calculate, on-chain Verify, and a headless deploy CLI"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ashuralyk/ckb-cinnabar"
 
 [features]
 # Spore operations are experimental; the example cannot compile without them.

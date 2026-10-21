@@ -23,7 +23,9 @@ pub type Hash256 = [u8; 32];
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum DepType {
+    /// `dep_type` code: the cell is a script binary.
     Code = 0,
+    /// `dep_type` dep group: the cell lists other deps.
     DepGroup = 1,
 }
 

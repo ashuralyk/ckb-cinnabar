@@ -2,6 +2,9 @@
 name = "ckb-cinnabar-verifier"
 version = "0.1.0"
 edition = "2021"
+description = "On-chain verification tree for CKB scripts (no_std, riscv64imac-unknown-none-elf)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ashuralyk/ckb-cinnabar"
 
 [features]
 default = ["ssri"]

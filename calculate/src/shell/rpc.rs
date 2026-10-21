@@ -100,11 +100,11 @@ macro_rules! jsonrpc {
             let resp = c
                 .send()
                 .await
-                .map_err::<Error, _>(|e| eyre!("bad ckb request url: {}", e))?;
+                .map_err::<Error, _>(|e| eyre!("bad ckb request url: {e}"))?;
             let output = resp
                 .json::<Output>()
                 .await
-                .map_err::<Error, _>(|e| eyre!("failed to parse json response: {}", e))?;
+                .map_err::<Error, _>(|e| eyre!("failed to parse json response: {e}"))?;
 
             match output {
                 Output::Success(success) => {

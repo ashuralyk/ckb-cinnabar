@@ -1,4 +1,5 @@
 //! Re-quote SSRI method names for `ssri_methods!`.
+#![warn(missing_docs)]
 //!
 //! `cinnabar_main!` captures each wire name as a `macro_rules` literal. Pasting
 //! that capture into `ssri_methods!` wraps the literal in an invisible group,

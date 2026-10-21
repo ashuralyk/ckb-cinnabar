@@ -10,6 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: llms-full matches the generator
+        run: |
+          make llms-full
+          git diff --exit-code -- llms-full.txt
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: riscv64imac-unknown-none-elf
@@ -33,7 +37,6 @@ jobs:
         run: |
           cargo check -p ckb-cinnabar-verifier --target riscv64imac-unknown-none-elf
           cargo check -p ckb-cinnabar-verifier --features ssri --target riscv64imac-unknown-none-elf
-          cargo check -p ckb-cinnabar-ssri-smoke --target riscv64imac-unknown-none-elf
         env:
           CARGO_TERM_COLOR: always
           TARGET_CC: clang
@@ -41,12 +44,13 @@ jobs:
         run: cargo test -p ckb-cinnabar-verifier --features ssri
         env:
           CARGO_TERM_COLOR: always
-      - name: Verifier SSRI entry compiles
-        run: cargo check -p ckb-cinnabar-ssri-smoke
+      - name: Scenario contracts
+        run: make -C examples/scenarios
         env:
           CARGO_TERM_COLOR: always
+          TARGET_CC: clang
       - name: Install cargo-generate
-        run: cargo install cargo-generate --version 0.20.0 --locked
+        run: cargo install cargo-generate --version 0.20.0
       - name: Generated contract end-to-end
         run: |
           cargo generate \

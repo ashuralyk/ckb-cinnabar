@@ -28,7 +28,12 @@ pub enum CalculatorError {
     Simulation(String),
     /// On-chain script rejected the transaction; `exit_code` is the script's
     /// `i8` (see `define_errors!` on the Verify side).
-    ScriptValidation { exit_code: i8, message: String },
+    ScriptValidation {
+        /// Script `i8` exit code (`define_errors!` on the Verify side).
+        exit_code: i8,
+        /// Human-readable VM or script message.
+        message: String,
+    },
     /// Misuse of the offline [`crate::simulation::FakeRpcClient`].
     FakeRpc(String),
     /// Filesystem failure (contract binary, deployment record, ...).
@@ -129,6 +134,19 @@ impl CalculatorError {
             || (lower.contains("script") && lower.contains("error"))
         {
             Self::Simulation(msg.to_string())
+        } else if lower.contains("bad ckb request")
+            || lower.contains("error sending request")
+            || lower.contains("connection refused")
+            || lower.contains("failed to parse json response")
+            || lower.contains("failed to get response from ckb rpc")
+        {
+            Self::Network(msg.to_string())
+        } else if lower.contains("no such file")
+            || lower.contains("os error")
+            || lower.contains("permission denied")
+            || lower.contains("not a directory")
+        {
+            Self::Io(msg.to_string())
         } else {
             Self::Other(msg.to_string())
         }
@@ -238,5 +256,23 @@ mod tests {
             "ValidationFailure: see error code -7 on page https://example.invalid",
         );
         assert_eq!(displayed.script_exit_code(), Some(-7));
+    }
+
+    #[test]
+    fn classifies_transport_and_missing_file() {
+        assert_eq!(
+            CalculatorError::from_message(
+                "bad ckb request url: error sending request for url (http://127.0.0.1:9/)"
+            )
+            .kind(),
+            "network"
+        );
+        assert_eq!(
+            CalculatorError::from_message(
+                "No such file or directory (os error 2):build/release/my_lock"
+            )
+            .kind(),
+            "io"
+        );
     }
 }

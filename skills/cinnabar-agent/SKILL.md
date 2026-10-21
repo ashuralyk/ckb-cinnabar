@@ -171,8 +171,17 @@ If `cargo-generate` is missing: `cargo install cargo-generate`, or clone
 `https://github.com/ashuralyk/ckb-cinnabar` and run
 `cargo generate --path <clone>/templates/contract --name <project> -d use_local_cinnabar=false`.
 
-Inside an existing Cinnabar checkout, prefer
-`cargo generate --path templates/contract --name <project>` (local path deps OK).
+Inside an existing Cinnabar checkout, path dependencies need an absolute
+`cinnabar_path` (the checkout root, not `../cinnabar`):
+
+```bash
+cargo generate --path templates/contract --name <project> \
+  -d use_local_cinnabar=true -d cinnabar_path="$PWD"
+```
+
+The template default is git dependencies. Omit the defines, or pass
+`-d use_local_cinnabar=false`, when the project should track this repository
+over git.
 
 Then apply the version they chose:
 
@@ -197,7 +206,7 @@ layout and add:
 | `contracts/<name>/`                    | `no_std` Verify (`cinnabar_main!`)                             |
 | `calculator/`                          | Recipes. One file for one identity; otherwise one module per tree identity ([calculate.md](calculate.md)) |
 | `tests/`                               | FakeRpc universe + VM                                          |
-| `tests/binaries/` or `tests/fixtures/` | Foreign protocol RISC-V (copy from this skill’s `binaries/`)   |
+| `tests/binaries/` or `tests/fixtures/` | Foreign protocol RISC-V (`binaries/download.sh`, then copy) |
 | `deployment/`                          | CLI JSON records                                               |
 | `build/release/`                       | This contract’s RISC-V (`--contract-path` default)             |
 | root `runner`                          | Optional `ckb_cinnabar::dispatch()` for deploy/migrate/consume |
@@ -319,8 +328,9 @@ See [calculate.md](calculate.md). Minimum:
   after every change: `make build` then `make test` (all cases). Failures
   are not accepted.
 - User locks in FakeRpc: always-success. Spore / Cluster / xUDT / type-burn:
-  this skill’s [binaries/](binaries/) (used in **WarSporeSaga** FakeRpc cases
-  to check real composition before on-chain submit).
+  run [binaries/download.sh](binaries/download.sh), then load the checked
+  files (used in **WarSporeSaga** FakeRpc cases to check real composition
+  before on-chain submit). They are not committed.
 - Failures: `CalculatorError::script_exit_code()`, never scrape logs.
 - Live deps: `AddCellDepByTypeId`. CLI:
   `ckb-cinnabar --json --dry-run --privkey-env CINNABAR_PRIVKEY deploy …`
@@ -361,8 +371,8 @@ setup: [calculate.md](calculate.md).
 - After generate and after every change: `make build` and full `make test`
   both exit 0 before claiming done.
 - Put shared parse results in `Context`; keep children syscall-light.
-- Load this skill’s `binaries/` when Verify will execute Spore, Cluster, xUDT,
-  or type-burn.
+- Run `binaries/download.sh` and load those files when Verify will execute
+  Spore, Cluster, xUDT, or type-burn.
 - Load https://github.com/Opticrum/ckb-contract-script when you need a solid
   protocol-scale Cinnabar example (tree, recipes, FakeRpc tests).
 - Record non-SSRI and serde_molecule on the tree unless an ingredient needs
@@ -418,11 +428,14 @@ setup: [calculate.md](calculate.md).
 
 ## Crates
 
-Git deps (isolated projects): `ckb-cinnabar`, `ckb-cinnabar-calculator`,
-`ckb-cinnabar-verifier` from `https://github.com/ashuralyk/ckb-cinnabar`.
-Target: `riscv64imac-unknown-none-elf`. Root re-exports: `Address`,
-`Instruction`, `TransactionCalculator`, `TransactionSkeleton`, `Network`,
-`RpcClient`, `CalculatorError`, `intent`.
+Git dependencies (isolated projects): `ckb-cinnabar`,
+`ckb-cinnabar-calculator`, and `ckb-cinnabar-verifier` from
+`https://github.com/ashuralyk/ckb-cinnabar`. The template uses those git
+dependencies unless `use_local_cinnabar` is true. Target:
+`riscv64imac-unknown-none-elf`. Root re-exports: `Address`, `Instruction`,
+`TransactionCalculator`, `TransactionSkeleton`, `Network`, `RpcClient`,
+`CalculatorError`, `intent`. Install the CLI with
+`cargo install --git https://github.com/ashuralyk/ckb-cinnabar`.
 
 `ckb-cinnabar-core` owns the shared `no_std` intent names. Calculator
 `kernel` (always on; `--no-default-features`) is the `no_std` assembler:
@@ -476,7 +489,7 @@ fix it and re-check. Do not deploy while any item is open.
 
 - [ ] Each case calls a calculator recipe, then CKB-VM (`assert_verify!` or `TransactionSimulator`).
 - [ ] Every hop Verify runs has a success exit `0`. Each important error is asserted with `script_exit_code()`, not by scraping logs.
-- [ ] User locks are always-success. Spore, Cluster, xUDT, and type-burn that Verify executes come from this skill’s `binaries/`.
+- [ ] User locks are always-success. Spore, Cluster, xUDT, and type-burn that Verify executes come from `binaries/download.sh` (checksums in `checksums.sha256`).
 - [ ] No test accepts a hand-built business transaction, a skeleton-only check, or a host call to `verify()`.
 
 ### Commands

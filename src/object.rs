@@ -321,10 +321,20 @@ impl CliErrorBody {
                 exit_code: error.script_exit_code(),
             };
         }
+        if let Some(error) = error.downcast_ref::<std::io::Error>() {
+            return Self {
+                kind: "io".to_string(),
+                message: error.to_string(),
+                exit_code: None,
+            };
+        }
+        // String reports (for example an HTTP error that was formatted
+        // before it was wrapped) use the same classifier as the library.
+        let classified = CalculatorError::from_message(format!("{error:#}"));
         Self {
-            kind: "other".to_string(),
-            message: format!("{error:#}"),
-            exit_code: None,
+            kind: classified.kind().to_string(),
+            message: classified.message().to_string(),
+            exit_code: classified.script_exit_code(),
         }
     }
 }
@@ -373,5 +383,34 @@ mod tests {
 
         assert_eq!(error.kind, "script_validation");
         assert_eq!(error.exit_code, Some(20));
+    }
+
+    #[test]
+    fn io_error_reports_io_kind() {
+        let report = eyre::Report::from(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "missing binary",
+        ));
+        assert_eq!(CliErrorBody::from_report(&report).kind, "io");
+    }
+
+    #[test]
+    fn transport_string_reports_network_kind() {
+        let report =
+            eyre::eyre!("bad ckb request url: error sending request for url (http://127.0.0.1:9/)");
+        assert_eq!(CliErrorBody::from_report(&report).kind, "network");
+    }
+
+    #[test]
+    fn cli_only_kinds_stay_distinct() {
+        let configuration = eyre::Report::new(CliError::Configuration(
+            "environment variable CINNABAR_PRIVKEY not set".into(),
+        ));
+        let invalid = eyre::Report::new(CliError::InvalidInput("invalid length".into()));
+        assert_eq!(
+            CliErrorBody::from_report(&configuration).kind,
+            "configuration"
+        );
+        assert_eq!(CliErrorBody::from_report(&invalid).kind, "invalid_input");
     }
 }

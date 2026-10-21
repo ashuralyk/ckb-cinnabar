@@ -1,1 +1,14 @@
 /target
+target/
+
+# Compiled scenario contracts (`make -C examples/scenarios`).
+examples/scenarios/build/
+
+# Local continual-learning hook state (machine paths, not project source).
+.cursor/hooks/state/
+
+# Protocol RISC-V blobs fetched by skills/cinnabar-agent/binaries/download.sh.
+skills/cinnabar-agent/binaries/cluster
+skills/cinnabar-agent/binaries/spore
+skills/cinnabar-agent/binaries/type_burn
+skills/cinnabar-agent/binaries/xudt

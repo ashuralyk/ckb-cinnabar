@@ -1,0 +1,18 @@
+---
+description: Cinnabar CKB contracts. Follow AGENTS.md when editing Cargo.toml or contract sources.
+globs:
+  - "**/Cargo.toml"
+  - "contracts/**"
+  - "calculator/**"
+  - "tests/**"
+alwaysApply: false
+---
+
+Follow [AGENTS.md](../../AGENTS.md) before writing or changing a Cinnabar contract, calculator, or test.
+
+- Scaffold from `templates/contract`, not `ckb-cinnabar-scripts-template`.
+- On-chain code is a `cinnabar_main!` verification tree in `contracts/`. Off-chain code is an `Instruction` of `Operation`s in `calculator/`.
+- `intent::*` only when the hop is exactly Create, Transfer, or Burn. Otherwise use a domain string and `Instruction::new`.
+- Accept work only when `make build` and the full `make test` both exit 0.
+- Do not add Capsule or `deployment.toml`. Deploy with `ckb-cinnabar --json --dry-run`.
+- Error codes are in `docs/error-codes.md`. Custom codes start at 20.

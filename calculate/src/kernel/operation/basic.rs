@@ -107,6 +107,7 @@ pub struct AddWitnessArgs {
 
 /// Push a pre-built input (inject path).
 pub struct AddInjectedInput {
+    /// Cell to append, including its previous output and data.
     pub input: CellInputEx,
 }
 
@@ -124,6 +125,7 @@ impl<S: Source> Operation<S> for AddInjectedInput {
 
 /// Push a pre-built named cell dep (inject path).
 pub struct AddInjectedCellDep {
+    /// Cell dep to append.
     pub celldep: CellDepEx,
 }
 
@@ -165,9 +167,13 @@ impl<S: Source> Operation<S> for AddInputCellByOutPoint {
 
 /// Add a cell dep by type script via [`Source`].
 pub struct AddCellDepByType {
+    /// Label stored on the skeleton for later lookup.
     pub name: String,
+    /// Type script that identifies the dep cell.
     pub type_script: ScriptEx,
+    /// Code cell or dep group.
     pub dep_type: DepType,
+    /// When true, also fetch and keep the dep cell's data.
     pub with_data: bool,
 }
 
@@ -246,6 +252,7 @@ impl<S: Source> Operation<S> for AddOutputCell {
 }
 
 impl AddOutputCellByInputIndex {
+    /// Copy the chosen input into an output, applying lock, type, data, and capacity changes.
     pub fn apply(self, skeleton: &mut TransactionSkeleton) -> Result<()> {
         let cell_input = skeleton.get_input_by_index(self.input_index)?;
         let mut cell_output = cell_input.output.clone();
@@ -298,6 +305,7 @@ impl<S: Source> Operation<S> for AddOutputCellByInputIndex {
 }
 
 impl AddWitnessArgs {
+    /// Write these witness fields onto an existing index, or append a new witness.
     pub fn apply(self, skeleton: &mut TransactionSkeleton) -> Result<()> {
         if let Some(witness_index) = self.witness_index {
             if witness_index >= skeleton.witnesses.len() {

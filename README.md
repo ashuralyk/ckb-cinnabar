@@ -79,10 +79,11 @@ tree uses 10–11. An SSRI entry uses 12–18:
 | 17 | `SSRIAssembleFailed` |
 | 18 | `SSRISourceUnavailable` |
 
-`ckb-cinnabar-verifier` feature `ssri` is on by default and pulls in
-[`ckb-ssri-std`](https://github.com/ashuralyk/ckb-ssri-std). Empty `argv`
-runs the verify tree. `argv` together with raw `vm_version == u64::MAX` runs
-SSRI. Append a wire table when this binary serves methods:
+The SSRI arm of `cinnabar_main!` is verifier feature `ssri` (on by default).
+It depends on [`ckb-ssri-std`](https://github.com/ashuralyk/ckb-ssri-std) at
+`8c2c245` (ckb-std 1.1). Empty `argv` runs the verify tree. `argv` together
+with raw `vm_version == u64::MAX` runs SSRI. Append a wire table when this
+binary serves methods:
 
 ```rust
 cinnabar_main!(
@@ -126,7 +127,9 @@ matches those reads. The generated contract template stays hop-only.
 Scaffold with cargo-generate (or copy `templates/contract` and replace placeholders):
 
 ```bash
-cargo generate --path templates/contract --name my-lock
+# inside a checkout of this repository
+cargo generate --path templates/contract --name my-lock \
+  --define use_local_cinnabar=true --define cinnabar_path="$PWD"
 cd my-lock
 make prepare   # rustup target add riscv64imac-unknown-none-elf
 make build     # writes build/release/<crate>
@@ -145,6 +148,12 @@ Agents treating a generated or edited contract as done must have both
 | `build/release/`    | RISC-V binaries (`--contract-path` default) |
 
 The template Makefile comes from ckb-script-templates. Agents should not hand-write RISC-V linker scripts.
+
+The separate repository `ckb-cinnabar-scripts-template` is not the scaffold
+(its README was left as a TODO). Generate from `templates/contract` in this
+repository. The template default is a git dependency. For a path
+dependency pass both `--define use_local_cinnabar=true` and
+`--define cinnabar_path="$PWD"` (absolute path to this checkout).
 
 Rewrite the template comments for this contract. The calculator crate, the
 verifier crate, and each identity module use `//!`. Each recipe, custom
@@ -190,8 +199,13 @@ The `ckb-cinnabar` CLI is usable from a script or agent:
 
 ```bash
 ckb-cinnabar --json --dry-run --privkey-env CINNABAR_PRIVKEY \
-  deploy --contract-name my_lock --tag v0.1.0 --payer-address ckt1...
+  deploy --contract-name my_lock --tag v0.1.0 \
+  --payer-address ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq28phxutezqvjgfv5q38gn5kwek4m9km3cmajeqs
 ```
+
+Global flags go before the subcommand. `--dry-run` still needs a reachable
+indexer for the payer's cells. The JSON field `record` is the deployment
+record; `deployment/<network>/<name>.json` is written only on a real send.
 
 Root crate re-exports the types agents typically need: `Address`, `Instruction`, `TransactionCalculator`, `TransactionSkeleton`, `Network`, `RpcClient`, `CalculatorError`, `intent`.
 
@@ -416,25 +430,18 @@ It's very easy to distinguish how a CKB contract works because of the clear modu
 
 ## Deployment Module
 
-Install Cinnabar binary:
+Install the Cinnabar binary from git:
 
 ```bash
-$ git clone https://github.com/ashuralyk/ckb-cinnabar
-$ cd ckb-cinnabar
-$ cargo install --path .
-
-# need to install ckb-cli to sign transaction if use Cinnabar to deploy contract
-$ git clone https://github.com/nervosnetwork/ckb-cli
-$ cd ckb-cli
-$ cargo install --path .
-
-# or install from https://github.com/nervosnetwork/ckb-cli/releases
+cargo install --git https://github.com/ashuralyk/ckb-cinnabar
 ```
+
+Live send still needs [ckb-cli](https://github.com/nervosnetwork/ckb-cli/releases) to sign. `--dry-run` and `--privkey-env` do not.
 
 Run help:
 
-```bash
-$ ckb-cinnabar
+```text
+Rust framework for CKB smart contracts: off-chain Calculate, on-chain Verify, and a headless deploy CLI
 
 Usage: ckb-cinnabar [OPTIONS] <COMMAND>
 
@@ -442,7 +449,7 @@ Commands:
   deploy   Upload contract to CKB
   migrate  Update on-chain contract from old version to new version
   consume  Consume on-chain contract to release the capacity
-  list     List deployment records
+  list     List deployment records from `--deployment-path`
   help     Print this message or the help of the given subcommand(s)
 
 Options:
@@ -453,11 +460,11 @@ Options:
       --contract-path <CONTRACT_PATH>
           Directory of the compiled contract binary [default: build/release]
       --json
-          Print a JSON object (agents should always pass this)
+          Print a JSON [`crate::object::CliResponse`] instead of a one-line hash. Agents and scripts should always pass this
       --dry-run
-          Assemble without sending
-      --privkey-env <VAR>
-          Hex secp256k1 key in this environment variable (headless signing)
+          Assemble (and optionally sign) without sending. Also skips interactive `ckb-cli` when no `--privkey-env` is set
+      --privkey-env <PRIVKEY_ENV>
+          Environment variable holding a hex secp256k1 private key (non-interactive signing)
   -h, --help
           Print help
   -V, --version
@@ -472,8 +479,8 @@ validation failures), and return a non-zero process status.
 Examples:
 
 ```bash
-# dry-run a deploy (no send, JSON, env key)
-$ ckb-cinnabar --json --dry-run --privkey-env CINNABAR_PRIVKEY deploy --contract-name my_contract --tag v0.1.1 --payer-address ckt1... --type-id
+# dry-run a deploy (no send, JSON, env key; still needs an indexer)
+$ ckb-cinnabar --json --dry-run --privkey-env CINNABAR_PRIVKEY deploy --contract-name my_contract --tag v0.1.1 --payer-address ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq28phxutezqvjgfv5q38gn5kwek4m9km3cmajeqs --type-id
 
 # deploy a new compiled contract with type_id
 $ ckb-cinnabar deploy --contract-name my_contract --tag v0.1.1 --payer-address ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq28phxutezqvjgfv5q38gn5kwek4m9km3cmajeqs --type-id
@@ -487,4 +494,16 @@ $ ckb-cinnabar consume --contract-name my_contract --tag v0.1.2
 
 > note: Comparing to Capsule, Cinnabar deployment module only uses `ckb-cli` to sign transaction without creating the `deployment.toml` file as prerequisites.
 
-For specific usage scenarios, please refer to [demos](https://github.com/ashuralyk/cinnabar-examples).
+For specific usage scenarios, please refer to [demos](https://github.com/ashuralyk/cinnabar-examples). CLI demos in this repository are [examples](examples/) (`secp256k1_transfer`, `dao`, `spore`). VM-tested locks are [examples/scenarios](examples/scenarios). xUDT mint and transfer are the `mint_xudt` / `transfer_xudt` recipes, checked by `calculate/tests/scenarios.rs`.
+
+## FAQ
+
+**Where do I start?** Describe the product. The agent skill in [AGENTS.md](AGENTS.md) interviews one rule at a time, then scaffolds [templates/contract](templates/contract). Do not start from the old `ckb-cinnabar-scripts-template` repository.
+
+**What is the difference between Calculate and Verify?** Calculate builds the transaction off chain (`Instruction` of `Operation`s). Verify checks that transaction on chain (`cinnabar_main!`).
+
+**Which error code is mine?** System 1–5, verify tree 10–11, SSRI 12–18, custom errors from 20. The full table is [docs/error-codes.md](docs/error-codes.md).
+
+**How do I run this without installing the RISC-V target by hand?** [Dockerfile](Dockerfile) and [.devcontainer/devcontainer.json](.devcontainer/devcontainer.json) install Rust, `clang` 18 (the contract build needs clang 16+), the `riscv64imac-unknown-none-elf` target, `cargo-generate`, and `ckb-cli`.
+
+**How does an agent read this without cloning first?** [llms.txt](llms.txt) is the short map. [llms-full.txt](llms-full.txt) inlines the README, AGENTS.md, error codes, and contributing notes. `make llms-full` regenerates that file; CI fails if the committed copy drifts. [context7.json](context7.json) tells [Context7](https://context7.com/docs/library-owners) which of those docs to index. Add `use context7` in the agent prompt after the library is submitted at [context7.com/add-library](https://context7.com/add-library).

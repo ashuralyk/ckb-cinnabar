@@ -16,8 +16,10 @@ use crate::{rpc::Network, skeleton::ScriptEx, types::hash_to_h256};
 pub mod hardcoded {
     use super::*;
 
+    /// Deployment transaction of the proxy-locks bundle on mainnet.
     pub const COMPONENT_MAINNET_TX_HASH: H256 =
         h256!("0x10d63a996157d32c01078058000052674ca58d15f921bec7f1dcdac2160eb66b");
+    /// Deployment transaction of the proxy-locks bundle on testnet.
     pub const COMPONENT_TESTNET_TX_HASH: H256 =
         h256!("0xb4f171c9c9caf7401f54a8e56225ae21d95032150a87a4678eac3f66a3137b93");
 

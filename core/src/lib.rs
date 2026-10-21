@@ -4,5 +4,6 @@
 //! `Instruction::named` and a `cinnabar_main!` verification-tree node.
 
 #![no_std]
+#![warn(missing_docs)]
 
 pub mod intent;

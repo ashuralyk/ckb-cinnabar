@@ -9,7 +9,7 @@ use ckb_cinnabar_calculator::{
     assert_verify,
     instruction::Instruction,
     operation::basic::AddOutputCell,
-    re_exports::{ckb_hash::blake2b_256, ckb_types::core::Capacity},
+    re_exports::ckb_hash::blake2b_256,
     rpc::Network,
     simulation::{
         always_success_script, AddFakeAlwaysSuccessCelldep, AddFakeContractCelldepByName,
@@ -66,7 +66,7 @@ async fn generated_contract_verifies_when_built() {
         contract_address.payload().into(),
         None,
         vec![],
-        Some(Capacity::shannons(200_000_000_000)),
+        Some(200_000_000_000),
     )
     .expect("fake input cell");
 
