@@ -168,7 +168,7 @@ impl TransactionSimulator {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .map_err(|e| CalculatorError::Other(e.to_string()))?
+            .map_err(CalculatorError::from)?
             .block_on(self.async_verify_at(caller, rpc, instructions, max_cycles))
     }
 

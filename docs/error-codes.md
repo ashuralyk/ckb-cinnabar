@@ -62,7 +62,7 @@ section below says when `--json` uses one of these strings.
 | `simulation` | Skeleton or VM failure without a script exit code. |
 | `script_validation` | The script returned a non-zero `i8` (`exit_code`). |
 | `fake_rpc` | Misuse of `FakeRpcClient`. |
-| `io` | Filesystem failure (binary, deployment record). |
+| `io` | Filesystem or `std::io` failure (missing binary, deployment record, `os error`). |
 | `source_unavailable` | `Source` is unset or the lookup is not implemented. |
 | `other` | Anything else. |
 
@@ -75,7 +75,7 @@ section below says when `--json` uses one of these strings.
 3. CLI-only failures, which are not in the table above:
    - `configuration` — for example `--privkey-env` names a variable that is unset. Process exit `1`.
    - `invalid_input` — bad flag or unparseable address. Process exit `2`.
-4. Any other report is passed through `CalculatorError::from_message`. HTTP transport (`bad ckb request`, connection refused, a JSON-RPC body the node rejected) becomes `network`. Text that is a missing file becomes `io`. Anything left is `other`.
+4. Any other report is passed through `CalculatorError::from_message` (CLI: `CalculatorError::from_report`, which uses the same text and then promotes a nested `std::io::Error`). HTTP transport (`bad ckb request`, `error sending request`, connection refused, a JSON-RPC body the node rejected) becomes `network`, including when the text also contains `os error`. A missing file becomes `io`: `os error`, `no such file`, `permission denied`, `not a directory`, `is a directory`, `entity not found`, `entity already exists`, `directory not empty`, `read-only file`, `no space left on device`, `no storage space`, `missing binary`, or `binary` plus `not found`. Those markers are applied before the broader `sign` / `ckb-cli` / `script error` heuristics, so a missing `ckb-cli` binary is `io` rather than `signing`. If the text is still `other` but the report chain contains a `std::io::Error`, the kind is `io`. Anything left is `other`.
 
 `--dry-run` still contacts the node indexer to find the payer's live cells. Success puts the deployment record in the JSON field `record`. The file `deployment/<network>/<name>.json` is written only when the transaction is sent.
 

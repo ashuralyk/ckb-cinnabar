@@ -20,7 +20,10 @@ use crate::{
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 #[command(propagate_version = true)]
-/// `ckb-cinnabar` CLI: deploy / migrate / consume / list contract cells.
+/// Rust framework for CKB smart contracts: off-chain Calculate, on-chain Verify, agent-friendly scaffold, and a headless deploy CLI
+///
+/// Deploy, migrate, consume, and list contract cells. Global flags apply to
+/// every subcommand.
 pub struct Cli {
     /// CKB network, options are `mainnet`, `testnet` or URL (e.g. http://localhost:8114)
     #[arg(short, long, default_value_t = Network::Testnet)]
@@ -34,17 +37,17 @@ pub struct Cli {
     #[arg(long, default_value_t = String::from("build/release"))]
     contract_path: String,
 
-    /// Print a JSON [`crate::object::CliResponse`] instead of a one-line hash.
-    /// Agents and scripts should always pass this.
+    /// Print one JSON object on stdout for success and failure.
+    /// Failures set `ok: false` and include `error.kind` (and `error.exit_code` for a script). Stderr stays empty. Agents should pass this.
     #[arg(long, default_value_t = false)]
     json: bool,
 
-    /// Assemble (and optionally sign) without sending.
-    /// Also skips interactive `ckb-cli` when no `--privkey-env` is set.
+    /// Assemble without sending. Signs in-process when `--privkey-env` is set; otherwise skips `ckb-cli`. Still queries the indexer for live cells.
     #[arg(long, default_value_t = false)]
     dry_run: bool,
 
-    /// Environment variable holding a hex secp256k1 private key (non-interactive signing)
+    /// Environment variable holding a hex secp256k1 private key.
+    /// Live send without this flag prompts interactive `ckb-cli`.
     #[arg(long)]
     privkey_env: Option<String>,
 
@@ -54,7 +57,7 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Upload contract to CKB
+    /// Deploy a compiled contract binary from `--contract-path` as a cell.
     Deploy {
         /// Contract that will be deployed
         #[arg(long)]
@@ -72,7 +75,7 @@ enum Commands {
         #[arg(long, default_value_t = false)]
         type_id: bool,
     },
-    /// Update on-chain contract from old version to new version
+    /// Replace one on-chain contract version with a newly compiled binary.
     Migrate {
         /// Contract that will be migrated
         #[arg(long)]
@@ -90,7 +93,7 @@ enum Commands {
         #[arg(long, default_value_t = TypeIdMode::Keep)]
         type_id_mode: TypeIdMode,
     },
-    /// Consume on-chain contract to release the capacity
+    /// Consume an on-chain contract cell and release its capacity.
     Consume {
         /// Contract that will be consumed
         #[arg(long)]
@@ -102,7 +105,7 @@ enum Commands {
         #[arg(long)]
         receiver_address: Option<Address>,
     },
-    /// List deployment records from `--deployment-path`
+    /// List deployment records stored under `--deployment-path`.
     List {
         /// Optional contract name filter
         #[arg(long)]
@@ -239,6 +242,42 @@ pub async fn dispatch_commands() -> eyre::Result<()> {
 mod tests {
     use super::*;
     use clap::Parser;
+
+    #[test]
+    fn about_matches_package_description() {
+        use clap::CommandFactory;
+        let cmd = Cli::command();
+        assert_eq!(
+            cmd.get_about().map(|text| text.to_string()).as_deref(),
+            Some(
+                "Rust framework for CKB smart contracts: off-chain Calculate, on-chain Verify, agent-friendly scaffold, and a headless deploy CLI"
+            )
+        );
+        for name in ["deploy", "migrate", "consume", "list"] {
+            let sub = cmd
+                .find_subcommand(name)
+                .unwrap_or_else(|| panic!("{name}"));
+            let about = sub
+                .get_about()
+                .map(|text| text.to_string())
+                .unwrap_or_default();
+            assert!(!about.is_empty(), "{name} about");
+        }
+        for id in ["json", "dry_run", "privkey_env"] {
+            let arg = cmd
+                .get_arguments()
+                .find(|arg| arg.get_id() == id)
+                .unwrap_or_else(|| panic!("{id}"));
+            let help = arg
+                .get_help()
+                .map(|text| text.to_string())
+                .unwrap_or_default();
+            assert!(
+                help.contains("ckb-cli") || help.contains("error.kind"),
+                "{id}: {help}"
+            );
+        }
+    }
 
     #[test]
     fn parses_json_dry_run_list() {

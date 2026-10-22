@@ -149,10 +149,11 @@ Agents treating a generated or edited contract as done must have both
 
 The template Makefile comes from ckb-script-templates. Agents should not hand-write RISC-V linker scripts.
 
-The separate repository `ckb-cinnabar-scripts-template` is not the scaffold
-(its README was left as a TODO). Generate from `templates/contract` in this
-repository. The template default is a git dependency. For a path
-dependency pass both `--define use_local_cinnabar=true` and
+The separate repository `ckb-cinnabar-scripts-template` is deprecated and not
+the scaffold (its README was left as a TODO). Treat that repository as
+archived. Generate from `templates/contract` in this repository. The template
+default is a git dependency. For a path dependency pass both
+`--define use_local_cinnabar=true` and
 `--define cinnabar_path="$PWD"` (absolute path to this checkout).
 
 Rewrite the template comments for this contract. The calculator crate, the
@@ -441,15 +442,15 @@ Live send still needs [ckb-cli](https://github.com/nervosnetwork/ckb-cli/release
 Run help:
 
 ```text
-Rust framework for CKB smart contracts: off-chain Calculate, on-chain Verify, and a headless deploy CLI
+Rust framework for CKB smart contracts: off-chain Calculate, on-chain Verify, agent-friendly scaffold, and a headless deploy CLI
 
 Usage: ckb-cinnabar [OPTIONS] <COMMAND>
 
 Commands:
-  deploy   Upload contract to CKB
-  migrate  Update on-chain contract from old version to new version
-  consume  Consume on-chain contract to release the capacity
-  list     List deployment records from `--deployment-path`
+  deploy   Deploy a compiled contract binary from `--contract-path` as a cell
+  migrate  Replace one on-chain contract version with a newly compiled binary
+  consume  Consume an on-chain contract cell and release its capacity
+  list     List deployment records stored under `--deployment-path`
   help     Print this message or the help of the given subcommand(s)
 
 Options:
@@ -460,11 +461,11 @@ Options:
       --contract-path <CONTRACT_PATH>
           Directory of the compiled contract binary [default: build/release]
       --json
-          Print a JSON [`crate::object::CliResponse`] instead of a one-line hash. Agents and scripts should always pass this
+          Print one JSON object on stdout for success and failure. Failures set `ok: false` and include `error.kind` (and `error.exit_code` for a script). Stderr stays empty. Agents should pass this
       --dry-run
-          Assemble (and optionally sign) without sending. Also skips interactive `ckb-cli` when no `--privkey-env` is set
+          Assemble without sending. Signs in-process when `--privkey-env` is set; otherwise skips `ckb-cli`. Still queries the indexer for live cells
       --privkey-env <PRIVKEY_ENV>
-          Environment variable holding a hex secp256k1 private key (non-interactive signing)
+          Environment variable holding a hex secp256k1 private key. Live send without this flag prompts interactive `ckb-cli`
   -h, --help
           Print help
   -V, --version
@@ -498,7 +499,7 @@ For specific usage scenarios, please refer to [demos](https://github.com/ashural
 
 ## FAQ
 
-**Where do I start?** Describe the product. The agent skill in [AGENTS.md](AGENTS.md) interviews one rule at a time, then scaffolds [templates/contract](templates/contract). Do not start from the old `ckb-cinnabar-scripts-template` repository.
+**Where do I start?** Describe the product. The agent skill in [AGENTS.md](AGENTS.md) interviews one rule at a time, then scaffolds [templates/contract](templates/contract). The old `ckb-cinnabar-scripts-template` repository is deprecated; treat it as archived and do not generate from it.
 
 **What is the difference between Calculate and Verify?** Calculate builds the transaction off chain (`Instruction` of `Operation`s). Verify checks that transaction on chain (`cinnabar_main!`).
 

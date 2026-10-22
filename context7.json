@@ -1,7 +1,7 @@
 {
   "$schema": "https://context7.com/schema/context7.json",
   "projectTitle": "Cinnabar",
-  "description": "Rust framework for Nervos CKB smart contracts. Calculate assembles a transaction off chain. Verify checks that transaction on chain.",
+  "description": "Rust framework for CKB smart contracts: off-chain Calculate, on-chain Verify, agent-friendly scaffold, and a headless deploy CLI",
   "folders": [
     "docs",
     "examples",
@@ -21,7 +21,7 @@
     "xudt"
   ],
   "rules": [
-    "Scaffold a contract from templates/contract. Do not start from ckb-cinnabar-scripts-template.",
+    "Scaffold a contract from templates/contract. The ckb-cinnabar-scripts-template repository is deprecated; treat it as archived.",
     "Calculate is an Instruction of Operations off chain. Verify is a cinnabar_main! tree on chain.",
     "Use intent names only when a hop is exactly create, transfer, or burn. Otherwise use a domain string and Instruction::new.",
     "Custom script errors start at 20. System codes are 1-5, the verify tree uses 10-11, and SSRI uses 12-18.",

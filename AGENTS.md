@@ -32,7 +32,8 @@ mandatory name match.
 ## Generate a project
 
 Scaffold from `templates/contract` in this repository. The old
-`ckb-cinnabar-scripts-template` repository is not the path.
+`ckb-cinnabar-scripts-template` repository is deprecated and not the path;
+treat it as archived.
 
 ```bash
 # inside a checkout of this repository (absolute path to the checkout)

@@ -1,6 +1,6 @@
 Generated Cinnabar contract project. Agent instructions: see Cinnabar's `AGENTS.md`.
 
-This template replaces the old `ckb-cinnabar-scripts-template` repository.
+This template replaces the deprecated `ckb-cinnabar-scripts-template` repository (treat that repo as archived).
 Dependencies are git dependencies on
 `https://github.com/ashuralyk/ckb-cinnabar` unless `use_local_cinnabar` is
 true. Local checkouts must pass an absolute `cinnabar_path` (the directory
