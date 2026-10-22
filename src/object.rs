@@ -459,6 +459,7 @@ mod tests {
         }
     }
 
+    #[test]
     fn cli_only_kinds_stay_distinct() {
         let configuration = eyre::Report::new(CliError::Configuration(
             "environment variable CINNABAR_PRIVKEY not set".into(),

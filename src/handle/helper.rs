@@ -269,7 +269,13 @@ fn save_contract_deployment(path: PathBuf, record: DeploymentRecord) -> eyre::Re
         let content = fs::read(&path)?;
         serde_json::from_slice(&content)?
     } else {
-        fs::create_dir_all(path.parent().unwrap())?;
+        let parent = path.parent().ok_or_else(|| {
+            eyre::Report::new(CalculatorError::Io(format!(
+                "deployment record path has no parent: {}",
+                path.to_string_lossy()
+            )))
+        })?;
+        fs::create_dir_all(parent)?;
         Vec::new()
     };
     records.push(record);
@@ -373,6 +379,14 @@ mod tests {
         .unwrap();
         assert_eq!(all.len(), 3);
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn save_rejects_a_record_path_with_no_parent() {
+        let err = save_contract_deployment(PathBuf::new(), record("v0.1.0", "deploy")).unwrap_err();
+        let body = CliErrorBody::from_report(&err);
+        assert_eq!(body.kind, "io");
+        assert!(body.message.contains("no parent"));
     }
 
     #[test]

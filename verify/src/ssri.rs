@@ -508,7 +508,8 @@ impl SsriArgs {
         let slots = argv
             .iter()
             .map(|arg| Slot {
-                hex: unsafe { CStr::from_ptr(arg.as_ptr()) }.to_bytes().to_vec(),
+                // `Arg` derefs to `CStr`. Copy the hex text and drop the trailing NUL.
+                hex: arg.to_bytes().to_vec(),
                 decoded: RefCell::new(None),
             })
             .collect();
