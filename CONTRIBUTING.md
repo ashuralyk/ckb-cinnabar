@@ -13,6 +13,10 @@ cargo test -p ckb-cinnabar-calculator --features spore
 cargo test -p ckb-cinnabar-calculator --no-default-features
 cargo test -p ckb-cinnabar-verifier --features ssri
 cargo check -p ckb-cinnabar-verifier --features ssri --target riscv64imac-unknown-none-elf
+cargo check -p ckb-cinnabar-verifier --no-default-features --target riscv64imac-unknown-none-elf
+cargo check --workspace --examples --exclude ckb-cinnabar-verifier
+cargo check -p ckb-cinnabar --example spore --features spore
+cargo clippy --workspace --all-targets -- -D warnings
 make -C examples/scenarios
 ```
 

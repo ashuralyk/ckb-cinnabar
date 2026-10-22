@@ -851,7 +851,7 @@ mod tests {
         let lock = packed::Script::new_builder()
             .code_hash(digest.pack())
             .hash_type(ScriptHashType::Type)
-            .args(vec![1u8, 2, 3].pack())
+            .args([1u8, 2, 3].pack())
             .build();
         let tx = packed::Transaction::new_builder().build();
         let ckb = Capacity(1_000);
@@ -944,7 +944,7 @@ mod tests {
         let script = packed::Script::new_builder()
             .code_hash([7u8; 32].pack())
             .hash_type(ScriptHashType::Type)
-            .args(vec![1u8, 2, 3].pack())
+            .args([1u8, 2, 3].pack())
             .build();
         let packed_again = pack_script(&unpack_script(&script));
         assert_eq!(packed_again.as_slice(), script.as_slice());
@@ -977,12 +977,12 @@ mod tests {
         let argv = ckb_std::env::argv();
         use core::result::Result;
         ckb_ssri_std::ssri_methods!(
-            argv: &argv,
+            argv: argv,
             invalid_method: Error::SSRIMethodsNotFound,
             invalid_args: Error::SSRIMethodsArgsInvalid,
-            "UDT.name" => export(&argv, "Test UDT"),
-            "UDT.decimals" => export(&argv, 8u8),
-            "UDT.mint" => export(&argv, mint),
+            "UDT.name" => export(argv, "Test UDT"),
+            "UDT.decimals" => export(argv, 8u8),
+            "UDT.mint" => export(argv, mint),
         )
     }
 }

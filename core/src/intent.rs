@@ -1,8 +1,10 @@
-//! Canonical Cinnabar intent names.
+//! Canonical morphology names (`create`, `transfer`, `burn`, plus asset and DAO names).
 //!
-//! Both `ckb-cinnabar-calculator` and `ckb-cinnabar-verifier` re-export these
-//! constants, so an instruction and its verification-tree node cannot drift.
-//! Put the same constant on `Instruction::named` and in `cinnabar_main!`.
+//! `ckb-cinnabar-calculator` and `ckb-cinnabar-verifier` re-export these constants.
+//! When a hop is exactly that morphology, put the same constant on
+//! `Instruction::named` and in `cinnabar_main!` so the two sides cannot drift.
+//! A hop that is not that morphology uses a domain string from the transition
+//! table. Sharing the constants does not require every hop to use one of them.
 
 /// Create a cell (script in outputs only).
 pub const CREATE: &str = "create";

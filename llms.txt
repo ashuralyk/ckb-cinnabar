@@ -34,8 +34,6 @@ One product question at a time until every product rule has been said. Show the 
 
 ## Docs
 
-The links below point at `master`. They resolve after this branch is merged. Until then, open the same paths on the pull-request branch.
-
 - [AGENTS.md](https://github.com/ashuralyk/ckb-cinnabar/blob/master/AGENTS.md): agent golden path
 - [skills/cinnabar-agent/SKILL.md](https://github.com/ashuralyk/ckb-cinnabar/blob/master/skills/cinnabar-agent/SKILL.md): installable skill
 - [README.md](https://github.com/ashuralyk/ckb-cinnabar/blob/master/README.md): framework overview

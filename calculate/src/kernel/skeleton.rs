@@ -74,7 +74,7 @@ impl ScriptEx {
     /// Get `code_hash` of ScriptEx
     pub fn code_hash(&self) -> Result<Hash256> {
         match self {
-            ScriptEx::Script(code_hash, _, _) => Ok(code_hash.clone()),
+            ScriptEx::Script(code_hash, _, _) => Ok(*code_hash),
             _ => Err(CalculatorError::Other("reference script".into())),
         }
     }

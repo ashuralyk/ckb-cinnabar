@@ -24,7 +24,7 @@ Install the CLI with `cargo install --git https://github.com/ashuralyk/ckb-cinna
 - `Instruction::new` / `Instruction::named` — a pipeline of `Operation`s. Import `instruction`, `operation`, `rpc`, `skeleton` from the calculator crate root.
 - `assert_verify!(&rpc, instructions, expected_exit)` — FakeRpc + native CKB-VM. `0` is success.
 - `ckb-cinnabar --json --dry-run deploy` — global flags before the subcommand. Dry-run still needs an indexer. The JSON field `record` is the deployment record; `deployment/<network>/<name>.json` is written only when the transaction is sent.
-- Script exits: sys 1–5, tree 10–11, SSRI 12–18, custom ≥ 20. `CalculatorError::kind()` is the library string. CLI JSON also uses `configuration` and `invalid_input`. See `docs/error-codes.md`.
+- Script exits: sys 1–5, tree 10–11, SSRI 12–18, custom ≥ 20. `CalculatorError::kind()` is the library string. CLI JSON also uses `configuration`, `invalid_input`, `version_already_exists`, `version_not_exists`, `version_already_consumed`, and `fake_network`. See `docs/error-codes.md`.
 
 Target: `riscv64imac-unknown-none-elf`, `clang` 16+ (the Dockerfile installs clang 18), `RUSTFLAGS` include `-C passes=lower-atomic`.
 """

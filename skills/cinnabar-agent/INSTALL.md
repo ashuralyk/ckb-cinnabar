@@ -3,7 +3,7 @@
 `npx skills` discovers any folder with `SKILL.md` (`name` + `description`) under
 `skills/<name>/`. This directory already matches that layout.
 
-## From GitHub (after this skill is on the default branch)
+## From GitHub
 
 ```bash
 # list
@@ -28,9 +28,7 @@ Direct tree URL:
 npx skills add https://github.com/ashuralyk/ckb-cinnabar/tree/master/skills/cinnabar-agent -g -a cursor -y
 ```
 
-Until the skill is pushed, GitHub listing returns “No skills found”.
-
-## From a local checkout (works now)
+## From a local checkout
 
 ```bash
 npx skills add /path/to/cinnabar -l

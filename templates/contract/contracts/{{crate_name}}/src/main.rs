@@ -5,7 +5,9 @@
 //!
 //! `Root` classifies the running lock as create / transfer / burn via
 //! `this_script_pattern`, then hops to the matching `intent::*` node.
-//! Keep those strings identical to `Instruction::named` in `calculator/`.
+//! These hops are exactly those morphologies, so `Instruction::named` in
+//! `calculator/` uses the same constants. A different hop would use a domain
+//! string on both sides.
 //!
 //! Return `Ok(None)` to succeed, `Ok(Some(next))` to continue, `Err` to
 //! fail. Custom errors start at `CUSTOM_ERROR_START` (20).

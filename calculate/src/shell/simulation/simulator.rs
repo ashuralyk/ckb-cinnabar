@@ -213,9 +213,7 @@ impl TransactionSimulator {
             .map(|v| (hash_to_h256(&v.block_hash), v.header.clone().into_view()))
             .collect();
         let resolved_tx = {
-            let mut resolved_tx = skeleton
-                .into_resolved_transaction(rpc)
-                .map_err(CalculatorError::from)?;
+            let mut resolved_tx = skeleton.into_resolved_transaction(rpc)?;
             complete_resolved_tx(self.outpoint_to_headers, &mut resolved_tx);
             Arc::new(resolved_tx)
         };
@@ -347,7 +345,7 @@ pub async fn expect_verify_at<T: RPC>(
         .async_verify_at(caller, rpc, instructions, DEFAULT_MAX_CYCLES)
         .await;
     match (expected_exit_code, result) {
-        (0, Ok(cycles)) => Ok(u64::from(cycles)),
+        (0, Ok(cycles)) => Ok(cycles),
         (0, Err(err)) => Err(CalculatorError::Simulation(format!(
             "expected success, got {err}"
         ))),

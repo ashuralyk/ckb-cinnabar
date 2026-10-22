@@ -1,7 +1,8 @@
 //! Verification tree: named nodes walked from [`TREE_ROOT`].
 //!
 //! Register nodes with [`cinnabar_main!`]. Each [`Verification::verify`]
-//! returns `Ok(Some(next))` to hop (prefer [`crate::intent`] constants),
+//! returns `Ok(Some(next))` to hop (an [`crate::intent`] constant when that
+//! hop is exactly that morphology, otherwise a domain string),
 //! `Ok(None)` to succeed, or `Err` to fail the script.
 
 use alloc::{borrow::ToOwned, boxed::Box, collections::BTreeMap, string::String};
@@ -21,7 +22,8 @@ pub trait Verification<T: Default> {
     /// Check the transaction from this node's perspective.
     ///
     /// - `Ok(Some(next))` — continue to the node registered under `next`
-    ///   (use [`crate::intent`] constants for cross-contract hops).
+    ///   Use an [`crate::intent`] constant when that hop is exactly that
+    ///   morphology; otherwise use a domain string.
     /// - `Ok(None)` — verification succeeds, the walk stops.
     /// - `Err(e)` — verification fails; becomes the script exit code.
     fn verify(&mut self, verifier_name: &str, ctx: &mut T) -> Result<Option<&str>>;

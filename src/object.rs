@@ -55,11 +55,11 @@ impl Display for TypeIdMode {
 /// Which records `list` prints.
 #[derive(PartialEq, Eq, Clone)]
 pub enum ListMode {
-    /// Everything.
+    /// Every stored row, including older rows for the same tag.
     All,
-    /// Only live deployments.
+    /// Latest row of each tag whose operation is `deploy` or `migrate`.
     Deployed,
-    /// Only consumed (destroyed) contract cells.
+    /// Latest row of each tag whose operation is `consume`.
     Consumed,
 }
 
@@ -186,7 +186,7 @@ pub struct DeploymentRecord {
     pub contract_owner_address: CkbAddress,
     /// Type id of the contract cell when deployed/migrated with one.
     pub type_id: Option<H256>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     /// Alias of `type_id` kept for record readability.
     pub type_id_args: Option<H256>,
     // This field is not required, so you can edit in your <contract>.json file to add comment for cooperations
@@ -276,14 +276,26 @@ pub enum CliError {
     Configuration(String),
     /// Malformed CLI argument value.
     InvalidInput(String),
+    /// A deployment row with this tag is already in the JSON file.
+    VersionAlreadyExists,
+    /// No deployment row has this tag.
+    VersionNotExists,
+    /// The latest row for this tag is `consume`.
+    VersionAlreadyConsumed,
+    /// The CLI was pointed at [`Network::Fake`].
+    FakeNetwork,
 }
 
 impl CliError {
-    /// Stable kind string (`configuration` / `invalid_input`) for JSON.
+    /// Stable kind string for JSON.
     pub fn kind(&self) -> &'static str {
         match self {
             Self::Configuration(_) => "configuration",
             Self::InvalidInput(_) => "invalid_input",
+            Self::VersionAlreadyExists => "version_already_exists",
+            Self::VersionNotExists => "version_not_exists",
+            Self::VersionAlreadyConsumed => "version_already_consumed",
+            Self::FakeNetwork => "fake_network",
         }
     }
 
@@ -291,6 +303,10 @@ impl CliError {
     pub fn message(&self) -> &str {
         match self {
             Self::Configuration(message) | Self::InvalidInput(message) => message,
+            Self::VersionAlreadyExists => "version already exists",
+            Self::VersionNotExists => "version not exists",
+            Self::VersionAlreadyConsumed => "version already consumed",
+            Self::FakeNetwork => "fake network",
         }
     }
 }
@@ -416,6 +432,33 @@ mod tests {
     }
 
     #[test]
+    fn deployment_ledger_kinds_are_stable() {
+        let cases = [
+            (
+                CliError::VersionAlreadyExists,
+                "version_already_exists",
+                "version already exists",
+            ),
+            (
+                CliError::VersionNotExists,
+                "version_not_exists",
+                "version not exists",
+            ),
+            (
+                CliError::VersionAlreadyConsumed,
+                "version_already_consumed",
+                "version already consumed",
+            ),
+            (CliError::FakeNetwork, "fake_network", "fake network"),
+        ];
+        for (error, kind, message) in cases {
+            let body = CliErrorBody::from_report(&eyre::Report::new(error));
+            assert_eq!(body.kind, kind);
+            assert_eq!(body.message, message);
+            assert!(body.exit_code.is_none());
+        }
+    }
+
     fn cli_only_kinds_stay_distinct() {
         let configuration = eyre::Report::new(CliError::Configuration(
             "environment variable CINNABAR_PRIVKEY not set".into(),

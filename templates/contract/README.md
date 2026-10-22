@@ -7,8 +7,9 @@ true. Local checkouts must pass an absolute `cinnabar_path` (the directory
 that contains `calculate/` and `verify/`).
 
 Cinnabar splits **Calculate** (off-chain `Instruction`s in `calculator/`) from
-**Verify** (on-chain tree in `contracts/{{crate_name}}`). Name both sides with
-the same `intent::*` constants (`create` / `transfer` / `burn` / …).
+**Verify** (on-chain tree in `contracts/{{crate_name}}`). This template's hops
+are exactly create, transfer, and burn, so both sides use those `intent::*`
+constants. A hop that is not that morphology uses a domain string instead.
 
 ```bash
 make prepare

@@ -14,6 +14,7 @@ use ckb_cinnabar_calculator::{
         eyre,
     },
     rpc::{Host, Network, RpcClient, RPC},
+    skeleton::TransactionSkeleton,
 };
 
 use crate::object::*;
@@ -30,9 +31,9 @@ pub fn generate_contract_deployment_path(
         .join(format!("{contract_name}.json"))
 }
 
-/// Load one record: a specific `version`, or the last record if `version` is `None`.
+/// Load one record: the latest row with `version`, or the last row if `version` is `None`.
 ///
-/// Returns `Ok(None)` when the file does not exist.
+/// Returns `Ok(None)` when the file does not exist or the tag is absent.
 pub fn load_contract_deployment(
     network: &Network,
     contract_name: &str,
@@ -44,7 +45,7 @@ pub fn load_contract_deployment(
         let file = fs::File::open(&path)?;
         let deployments: Vec<DeploymentRecord> = serde_json::from_reader(file)?;
         if let Some(version) = version {
-            Ok(deployments.into_iter().find(|r| r.version == version))
+            Ok(deployments.into_iter().rev().find(|r| r.version == version))
         } else {
             Ok(deployments.into_iter().last())
         }
@@ -82,12 +83,80 @@ pub fn load_all_deployments(
         let deployments: Vec<DeploymentRecord> = serde_json::from_reader(file)?;
         records.extend(deployments);
     }
-    records.retain(|r| match mode {
-        ListMode::All => true,
-        ListMode::Deployed => r.operation != "consume",
-        ListMode::Consumed => r.operation == "consume",
-    });
-    Ok(records)
+    Ok(match mode {
+        ListMode::All => records,
+        ListMode::Deployed => records_at_latest_tag(records, false),
+        ListMode::Consumed => records_at_latest_tag(records, true),
+    })
+}
+
+/// Keep the last row of each `(name, version)`.
+///
+/// `consumed` selects tags whose latest operation is `consume`. Otherwise the
+/// latest operation is `deploy` or `migrate`.
+fn records_at_latest_tag(records: Vec<DeploymentRecord>, consumed: bool) -> Vec<DeploymentRecord> {
+    use std::collections::HashMap;
+    let mut latest_index = HashMap::<(String, String), usize>::new();
+    for (index, record) in records.iter().enumerate() {
+        latest_index.insert((record.name.clone(), record.version.clone()), index);
+    }
+    records
+        .into_iter()
+        .enumerate()
+        .filter(|(index, record)| {
+            let key = (record.name.clone(), record.version.clone());
+            latest_index.get(&key).copied() == Some(*index)
+                && (record.operation == "consume") == consumed
+        })
+        .map(|(_, record)| record)
+        .collect()
+}
+
+/// Contract-cell fields stored on a [`DeploymentRecord`].
+pub(crate) struct RecordedCell {
+    out_index: u32,
+    occupied_capacity: u64,
+    type_id: Option<H256>,
+    type_id_args: Option<H256>,
+}
+
+/// How [`send_and_record_transaction`] fills those fields.
+pub(crate) enum CellSnapshot {
+    /// Contract cell is `outputs[0]` after assembly (deploy / migrate).
+    FirstOutput,
+    /// Contract cell was spent as an input. Do not copy the change output.
+    Consumed { occupied_capacity: u64 },
+}
+
+/// Consume record: keep the spent cell's capacity, and leave type id empty
+/// so the row is not mistaken for the change cell.
+pub(crate) fn recorded_cell_for_consume(occupied_capacity: u64) -> RecordedCell {
+    RecordedCell {
+        out_index: 0,
+        occupied_capacity,
+        type_id: None,
+        type_id_args: None,
+    }
+}
+
+fn recorded_cell_from_first_output(skeleton: &TransactionSkeleton) -> eyre::Result<RecordedCell> {
+    let output = skeleton
+        .outputs
+        .first()
+        .ok_or_else(|| eyre::eyre!("contract output missing"))?;
+    let type_id_args = output
+        .type_script()
+        .map(|script| {
+            H256::from_slice(&script.args().raw_data())
+                .map_err(|err| eyre::eyre!("type id args: {err}"))
+        })
+        .transpose()?;
+    Ok(RecordedCell {
+        out_index: 0,
+        occupied_capacity: output.occupied_capacity().as_u64(),
+        type_id: output.calc_type_hash().map(Into::into),
+        type_id_args,
+    })
 }
 
 /// Read a compiled RISC-V binary from `binary_path/<contract_name>` and return
@@ -113,7 +182,7 @@ pub fn create_rpc_from_network(network: &Network) -> eyre::Result<RpcClient> {
     match network {
         Network::Mainnet => Ok(RpcClient::new_mainnet()),
         Network::Testnet => Ok(RpcClient::new_testnet()),
-        Network::Fake => Err(eyre::eyre!("fake network")),
+        Network::Fake => Err(CliError::FakeNetwork.into()),
         Network::Custom(url) => Ok(RpcClient::new(url.as_str(), None)),
     }
 }
@@ -151,16 +220,18 @@ pub async fn send_and_record_transaction<T: RPC + Host>(
     contract_hash: Option<[u8; 32]>,
     payer_address: Address,
     contract_owner_address: Option<Address>,
+    cell_snapshot: CellSnapshot,
     dry_run: bool,
     json: bool,
 ) -> eyre::Result<()> {
     let (skeleton, _) = TransactionCalculator::new(instructions).new_skeleton(&rpc)?;
-    let occupied_capacity = skeleton.outputs[0].occupied_capacity().as_u64();
-    let type_id = skeleton.outputs[0].calc_type_hash();
-    let type_id_args = skeleton.outputs[0]
-        .type_script()
-        .map(|s| H256::from_slice(&s.args().raw_data()).unwrap());
-    let tx_view = skeleton.clone().into_transaction_view();
+    let cell = match cell_snapshot {
+        CellSnapshot::FirstOutput => recorded_cell_from_first_output(&skeleton)?,
+        CellSnapshot::Consumed { occupied_capacity } => {
+            recorded_cell_for_consume(occupied_capacity)
+        }
+    };
+    let tx_view = skeleton.into_transaction_view();
     let tx_hash = if dry_run {
         tx_view.hash().unpack()
     } else {
@@ -174,13 +245,13 @@ pub async fn send_and_record_transaction<T: RPC + Host>(
         operation: operation.to_string(),
         version,
         tx_hash: tx_hash.clone(),
-        out_index: 0,
+        out_index: cell.out_index,
         data_hash: contract_hash.map(Into::into),
-        occupied_capacity,
+        occupied_capacity: cell.occupied_capacity,
         payer_address: payer_address.into(),
         contract_owner_address: contract_owner_address.into(),
-        type_id: type_id.map(Into::into),
-        type_id_args,
+        type_id: cell.type_id,
+        type_id_args: cell.type_id_args,
         comment: None,
     };
     if !dry_run {
@@ -205,4 +276,111 @@ fn save_contract_deployment(path: PathBuf, record: DeploymentRecord) -> eyre::Re
     let new_content = serde_json::to_string_pretty(&records)?;
     fs::write(path, new_content)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn record(version: &str, operation: &str) -> DeploymentRecord {
+        DeploymentRecord {
+            name: "my_lock".into(),
+            version: version.into(),
+            operation: operation.into(),
+            occupied_capacity: 100,
+            ..DeploymentRecord::default()
+        }
+    }
+
+    fn write_history(dir: &std::path::Path, records: &[DeploymentRecord]) {
+        let path =
+            generate_contract_deployment_path(&Network::Testnet, "my_lock", &dir.to_string_lossy());
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, serde_json::to_string_pretty(records).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn load_by_tag_returns_the_latest_record() {
+        let dir = std::env::temp_dir().join(format!("cinnabar-ledger-load-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        write_history(
+            &dir,
+            &[record("v0.1.0", "deploy"), record("v0.1.0", "consume")],
+        );
+
+        let found = load_contract_deployment(
+            &Network::Testnet,
+            "my_lock",
+            &dir.to_string_lossy(),
+            Some("v0.1.0"),
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(found.operation, "consume");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn list_deployed_keeps_only_tags_whose_latest_record_is_live() {
+        let dir = std::env::temp_dir().join(format!("cinnabar-ledger-list-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        write_history(
+            &dir,
+            &[
+                record("v0.1.0", "deploy"),
+                record("v0.1.0", "consume"),
+                record("v0.2.0", "deploy"),
+            ],
+        );
+
+        let deployed = load_all_deployments(
+            &Network::Testnet,
+            &dir.to_string_lossy(),
+            Some("my_lock"),
+            ListMode::Deployed,
+        )
+        .unwrap();
+        let consumed = load_all_deployments(
+            &Network::Testnet,
+            &dir.to_string_lossy(),
+            Some("my_lock"),
+            ListMode::Consumed,
+        )
+        .unwrap();
+
+        assert_eq!(
+            deployed
+                .iter()
+                .map(|r| r.version.as_str())
+                .collect::<Vec<_>>(),
+            vec!["v0.2.0"]
+        );
+        assert_eq!(
+            consumed
+                .iter()
+                .map(|r| r.version.as_str())
+                .collect::<Vec<_>>(),
+            vec!["v0.1.0"]
+        );
+        assert_eq!(consumed[0].operation, "consume");
+        let all = load_all_deployments(
+            &Network::Testnet,
+            &dir.to_string_lossy(),
+            Some("my_lock"),
+            ListMode::All,
+        )
+        .unwrap();
+        assert_eq!(all.len(), 3);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn consume_record_keeps_the_tag_and_not_a_change_cell() {
+        let cell = recorded_cell_for_consume(42);
+        assert_eq!(cell.occupied_capacity, 42);
+        assert_eq!(cell.out_index, 0);
+        assert!(cell.type_id.is_none());
+        assert!(cell.type_id_args.is_none());
+    }
 }

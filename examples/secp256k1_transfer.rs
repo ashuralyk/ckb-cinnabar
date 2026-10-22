@@ -8,7 +8,7 @@ use ckb_cinnabar_calculator::{
     rpc::RpcClient,
 };
 
-const ADDITIONAL_FEE_RATE: u64 = 1000;
+const ADDITIONAL_FEE_RATE: u64 = 2000;
 
 /// Transfer CKB from one address to another address on testnet
 ///

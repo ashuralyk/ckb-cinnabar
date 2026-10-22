@@ -17,7 +17,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: riscv64imac-unknown-none-elf
-          components: rustfmt
+          components: rustfmt, clippy
       - name: Formatting
         run: cargo fmt --all -- --check
       - name: Native tests
@@ -35,11 +35,22 @@ jobs:
         run: cargo test -p ckb-cinnabar-calculator --no-default-features --features spore
       - name: Verifier RISC-V check
         run: |
+          cargo check -p ckb-cinnabar-verifier --no-default-features --target riscv64imac-unknown-none-elf
           cargo check -p ckb-cinnabar-verifier --target riscv64imac-unknown-none-elf
           cargo check -p ckb-cinnabar-verifier --features ssri --target riscv64imac-unknown-none-elf
         env:
           CARGO_TERM_COLOR: always
           TARGET_CC: clang
+      - name: Examples
+        run: |
+          cargo check --workspace --examples --exclude ckb-cinnabar-verifier
+          cargo check -p ckb-cinnabar --example spore --features spore
+        env:
+          CARGO_TERM_COLOR: always
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+        env:
+          CARGO_TERM_COLOR: always
       - name: Verifier SSRI native tests
         run: cargo test -p ckb-cinnabar-verifier --features ssri
         env:

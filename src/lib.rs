@@ -12,8 +12,9 @@
 //! re-exports the Calculate types a contract project typically needs, and
 //! persists [`DeploymentRecord`] JSON under `deployment/<network>/<name>.json`.
 //!
-//! Intent names (`create` / `transfer` / `burn` / …) come from [`intent`] and
-//! must match verification-tree nodes. See the workspace `AGENTS.md`.
+//! Intent names (`create` / `transfer` / `burn` / …) come from [`intent`].
+//! Use the same name on both sides only when the hop is exactly that
+//! morphology. See the workspace `AGENTS.md`.
 //!
 //! # Headless CLI
 //!

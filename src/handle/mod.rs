@@ -73,7 +73,7 @@ pub async fn deploy_contract(
         Some(&version),
     )?;
     if deployment.is_some() {
-        return Err(eyre::eyre!("version already exists"));
+        return Err(CliError::VersionAlreadyExists.into());
     }
     let rpc = create_rpc_from_network(&opts.network)?;
     let (contract_binary, contract_hash) =
@@ -109,6 +109,7 @@ pub async fn deploy_contract(
         Some(contract_hash),
         payer_address,
         Some(contract_owner_address),
+        CellSnapshot::FirstOutput,
         opts.dry_run,
         opts.json,
     )
@@ -130,9 +131,9 @@ pub async fn migrate_contract(
         &opts.deployment_path,
         Some(&from_version),
     )?
-    .ok_or(eyre::eyre!("version not exists"))?;
+    .ok_or(CliError::VersionNotExists)?;
     if deployment.operation == "consume" {
-        return Err(eyre::eyre!("version already consumed"));
+        return Err(CliError::VersionAlreadyConsumed.into());
     }
     let rpc = create_rpc_from_network(&opts.network)?;
     let (contract_binary, contract_hash) =
@@ -193,6 +194,7 @@ pub async fn migrate_contract(
         Some(contract_hash),
         payer_address,
         Some(contract_owner_address),
+        CellSnapshot::FirstOutput,
         opts.dry_run,
         opts.json,
     )
@@ -213,9 +215,9 @@ pub async fn consume_contract(
         &opts.deployment_path,
         Some(&version),
     )?
-    .ok_or(eyre::eyre!("version not exists"))?;
+    .ok_or(CliError::VersionNotExists)?;
     if deployment.operation == "consume" {
-        return Err(eyre::eyre!("version already consumed"));
+        return Err(CliError::VersionAlreadyConsumed.into());
     }
     let payer_address: Address = deployment.contract_owner_address.clone().try_into()?;
     let receiver_address: Address = receiver_address.unwrap_or(payer_address.clone());
@@ -253,10 +255,13 @@ pub async fn consume_contract(
         tx_path,
         "consume",
         contract_name,
-        "".into(),
+        version,
         None,
-        payer_address,
-        Default::default(),
+        payer_address.clone(),
+        Some(payer_address),
+        CellSnapshot::Consumed {
+            occupied_capacity: deployment.occupied_capacity,
+        },
         opts.dry_run,
         opts.json,
     )
@@ -265,7 +270,8 @@ pub async fn consume_contract(
 
 /// List deployment records under `--deployment-path` for this network.
 ///
-/// `contract_name` filters to one JSON file; `mode` keeps live, consumed, or all.
+/// `contract_name` filters to one JSON file. `deployed` and `consumed` keep
+/// the latest row of each tag; `all` keeps every row.
 pub async fn list_contracts(
     opts: ExecOpts,
     contract_name: Option<String>,

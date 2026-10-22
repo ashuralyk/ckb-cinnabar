@@ -12,7 +12,7 @@ Install the CLI with `cargo install --git https://github.com/ashuralyk/ckb-cinna
 - `Instruction::new` / `Instruction::named` — a pipeline of `Operation`s. Import `instruction`, `operation`, `rpc`, `skeleton` from the calculator crate root.
 - `assert_verify!(&rpc, instructions, expected_exit)` — FakeRpc + native CKB-VM. `0` is success.
 - `ckb-cinnabar --json --dry-run deploy` — global flags before the subcommand. Dry-run still needs an indexer. The JSON field `record` is the deployment record; `deployment/<network>/<name>.json` is written only when the transaction is sent.
-- Script exits: sys 1–5, tree 10–11, SSRI 12–18, custom ≥ 20. `CalculatorError::kind()` is the library string. CLI JSON also uses `configuration` and `invalid_input`. See `docs/error-codes.md`.
+- Script exits: sys 1–5, tree 10–11, SSRI 12–18, custom ≥ 20. `CalculatorError::kind()` is the library string. CLI JSON also uses `configuration`, `invalid_input`, `version_already_exists`, `version_not_exists`, `version_already_consumed`, and `fake_network`. See `docs/error-codes.md`.
 
 Target: `riscv64imac-unknown-none-elf`, `clang` 16+ (the Dockerfile installs clang 18), `RUSTFLAGS` include `-C passes=lower-atomic`.
 
@@ -830,7 +830,11 @@ section below says when `--json` uses one of these strings.
 3. CLI-only failures, which are not in the table above:
    - `configuration` — for example `--privkey-env` names a variable that is unset. Process exit `1`.
    - `invalid_input` — bad flag or unparseable address. Process exit `2`.
-4. Any other report is passed through `CalculatorError::from_message` (CLI: `CalculatorError::from_report`, which uses the same text and then promotes a nested `std::io::Error`). HTTP transport (`bad ckb request`, `error sending request`, connection refused, a JSON-RPC body the node rejected) becomes `network`, including when the text also contains `os error`. A missing file becomes `io`: `os error`, `no such file`, `permission denied`, `not a directory`, `is a directory`, `entity not found`, `entity already exists`, `directory not empty`, `read-only file`, `no space left on device`, `no storage space`, `missing binary`, or `binary` plus `not found`. Those markers are applied before the broader `sign` / `ckb-cli` / `script error` heuristics, so a missing `ckb-cli` binary is `io` rather than `signing`. If the text is still `other` but the report chain contains a `std::io::Error`, the kind is `io`. Anything left is `other`.
+   - `version_already_exists` — the deployment file already has this tag. Process exit `1`.
+   - `version_not_exists` — no row has this tag. Process exit `1`.
+   - `version_already_consumed` — the latest row for this tag is `consume`. Process exit `1`.
+   - `fake_network` — the CLI was pointed at the offline `fake` network. Process exit `1`.
+4. Any other report is passed through `CalculatorError::from_message` (CLI: `CalculatorError::from_report`, which uses the same text and then promotes a nested `std::io::Error`). HTTP transport (`bad ckb request`, `error sending request`, connection refused, a JSON-RPC body the node rejected) becomes `network`, including when the text also contains `os error`. A missing file becomes `io`: `os error`, `no such file`, `permission denied`, `not a directory`, `is a directory`, `entity not found`, `entity already exists`, `directory not empty`, `read-only file`, `no space left on device`, `no storage space`, `missing binary`, or `binary` plus `not found`. Those markers are applied before the signing heuristics and the `script error` heuristic. Signing matches `sign` and `signed` as whole words, plus the substrings `signing`, `signature`, `unsigned`, `ckb-cli`, and `password`. `design` and `assignment` are not `signing`. A missing `ckb-cli` binary is `io` rather than `signing`. If the text is still `other` but the report chain contains a `std::io::Error`, the kind is `io`. Anything left is `other`.
 
 `--dry-run` still contacts the node indexer to find the payer's live cells. Success puts the deployment record in the JSON field `record`. The file `deployment/<network>/<name>.json` is written only when the transaction is sent.
 
@@ -867,6 +871,10 @@ cargo test -p ckb-cinnabar-calculator --features spore
 cargo test -p ckb-cinnabar-calculator --no-default-features
 cargo test -p ckb-cinnabar-verifier --features ssri
 cargo check -p ckb-cinnabar-verifier --features ssri --target riscv64imac-unknown-none-elf
+cargo check -p ckb-cinnabar-verifier --no-default-features --target riscv64imac-unknown-none-elf
+cargo check --workspace --examples --exclude ckb-cinnabar-verifier
+cargo check -p ckb-cinnabar --example spore --features spore
+cargo clippy --workspace --all-targets -- -D warnings
 make -C examples/scenarios
 ```
 

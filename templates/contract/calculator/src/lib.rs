@@ -1,8 +1,10 @@
 //! Off-chain Calculate recipes for this contract.
 //!
-//! Each public function returns an [`Instruction`] tagged with the same
-//! [`intent`] constant as the matching Verify-tree node in
-//! `contracts/{{crate_name}}`. Compose operations to fill Inputs / Outputs /
+//! Each public function returns an [`Instruction`] for one hop. This
+//! contract's hops are exactly create, transfer, and burn, so each recipe is
+//! tagged with the same [`intent`] constant as the Verify-tree node in
+//! `contracts/{{crate_name}}`. A hop that is not that morphology uses a domain
+//! string and `Instruction::new`. Compose operations to fill Inputs / Outputs /
 //! CellDeps / Witnesses; callers (tests, wallets) then run them through
 //! `TransactionCalculator` or `assert_verify!`.
 
@@ -14,8 +16,8 @@ use ckb_cinnabar_calculator::{
     rpc::RPC,
 };
 
-/// Transfer CKB from `from` to `to`. Named [`intent::TRANSFER`] to match the
-/// on-chain Verify node.
+/// Transfer CKB from `from` to `to`. This hop is exactly transfer, so the
+/// instruction is named [`intent::TRANSFER`] to match the on-chain node.
 ///
 /// `capacity` is absolute shannons. This recipe does not balance or sign;
 /// tests using `FakeRpcClient` typically skip that, while live senders append

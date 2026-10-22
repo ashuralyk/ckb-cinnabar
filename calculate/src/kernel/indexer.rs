@@ -331,6 +331,9 @@ impl<'a, I: Indexer> GetCellsIter<'a, I> {
     }
 
     /// Fetch the next single cell; `Ok(None)` when exhausted.
+    ///
+    /// The return type is `Result`, so this is not [`Iterator::next`](core::iter::Iterator::next).
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Result<Option<LiveCell>> {
         Ok(self.next_batch(1)?.and_then(|mut v| v.pop()))
     }

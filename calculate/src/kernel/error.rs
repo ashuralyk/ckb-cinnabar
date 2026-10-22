@@ -125,9 +125,7 @@ impl CalculatorError {
             Self::InsufficientCapacity(msg.to_string())
         } else if lower.contains("no available") {
             Self::NoAvailableCells(msg.to_string())
-        } else if !is_filesystem_message(&lower)
-            && (lower.contains("sign") || lower.contains("ckb-cli") || lower.contains("password"))
-        {
+        } else if !is_filesystem_message(&lower) && is_signing_message(&lower) {
             Self::Signing(msg.to_string())
         } else if lower.contains("fake") && lower.contains("rpc") {
             Self::FakeRpc(msg.to_string())
@@ -170,9 +168,41 @@ impl CalculatorError {
     }
 }
 
+/// `sign` and `signed` match as whole words. `signing`, `signature`,
+/// `unsigned`, `ckb-cli`, and `password` match as substrings. `design` and
+/// `assignment` do not.
+fn is_signing_message(lower: &str) -> bool {
+    contains_ascii_word(lower, "sign")
+        || contains_ascii_word(lower, "signed")
+        || lower.contains("signing")
+        || lower.contains("signature")
+        || lower.contains("unsigned")
+        || lower.contains("ckb-cli")
+        || lower.contains("password")
+}
+
+fn contains_ascii_word(haystack: &str, word: &str) -> bool {
+    let hay = haystack.as_bytes();
+    let needle = word.as_bytes();
+    if needle.is_empty() || hay.len() < needle.len() {
+        return false;
+    }
+    hay.windows(needle.len())
+        .enumerate()
+        .any(|(index, window)| {
+            if window != needle {
+                return false;
+            }
+            let boundary_before = index == 0 || !hay[index - 1].is_ascii_alphanumeric();
+            let end = index + needle.len();
+            let boundary_after = end == hay.len() || !hay[end].is_ascii_alphanumeric();
+            boundary_before && boundary_after
+        })
+}
+
 /// Filesystem and missing-binary markers.
 ///
-/// These win over the broad `sign` / `ckb-cli` / `script error` heuristics.
+/// These win over the signing-word / `ckb-cli` / `script error` heuristics.
 /// They do not win over transport phrases (`connection refused`,
 /// `error sending request`), which are tested first.
 fn is_filesystem_message(lower: &str) -> bool {
@@ -347,6 +377,15 @@ mod tests {
             "signing"
         );
         assert_eq!(
+            CalculatorError::from_message("script design error").kind(),
+            "simulation"
+        );
+        assert_eq!(
+            CalculatorError::from_message("invalid assignment of output").kind(),
+            "other"
+        );
+        assert_eq!(CalculatorError::from_message("signal lost").kind(), "other");
+        assert_eq!(
             CalculatorError::from_message("connection refused (os error 111)").kind(),
             "network"
         );
@@ -368,8 +407,7 @@ mod tests {
         ));
         assert_eq!(CalculatorError::from(missing).kind(), "io");
 
-        let runtime = eyre::Report::from(std::io::Error::new(
-            std::io::ErrorKind::Other,
+        let runtime = eyre::Report::from(std::io::Error::other(
             "Cannot start a runtime from within a runtime",
         ));
         assert_eq!(CalculatorError::from(runtime).kind(), "io");

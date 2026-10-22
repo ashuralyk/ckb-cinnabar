@@ -13,9 +13,12 @@
 //! [`instruction::Instruction`], then run them through
 //! [`TransactionCalculator`] to produce a [`skeleton::TransactionSkeleton`].
 //!
-//! Intent names in [`intent`] must match on-chain verification nodes from
-//! `ckb_cinnabar_verifier::intent`. See the workspace `AGENTS.md` for the
-//! generate → verify → simulate → deploy path.
+//! Morphology names in [`intent`] are shared with `ckb_cinnabar_verifier::intent`.
+//! Use the same constant on [`Instruction::named`] and in `cinnabar_main!` only
+//! when that hop is exactly that morphology. Any other hop uses a domain string
+//! and [`Instruction::new`]. Coupling is the shared byte layout and the
+//! transition table, not a mandatory name match. See the workspace `AGENTS.md`
+//! for the generate → verify → simulate → deploy path.
 //!
 //! ```
 //! use ckb_cinnabar_calculator::intent;

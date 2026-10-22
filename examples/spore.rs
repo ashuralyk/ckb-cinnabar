@@ -11,9 +11,9 @@ use ckb_cinnabar_calculator::{
         ckb_types::{packed::Script, prelude::Entity, H256},
         tokio,
     },
-    rpc::{RpcClient, RPC},
+    rpc::RpcClient,
     skeleton::ScriptEx,
-    TransactionCalculator,
+    Node, TransactionCalculator,
 };
 use clap::{Parser, Subcommand};
 
