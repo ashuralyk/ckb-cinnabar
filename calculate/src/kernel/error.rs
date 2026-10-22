@@ -155,7 +155,9 @@ impl CalculatorError {
     /// [`Self::from_message`] runs on the full chain text, so transport phrases
     /// stay `network` even when a cause contains `os error`. A result that is
     /// still [`Self::Other`] becomes `io` when the chain holds a
-    /// [`std::io::Error`] (for example `missing binary` with no OS-error text).
+    /// [`std::io::Error`] whose display text is not itself a filesystem
+    /// marker (for example `contract file`, or
+    /// `Cannot start a runtime from within a runtime`).
     #[cfg(feature = "std")]
     pub fn from_report(err: &eyre::Report) -> Self {
         let text = format!("{err:#}");
