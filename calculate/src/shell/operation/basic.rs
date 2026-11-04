@@ -21,7 +21,10 @@ use serde_json::Value;
 
 #[cfg(not(target_arch = "wasm32"))]
 use ckb_sdk::{
-    traits::{DefaultCellDepResolver, DefaultTransactionDependencyProvider, SecpCkbRawKeySigner},
+    traits::{
+        offchain_impls::OffchainTransactionDependencyProvider, DefaultCellDepResolver,
+        SecpCkbRawKeySigner,
+    },
     tx_builder::unlock_tx,
     unlock::SecpSighashUnlocker,
     ScriptId,
@@ -207,11 +210,21 @@ impl<T: RPC> Operation<T> for AddSecp256k1SighashSignatures {
             });
         }
 
-        // Use a dummy transaction dependency provider since we don't need tx deps for signing
-        let tx_dep_provider = DefaultTransactionDependencyProvider::new("", 0);
+        // Populate offchain provider from skeleton inputs for offline signing
+        let mut offchain_provider = OffchainTransactionDependencyProvider::default();
+        for input_ex in &skeleton.inputs {
+            let out_point = input_ex.input.previous_output();
+            let tx_hash = out_point.tx_hash().unpack();
+            let index: u32 = out_point.index().unpack();
+            let output: ckb_types::packed::CellOutput = input_ex.output.output.clone();
+            let data = ckb_types::bytes::Bytes::from(input_ex.output.data.clone());
+            offchain_provider
+                .cells
+                .insert((tx_hash, index), (output, data));
+        }
 
         // Sign the transaction
-        let (signed_tx, _still_locked) = unlock_tx(tx, &tx_dep_provider, &unlockers)
+        let (signed_tx, _still_locked) = unlock_tx(tx, &offchain_provider, &unlockers)
             .map_err(|e| CalculatorError::Signing(format!("unlock failed: {}", e)))?;
 
         skeleton.update_witnesses_from_transaction_view(&signed_tx)?;
