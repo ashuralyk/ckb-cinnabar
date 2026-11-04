@@ -216,7 +216,7 @@ impl<T: RPC> Operation<T> for AddSecp256k1SighashSignatures {
             let out_point = input_ex.input.previous_output();
             let tx_hash = out_point.tx_hash().unpack();
             let index: u32 = out_point.index().unpack();
-            let output: ckb_types::packed::CellOutput = input_ex.output.output.clone().into();
+            let output: ckb_types::packed::CellOutput = input_ex.output.output.clone();
             let data = ckb_types::bytes::Bytes::from(input_ex.output.data.clone());
             offchain_provider
                 .cells
