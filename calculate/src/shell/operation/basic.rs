@@ -21,12 +21,13 @@ use serde_json::Value;
 
 #[cfg(not(target_arch = "wasm32"))]
 use ckb_sdk::{
-    constants::SIGHASH_TYPE_HASH,
-    traits::{offchain_impls::OffchainTransactionDependencyProvider, DefaultCellDepResolver},
+    traits::{
+        offchain_impls::OffchainTransactionDependencyProvider, DefaultCellDepResolver,
+        SecpCkbRawKeySigner,
+    },
     tx_builder::unlock_tx,
-    types::ScriptId,
-    unlock::{ScriptUnlocker, SecpCkbRawKeySigner, SecpSighashScriptSigner, SecpSighashUnlocker},
-    NetworkInfo,
+    unlock::SecpSighashUnlocker,
+    ScriptId,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -176,10 +177,40 @@ impl<T: RPC> Operation<T> for AddSecp256k1SighashSignatures {
         skeleton: &mut TransactionSkeleton,
         _: &mut Log,
     ) -> error::Result<()> {
+        use ckb_types::prelude::Unpack;
         use std::collections::HashMap;
 
         let tx = skeleton.clone().into_transaction_view();
 
+        // Register an unlocker for each unique ScriptId
+        let mut unlockers: HashMap<ScriptId, Box<dyn ckb_sdk::unlock::ScriptUnlocker>> =
+            HashMap::new();
+        let private_keys = self.user_private_keys.clone();
+
+        for lock_script in &self.user_lock_scripts {
+            let script = lock_script.clone().to_script(skeleton)?;
+            let hash_type_byte = script.hash_type().as_slice()[0];
+            let hash_type = match hash_type_byte {
+                0 => ckb_types::core::ScriptHashType::Data,
+                1 => ckb_types::core::ScriptHashType::Type,
+                2 => ckb_types::core::ScriptHashType::Data1,
+                4 => ckb_types::core::ScriptHashType::Data2,
+                _ => ckb_types::core::ScriptHashType::Data,
+            };
+            let script_id = ScriptId {
+                code_hash: script.code_hash().unpack(),
+                hash_type,
+            };
+            // Only insert if not already present
+            let keys_clone = private_keys.clone();
+            unlockers.entry(script_id).or_insert_with(|| {
+                let signer = SecpCkbRawKeySigner::new_with_secret_keys(keys_clone);
+                Box::new(SecpSighashUnlocker::from(Box::new(signer) as Box<_>))
+                    as Box<dyn ckb_sdk::unlock::ScriptUnlocker>
+            });
+        }
+
+        // Populate offchain provider from skeleton inputs for offline signing
         let mut offchain_provider = OffchainTransactionDependencyProvider::default();
         for input_ex in &skeleton.inputs {
             let out_point = input_ex.input.previous_output();
@@ -192,18 +223,11 @@ impl<T: RPC> Operation<T> for AddSecp256k1SighashSignatures {
                 .insert((tx_hash, index), (output, data));
         }
 
-        let signer = SecpCkbRawKeySigner::new_with_secret_keys(self.user_private_keys);
-        let sighash_signer = SecpSighashScriptSigner::new(Box::new(signer));
-        let sighash_unlocker = SecpSighashUnlocker::new(sighash_signer);
-        let script_id = ScriptId::new_type(SIGHASH_TYPE_HASH.clone());
+        // Sign the transaction
+        let (signed_tx, _still_locked) = unlock_tx(tx, &offchain_provider, &unlockers)
+            .map_err(|e| CalculatorError::Signing(format!("unlock failed: {}", e)))?;
 
-        let mut unlockers: HashMap<ScriptId, Box<dyn ScriptUnlocker>> = HashMap::new();
-        unlockers.insert(script_id, Box::new(sighash_unlocker));
-
-        let (unlocked_tx, _remaining) = unlock_tx(tx, &offchain_provider, &unlockers)
-            .map_err(|e| CalculatorError::Signing(format!("unlock_tx failed: {}", e)))?;
-
-        skeleton.update_witnesses_from_transaction_view(&unlocked_tx)?;
+        skeleton.update_witnesses_from_transaction_view(&signed_tx)?;
         Ok(())
     }
 }
