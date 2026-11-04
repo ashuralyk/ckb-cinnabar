@@ -21,10 +21,10 @@ use serde_json::Value;
 
 #[cfg(not(target_arch = "wasm32"))]
 use ckb_sdk::{
-    traits::DefaultCellDepResolver,
-    transaction::signer::{SignContexts, TransactionSigner},
-    types::transaction_with_groups::TransactionWithScriptGroupsBuilder,
-    NetworkInfo,
+    traits::{DefaultCellDepResolver, DefaultTransactionDependencyProvider, SecpCkbRawKeySigner},
+    tx_builder::unlock_tx,
+    unlock::SecpSighashUnlocker,
+    ScriptId,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -174,23 +174,47 @@ impl<T: RPC> Operation<T> for AddSecp256k1SighashSignatures {
         skeleton: &mut TransactionSkeleton,
         _: &mut Log,
     ) -> error::Result<()> {
+        use std::collections::HashMap;
+        use ckb_types::prelude::Unpack;
+        
         let tx = skeleton.clone().into_transaction_view();
-        let mut tx_groups_builder = TransactionWithScriptGroupsBuilder::default().set_tx_view(tx);
-        for lock_script in self.user_lock_scripts {
-            let (input_indices, _) = skeleton.lock_script_groups(&lock_script);
-            tx_groups_builder = tx_groups_builder
-                .add_lock_script_group(&lock_script.to_script(skeleton)?, &input_indices);
+        
+        // Register an unlocker for each unique ScriptId
+        let mut unlockers: HashMap<ScriptId, Box<dyn ckb_sdk::unlock::ScriptUnlocker>> =
+            HashMap::new();
+        let private_keys = self.user_private_keys.clone();
+        
+        for lock_script in &self.user_lock_scripts {
+            let script = lock_script.clone().to_script(skeleton)?;
+            let hash_type_byte = script.hash_type().as_slice()[0];
+            let hash_type = match hash_type_byte {
+                0 => ckb_types::core::ScriptHashType::Data,
+                1 => ckb_types::core::ScriptHashType::Type,
+                2 => ckb_types::core::ScriptHashType::Data1,
+                4 => ckb_types::core::ScriptHashType::Data2,
+                _ => ckb_types::core::ScriptHashType::Data,
+            };
+            let script_id = ScriptId {
+                code_hash: script.code_hash().unpack(),
+                hash_type,
+            };
+            // Only insert if not already present
+            let keys_clone = private_keys.clone();
+            unlockers.entry(script_id).or_insert_with(|| {
+                let signer = SecpCkbRawKeySigner::new_with_secret_keys(keys_clone);
+                Box::new(SecpSighashUnlocker::from(Box::new(signer) as Box<_>))
+                    as Box<dyn ckb_sdk::unlock::ScriptUnlocker>
+            });
         }
-        let mut tx_groups = tx_groups_builder.build();
-        let signer = TransactionSigner::new(&NetworkInfo::mainnet());
-        signer
-            .sign_transaction(
-                &mut tx_groups,
-                &SignContexts::new_sighash(self.user_private_keys),
-            )
-            .expect("sign");
-        let tx = tx_groups.get_tx_view();
-        skeleton.update_witnesses_from_transaction_view(tx)?;
+        
+        // Use a dummy transaction dependency provider since we don't need tx deps for signing
+        let tx_dep_provider = DefaultTransactionDependencyProvider::new("", 0);
+        
+        // Sign the transaction
+        let (signed_tx, _still_locked) = unlock_tx(tx, &tx_dep_provider, &unlockers)
+            .map_err(|e| CalculatorError::Signing(format!("unlock failed: {}", e)))?;
+        
+        skeleton.update_witnesses_from_transaction_view(&signed_tx)?;
         Ok(())
     }
 }
