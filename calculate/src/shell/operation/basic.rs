@@ -21,9 +21,11 @@ use serde_json::Value;
 
 #[cfg(not(target_arch = "wasm32"))]
 use ckb_sdk::{
-    traits::DefaultCellDepResolver,
-    transaction::signer::{SignContexts, TransactionSigner},
-    types::transaction_with_groups::TransactionWithScriptGroupsBuilder,
+    constants::SIGHASH_TYPE_HASH,
+    traits::{offchain_impls::OffchainTransactionDependencyProvider, DefaultCellDepResolver},
+    tx_builder::unlock_tx,
+    types::ScriptId,
+    unlock::{ScriptUnlocker, SecpCkbRawKeySigner, SecpSighashScriptSigner, SecpSighashUnlocker},
     NetworkInfo,
 };
 
@@ -174,23 +176,34 @@ impl<T: RPC> Operation<T> for AddSecp256k1SighashSignatures {
         skeleton: &mut TransactionSkeleton,
         _: &mut Log,
     ) -> error::Result<()> {
+        use std::collections::HashMap;
+
         let tx = skeleton.clone().into_transaction_view();
-        let mut tx_groups_builder = TransactionWithScriptGroupsBuilder::default().set_tx_view(tx);
-        for lock_script in self.user_lock_scripts {
-            let (input_indices, _) = skeleton.lock_script_groups(&lock_script);
-            tx_groups_builder = tx_groups_builder
-                .add_lock_script_group(&lock_script.to_script(skeleton)?, &input_indices);
+
+        let mut offchain_provider = OffchainTransactionDependencyProvider::default();
+        for input_ex in &skeleton.inputs {
+            let out_point = input_ex.input.previous_output();
+            let tx_hash = out_point.tx_hash().unpack();
+            let index: u32 = out_point.index().unpack();
+            let output: ckb_types::packed::CellOutput = input_ex.output.output.clone().into();
+            let data = ckb_types::bytes::Bytes::from(input_ex.output.data.clone());
+            offchain_provider
+                .cells
+                .insert((tx_hash, index), (output, data));
         }
-        let mut tx_groups = tx_groups_builder.build();
-        let signer = TransactionSigner::new(&NetworkInfo::mainnet());
-        signer
-            .sign_transaction(
-                &mut tx_groups,
-                &SignContexts::new_sighash(self.user_private_keys),
-            )
-            .expect("sign");
-        let tx = tx_groups.get_tx_view();
-        skeleton.update_witnesses_from_transaction_view(tx)?;
+
+        let signer = SecpCkbRawKeySigner::new_with_secret_keys(self.user_private_keys);
+        let sighash_signer = SecpSighashScriptSigner::new(Box::new(signer));
+        let sighash_unlocker = SecpSighashUnlocker::new(sighash_signer);
+        let script_id = ScriptId::new_type(SIGHASH_TYPE_HASH.clone());
+
+        let mut unlockers: HashMap<ScriptId, Box<dyn ScriptUnlocker>> = HashMap::new();
+        unlockers.insert(script_id, Box::new(sighash_unlocker));
+
+        let (unlocked_tx, _remaining) = unlock_tx(tx, &offchain_provider, &unlockers)
+            .map_err(|e| CalculatorError::Signing(format!("unlock_tx failed: {}", e)))?;
+
+        skeleton.update_witnesses_from_transaction_view(&unlocked_tx)?;
         Ok(())
     }
 }
