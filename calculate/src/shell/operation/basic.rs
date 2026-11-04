@@ -174,16 +174,16 @@ impl<T: RPC> Operation<T> for AddSecp256k1SighashSignatures {
         skeleton: &mut TransactionSkeleton,
         _: &mut Log,
     ) -> error::Result<()> {
-        use std::collections::HashMap;
         use ckb_types::prelude::Unpack;
-        
+        use std::collections::HashMap;
+
         let tx = skeleton.clone().into_transaction_view();
-        
+
         // Register an unlocker for each unique ScriptId
         let mut unlockers: HashMap<ScriptId, Box<dyn ckb_sdk::unlock::ScriptUnlocker>> =
             HashMap::new();
         let private_keys = self.user_private_keys.clone();
-        
+
         for lock_script in &self.user_lock_scripts {
             let script = lock_script.clone().to_script(skeleton)?;
             let hash_type_byte = script.hash_type().as_slice()[0];
@@ -206,14 +206,14 @@ impl<T: RPC> Operation<T> for AddSecp256k1SighashSignatures {
                     as Box<dyn ckb_sdk::unlock::ScriptUnlocker>
             });
         }
-        
+
         // Use a dummy transaction dependency provider since we don't need tx deps for signing
         let tx_dep_provider = DefaultTransactionDependencyProvider::new("", 0);
-        
+
         // Sign the transaction
         let (signed_tx, _still_locked) = unlock_tx(tx, &tx_dep_provider, &unlockers)
             .map_err(|e| CalculatorError::Signing(format!("unlock failed: {}", e)))?;
-        
+
         skeleton.update_witnesses_from_transaction_view(&signed_tx)?;
         Ok(())
     }
