@@ -43,3 +43,8 @@ async fn intent_names_are_stable() {
     assert_eq!(intent::DEPOSIT, "deposit");
     assert_eq!(intent::WITHDRAW, "withdraw");
 }
+
+// Test for signing with arbitrary ScriptIds (Data-hash, not just Type-hash) is TODO
+// The core fix is in place: AddSecp256k1SighashSignatures now registers unlockers
+// for each unique (code_hash, hash_type) pair, not just official mainnet ScriptIds.
+// A test needs a mock TransactionDependencyProvider compatible with FakeRpc.
