@@ -172,9 +172,12 @@ The separate repository `ckb-cinnabar-scripts-template` is deprecated and not
 the scaffold (its README was left as a TODO). Treat that repository as
 archived. Generate from `templates/contract` in this repository. Workspace
 dependencies are git dependencies on this repository.
-`templates/contract/Cargo.toml` lists those three git lines and has no Liquid
-tags, so a hand copy compiles once `{{crate_name}}` is replaced (including
-`contracts/{{crate_name}}`) and `cargo-generate.toml` is deleted. Leave no
+Manifests are `Cargo.toml.liquid` (so git dependency checkouts are not
+scanned as invalid Cargo packages). Each lists those three git lines and has
+no Liquid `{% %}` control tags. `cargo generate` renders them to
+`Cargo.toml`. A hand copy renames every `Cargo.toml.liquid` to
+`Cargo.toml`, replaces `{{crate_name}}` (including
+`contracts/{{crate_name}}`), and deletes `cargo-generate.toml`. Leave no
 `{{` or `{%` in the project. If a manifest still contains
 `{% if use_local_cinnabar %}`, delete the Liquid tags and any `path` lines,
 and keep the three `git = "https://github.com/ashuralyk/ckb-cinnabar"`
@@ -582,17 +585,21 @@ make test
 ```
 
 Workspace dependencies are git dependencies on this repository.
-`templates/contract/Cargo.toml` lists those three git lines and has no
-Liquid `{% %}` tags.
+Manifests ship as `Cargo.toml.liquid` (not `Cargo.toml`) so a git checkout
+of this repository does not emit Cargo package-name errors while resolving
+dependencies. Each liquid file lists the three git dependency lines and has
+no Liquid `{% %}` control tags. `cargo generate` strips the `.liquid`
+suffix and renders `{{crate_name}}`.
 
 Hard accept: after generate and after every later change, `make build` and
 `make test` (full suite) must both exit 0 before the work is done.
 
-A hand copy of `templates/contract` is valid after every `{{crate_name}}`
-is replaced, including the `contracts/{{crate_name}}` directory name, and
-after `cargo-generate.toml` is removed. Leave no `{{` or `{%` in the
-project. If a manifest still contains `{% if use_local_cinnabar %}`, delete
-the Liquid tags and any `path` lines, and keep the three
+A hand copy of `templates/contract` is valid after every
+`Cargo.toml.liquid` is renamed to `Cargo.toml`, every `{{crate_name}}` is
+replaced (including the `contracts/{{crate_name}}` directory name), and
+`cargo-generate.toml` is removed. Leave no `{{` or `{%` in the project. If
+a manifest still contains `{% if use_local_cinnabar %}`, delete the Liquid
+tags and any `path` lines, and keep the three
 `git = "https://github.com/ashuralyk/ckb-cinnabar"` dependencies.
 
 | Path | Role |
@@ -898,11 +905,16 @@ generator and fails when `llms-full.txt` differs:
 make llms-full
 ```
 
-`templates/contract/Cargo.toml` lists three git dependencies and must not
-contain Liquid `{% %}` tags. Each dependency is `git` only: no `path`,
-`rev`, `branch`, or `tag`. A hand copy only replaces `{{crate_name}}`; it
-cannot evaluate control tags. There is no path-dependency mode. Check the
-default `cargo generate` result and a hand copy with
+Contract template manifests are `Cargo.toml.liquid`, not `Cargo.toml`.
+Cargo only loads `Cargo.toml`, so a git checkout used as a dependency does
+not emit invalid-package diagnostics from the template tree. Each liquid
+file lists three git dependencies and must not contain Liquid `{% %}`
+control tags. Each dependency is `git` only: no `path`, `rev`, `branch`, or
+`tag`. `cargo generate` strips `.liquid` and renders `{{crate_name}}`. A
+hand copy renames every `Cargo.toml.liquid` to `Cargo.toml` and replaces
+`{{crate_name}}`; it cannot evaluate control tags. There is no
+path-dependency mode. Check the default `cargo generate` result, a hand
+copy, and a fresh git-dependency scan with
 `python3 scripts/check-contract-template.py`. CI runs that script with
 `--build`. That build resolves the unpinned git dependencies to the
 default branch of this repository at fetch time and links that published

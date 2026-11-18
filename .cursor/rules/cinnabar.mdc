@@ -10,7 +10,7 @@ alwaysApply: false
 
 Follow [AGENTS.md](../../AGENTS.md) before writing or changing a Cinnabar contract, calculator, or test.
 
-- Scaffold with `cargo generate` from `templates/contract`. Workspace dependencies are git dependencies. The template `Cargo.toml` has no Liquid tags. A hand copy must replace `{{crate_name}}`, delete `cargo-generate.toml`, and leave no `{{` or `{%`. The `ckb-cinnabar-scripts-template` repository is deprecated; treat it as archived.
+- Scaffold with `cargo generate` from `templates/contract`. Workspace dependencies are git dependencies. Template manifests are `Cargo.toml.liquid` (no plain `Cargo.toml`) with no Liquid `{% %}` control tags. A hand copy must rename each `Cargo.toml.liquid` to `Cargo.toml`, replace `{{crate_name}}`, delete `cargo-generate.toml`, and leave no `{{` or `{%`. The `ckb-cinnabar-scripts-template` repository is deprecated; treat it as archived.
 - On-chain code is a `cinnabar_main!` verification tree in `contracts/`. Off-chain code is an `Instruction` of `Operation`s in `calculator/`.
 - `intent::*` only when the hop is exactly Create, Transfer, or Burn. Otherwise use a domain string and `Instruction::new`.
 - Accept work only when `make build` and the full `make test` both exit 0.
