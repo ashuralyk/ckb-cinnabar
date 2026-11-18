@@ -144,7 +144,7 @@ matches those reads. The generated contract template stays hop-only.
 
 ### Contract project template
 
-Scaffold with cargo-generate (or copy `templates/contract` and replace placeholders):
+Scaffold with cargo-generate:
 
 ```bash
 # inside a checkout of this repository
@@ -175,6 +175,15 @@ archived. Generate from `templates/contract` in this repository. The template
 default is a git dependency. For a path dependency pass both
 `--define use_local_cinnabar=true` and
 `--define cinnabar_path="$PWD"` (absolute path to this checkout).
+`cargo generate` writes that choice. `templates/contract/Cargo.toml` already
+lists the git dependencies and has no Liquid tags, so a hand copy compiles
+once `{{crate_name}}` is replaced (including `contracts/{{crate_name}}`) and
+`cargo-generate.toml`, `hooks/`, and `Cargo.local.toml` are deleted. A copied
+project stays on git dependencies until those three `workspace.dependencies`
+lines are changed to absolute `path` entries (`<checkout>`,
+`<checkout>/calculate`, `<checkout>/verify`). If a manifest still contains
+`{% if use_local_cinnabar %}`, delete the tags and keep only one of those
+blocks.
 
 Rewrite the template comments for this contract. The calculator crate, the
 verifier crate, and each identity module use `//!`. Each recipe, custom
@@ -582,11 +591,23 @@ The template default is git dependencies (`use_local_cinnabar=false`).
 Pass both defines above to depend on a local checkout. `cinnabar_path`
 must be absolute: Cargo resolves it from the generated project, and the
 old relative default `../cinnabar` does not point at this repository.
+`cargo generate` writes that choice into `Cargo.toml`. The template file
+on disk lists the git dependencies and has no Liquid `{% %}` tags.
 
 Hard accept: after generate and after every later change, `make build` and
 `make test` (full suite) must both exit 0 before the work is done.
 
-Or copy `templates/contract` and replace `{{placeholders}}`.
+A hand copy of `templates/contract` is valid after every `{{crate_name}}`
+is replaced, including the `contracts/{{crate_name}}` directory name, and
+after the generator-only files are removed: `cargo-generate.toml`,
+`hooks/`, and `Cargo.local.toml`. That copy keeps the git dependencies.
+For a local checkout, replace the three `workspace.dependencies` entries
+with `path = "<absolute checkout>"`, `path = "<checkout>/calculate"`, and
+`path = "<checkout>/verify"`. Leave no `{{` or `{%` in the project.
+
+If a manifest still contains `{% if use_local_cinnabar %}`, delete the
+Liquid tags and keep one dependency block: the three git lines, or the
+three path lines with the absolute checkout filled in.
 
 | Path | Role |
 | --- | --- |
@@ -890,6 +911,14 @@ generator and fails when `llms-full.txt` differs:
 ```bash
 make llms-full
 ```
+
+`templates/contract/Cargo.toml` lists git dependencies and must not contain
+Liquid `{% %}` tags. A hand copy only replaces `{{crate_name}}`; it cannot
+evaluate control tags, and that is what left `{% if use_local_cinnabar %}`
+in downstream manifests. `cargo generate` promotes `Cargo.local.toml` when
+`use_local_cinnabar` is true (`hooks/select-deps.rhai`). Check both modes
+and a hand copy with `python3 scripts/check-contract-template.py`. CI runs
+that script with `--build`.
 
 ## Style
 

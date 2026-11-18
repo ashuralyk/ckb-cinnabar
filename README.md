@@ -124,7 +124,7 @@ matches those reads. The generated contract template stays hop-only.
 
 ### Contract project template
 
-Scaffold with cargo-generate (or copy `templates/contract` and replace placeholders):
+Scaffold with cargo-generate:
 
 ```bash
 # inside a checkout of this repository
@@ -155,6 +155,15 @@ archived. Generate from `templates/contract` in this repository. The template
 default is a git dependency. For a path dependency pass both
 `--define use_local_cinnabar=true` and
 `--define cinnabar_path="$PWD"` (absolute path to this checkout).
+`cargo generate` writes that choice. `templates/contract/Cargo.toml` already
+lists the git dependencies and has no Liquid tags, so a hand copy compiles
+once `{{crate_name}}` is replaced (including `contracts/{{crate_name}}`) and
+`cargo-generate.toml`, `hooks/`, and `Cargo.local.toml` are deleted. A copied
+project stays on git dependencies until those three `workspace.dependencies`
+lines are changed to absolute `path` entries (`<checkout>`,
+`<checkout>/calculate`, `<checkout>/verify`). If a manifest still contains
+`{% if use_local_cinnabar %}`, delete the tags and keep only one of those
+blocks.
 
 Rewrite the template comments for this contract. The calculator crate, the
 verifier crate, and each identity module use `//!`. Each recipe, custom

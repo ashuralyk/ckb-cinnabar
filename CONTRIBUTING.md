@@ -33,6 +33,14 @@ generator and fails when `llms-full.txt` differs:
 make llms-full
 ```
 
+`templates/contract/Cargo.toml` lists git dependencies and must not contain
+Liquid `{% %}` tags. A hand copy only replaces `{{crate_name}}`; it cannot
+evaluate control tags, and that is what left `{% if use_local_cinnabar %}`
+in downstream manifests. `cargo generate` promotes `Cargo.local.toml` when
+`use_local_cinnabar` is true (`hooks/select-deps.rhai`). Check both modes
+and a hand copy with `python3 scripts/check-contract-template.py`. CI runs
+that script with `--build`.
+
 ## Style
 
 - Collapse sibling `use` items that share a prefix into one braced import.

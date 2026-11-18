@@ -183,6 +183,16 @@ The template default is git dependencies. Omit the defines, or pass
 `-d use_local_cinnabar=false`, when the project should track this repository
 over git.
 
+Do not copy `templates/contract` in place of `cargo generate`. Generation is
+what chooses git versus path dependencies. A copied tree is valid only when
+every `{{crate_name}}` is replaced (including `contracts/{{crate_name}}`),
+`cargo-generate.toml`, `hooks/`, and `Cargo.local.toml` are removed, and
+`Cargo.toml` keeps the git dependencies or those three lines are edited to
+absolute `path` entries (`<checkout>`, `<checkout>/calculate`,
+`<checkout>/verify`). Leave no `{% %}` tags and no `{{placeholders}}`. If a
+manifest still contains `{% if use_local_cinnabar %}`, delete the tags and
+keep one of those two blocks.
+
 Then apply the version they chose:
 
 - **non-SSRI (shell, default).** Leave
@@ -494,6 +504,7 @@ fix it and re-check. Do not deploy while any item is open.
 
 ### Commands
 
+- [ ] `Cargo.toml` `workspace.dependencies` is three git dependencies or three absolute path dependencies (`<checkout>`, `<checkout>/calculate`, `<checkout>/verify`). No `{% %}` tags and no `{{placeholders}}` remain in the project.
 - [ ] `make build` exits 0 and writes the RISC-V binary under `build/release/`.
 - [ ] `make test` exits 0 for the full suite, after that build.
 - [ ] The reply quotes both commands and their exit status.

@@ -49,11 +49,23 @@ The template default is git dependencies (`use_local_cinnabar=false`).
 Pass both defines above to depend on a local checkout. `cinnabar_path`
 must be absolute: Cargo resolves it from the generated project, and the
 old relative default `../cinnabar` does not point at this repository.
+`cargo generate` writes that choice into `Cargo.toml`. The template file
+on disk lists the git dependencies and has no Liquid `{% %}` tags.
 
 Hard accept: after generate and after every later change, `make build` and
 `make test` (full suite) must both exit 0 before the work is done.
 
-Or copy `templates/contract` and replace `{{placeholders}}`.
+A hand copy of `templates/contract` is valid after every `{{crate_name}}`
+is replaced, including the `contracts/{{crate_name}}` directory name, and
+after the generator-only files are removed: `cargo-generate.toml`,
+`hooks/`, and `Cargo.local.toml`. That copy keeps the git dependencies.
+For a local checkout, replace the three `workspace.dependencies` entries
+with `path = "<absolute checkout>"`, `path = "<checkout>/calculate"`, and
+`path = "<checkout>/verify"`. Leave no `{{` or `{%` in the project.
+
+If a manifest still contains `{% if use_local_cinnabar %}`, delete the
+Liquid tags and keep one dependency block: the three git lines, or the
+three path lines with the absolute checkout filled in.
 
 | Path | Role |
 | --- | --- |

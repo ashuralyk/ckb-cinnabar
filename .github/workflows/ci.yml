@@ -63,13 +63,7 @@ jobs:
       - name: Install cargo-generate
         run: cargo install cargo-generate --version 0.20.0
       - name: Generated contract end-to-end
-        run: |
-          cargo generate \
-            --path templates/contract \
-            --name agent-smoke \
-            --destination /tmp \
-            --define use_local_cinnabar=true \
-            --define cinnabar_path="$GITHUB_WORKSPACE" \
-            --silent
-          cargo generate-lockfile --manifest-path /tmp/agent-smoke/Cargo.toml
-          make -C /tmp/agent-smoke build test CARGO_ARGS=--locked
+        run: python3 scripts/check-contract-template.py --build
+        env:
+          CARGO_TERM_COLOR: always
+          TARGET_CC: clang

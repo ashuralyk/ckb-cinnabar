@@ -1,10 +1,13 @@
 Generated Cinnabar contract project. Agent instructions: see Cinnabar's `AGENTS.md`.
 
 This template replaces the deprecated `ckb-cinnabar-scripts-template` repository (treat that repo as archived).
-Dependencies are git dependencies on
-`https://github.com/ashuralyk/ckb-cinnabar` unless `use_local_cinnabar` is
-true. Local checkouts must pass an absolute `cinnabar_path` (the directory
-that contains `calculate/` and `verify/`).
+Dependencies in `Cargo.toml` are git dependencies on
+`https://github.com/ashuralyk/ckb-cinnabar`. `cargo generate` with
+`use_local_cinnabar` true rewrites them to path dependencies. The checkout
+path is an absolute `cinnabar_path` (the directory that contains
+`calculate/` and `verify/`). A hand copy keeps the git dependencies: replace
+`{{crate_name}}`, and delete `cargo-generate.toml`, `hooks/`, and
+`Cargo.local.toml`.
 
 Cinnabar splits **Calculate** (off-chain `Instruction`s in `calculator/`) from
 **Verify** (on-chain tree in `contracts/{{crate_name}}`). This template's hops

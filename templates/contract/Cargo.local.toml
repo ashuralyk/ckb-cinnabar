@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+
+members = [
+  # @@INSERTION_POINT@@
+  "calculator",
+  "tests",
+  "contracts/{{crate_name}}",
+]
+
+[workspace.dependencies]
+ckb-cinnabar = { path = "{{cinnabar_path}}" }
+ckb-cinnabar-calculator = { path = "{{cinnabar_path}}/calculate" }
+ckb-cinnabar-verifier = { path = "{{cinnabar_path}}/verify" }
+
+[package]
+edition = "2021"
+name = "{{crate_name}}-runner"
+version = "0.1.0"
+
+[dependencies]
+ckb-cinnabar = { workspace = true }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 's'
+overflow-checks = true
+strip = true
