@@ -33,12 +33,16 @@ generator and fails when `llms-full.txt` differs:
 make llms-full
 ```
 
-`templates/contract/Cargo.toml` lists git dependencies and must not contain
-Liquid `{% %}` tags. A hand copy only replaces `{{crate_name}}`; it cannot
-evaluate control tags. There is no path-dependency mode. Check the default
-`cargo generate` result and a hand copy with
+`templates/contract/Cargo.toml` lists three git dependencies and must not
+contain Liquid `{% %}` tags. Each dependency is `git` only: no `path`,
+`rev`, `branch`, or `tag`. A hand copy only replaces `{{crate_name}}`; it
+cannot evaluate control tags. There is no path-dependency mode. Check the
+default `cargo generate` result and a hand copy with
 `python3 scripts/check-contract-template.py`. CI runs that script with
-`--build`.
+`--build`. That build resolves the unpinned git dependencies to the
+default branch of this repository at fetch time and links that published
+checkout. It does not compile the working tree's `calculate/` or `verify/`
+crates into the generated project.
 
 ## Style
 

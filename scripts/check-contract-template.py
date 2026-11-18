@@ -7,6 +7,10 @@
 - neither result contains {{ or {%
 
 Pass --build to run make build && make test on the generated project.
+Those three git dependencies have no rev, branch, or tag. Cargo resolves
+them to the default branch of https://github.com/ashuralyk/ckb-cinnabar
+at fetch time. The build links that published checkout. It does not compile
+this working tree's calculate/ or verify/ crates.
 """
 
 from __future__ import annotations
@@ -81,8 +85,8 @@ def assert_git(doc: dict, label: str) -> None:
     deps = doc["workspace"]["dependencies"]
     for name in DEP_NAMES:
         spec = deps.get(name)
-        if not isinstance(spec, dict) or spec.get("git") != GIT_URL or "path" in spec:
-            die(f"{label}: expected git dependency for {name}, got {spec!r}")
+        if not isinstance(spec, dict) or set(spec) != {"git"} or spec.get("git") != GIT_URL:
+            die(f"{label}: expected an unpinned git dependency for {name}, got {spec!r}")
 
 
 def scan_tree(project: Path) -> None:
@@ -174,7 +178,10 @@ def main() -> None:
     parser.add_argument(
         "--build",
         action="store_true",
-        help="run make build && make test on the generated project",
+        help=(
+            "run make build && make test on the generated project; "
+            "git dependencies resolve to the default branch, not this commit"
+        ),
     )
     args = parser.parse_args()
 
@@ -191,6 +198,11 @@ def main() -> None:
         print("cargo generate: default git dependencies ok")
 
         if args.build:
+            print(
+                "note: --build links the default-branch git checkout, "
+                "not this working tree",
+                flush=True,
+            )
             env = os.environ.copy()
             env.setdefault("CARGO_TERM_COLOR", "always")
             env.setdefault("TARGET_CC", "clang")
