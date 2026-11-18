@@ -23,8 +23,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && clang --version \
     && rm -rf /var/lib/apt/lists/*
 
+# Same pin as CI. cargo-generate 0.20.0 locks time 0.3.34, which does not
+# compile on current stable (E0282 in time::format_description).
 RUN rustup target add riscv64imac-unknown-none-elf \
-    && cargo install cargo-generate --version 0.20.0
+    && cargo install cargo-generate --version 0.26.0 --locked
 
 # Pinned ckb-cli release (interactive signing). Headless deploy can skip it
 # with --dry-run or --privkey-env.
