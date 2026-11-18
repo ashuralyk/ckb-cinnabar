@@ -12,18 +12,24 @@ fn read_template(name: &str) -> String {
 }
 
 /// A hand copy replaces `{{crate_name}}` and does not evaluate Liquid tags.
-/// `Cargo.toml` must already be the git-dependency manifest.
+/// Workspace dependencies are the three git lines.
 #[test]
-fn contract_template_manifest_has_no_liquid_tags() {
+fn contract_template_manifest_is_git_only() {
+    let root = template_root();
+    assert!(!root.join("Cargo.local.toml").exists());
+    assert!(!root.join("hooks").exists());
+    let config = read_template("cargo-generate.toml");
+    assert!(!config.contains("use_local_cinnabar"));
+    assert!(!config.contains("cinnabar_path"));
+
     let manifest = read_template("Cargo.toml");
     assert!(
         !manifest.contains("{%"),
         "Cargo.toml must not contain Liquid control tags"
     );
-    assert!(
-        !manifest.contains("{{cinnabar_path}}"),
-        "path selection lives in Cargo.local.toml, not the copied manifest"
-    );
+    assert!(!manifest.contains("path ="));
+    assert!(!manifest.contains("cinnabar_path"));
+    assert!(!manifest.contains("use_local_cinnabar"));
     let rendered = manifest.replace("{{crate_name}}", "common_intention_dispatcher");
     assert!(
         !rendered.contains("{{"),
@@ -33,21 +39,4 @@ fn contract_template_manifest_has_no_liquid_tags() {
     assert_eq!(rendered.matches(GIT_URL).count(), 3, "{rendered}");
     assert!(rendered.contains("name = \"common_intention_dispatcher-runner\""));
     assert!(rendered.contains("\"contracts/common_intention_dispatcher\""));
-}
-
-#[test]
-fn local_manifest_is_path_dependencies_only() {
-    let manifest = read_template("Cargo.local.toml");
-    assert!(!manifest.contains("{%"));
-    assert!(!manifest.contains("git ="));
-    let rendered = manifest
-        .replace("{{crate_name}}", "common_intention_dispatcher")
-        .replace("{{cinnabar_path}}", "/tmp/cinnabar-checkout");
-    assert!(!rendered.contains("{{"), "{rendered}");
-    assert!(rendered.contains("ckb-cinnabar = { path = \"/tmp/cinnabar-checkout\" }"));
-    assert!(rendered
-        .contains("ckb-cinnabar-calculator = { path = \"/tmp/cinnabar-checkout/calculate\" }"));
-    assert!(
-        rendered.contains("ckb-cinnabar-verifier = { path = \"/tmp/cinnabar-checkout/verify\" }")
-    );
 }

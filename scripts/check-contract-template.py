@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""Render the contract template and reject unresolved Liquid directives.
+"""Check that generated and hand-copied contract projects use git dependencies.
 
-Checks:
-- templates/contract/Cargo.toml is the git manifest and has no {% %} tags
-- cargo generate with git dependencies, path dependencies, and the default
-- a hand copy that only replaces {{crate_name}} and drops generator files
-- a relative cinnabar_path is rejected
+- templates/contract/Cargo.toml lists git dependencies and has no Liquid tags
+- cargo generate with no defines (the default)
+- a hand copy that only replaces {{crate_name}} and drops cargo-generate.toml
+- neither result contains {{ or {%
 
-Pass --build to run make build && make test on the path-dependency project.
+Pass --build to run make build && make test on the generated project.
 """
 
 from __future__ import annotations
@@ -86,20 +85,6 @@ def assert_git(doc: dict, label: str) -> None:
             die(f"{label}: expected git dependency for {name}, got {spec!r}")
 
 
-def assert_paths(doc: dict, label: str, checkout: Path) -> None:
-    root = checkout.resolve()
-    expected = {
-        "ckb-cinnabar": str(root),
-        "ckb-cinnabar-calculator": str(root / "calculate"),
-        "ckb-cinnabar-verifier": str(root / "verify"),
-    }
-    deps = doc["workspace"]["dependencies"]
-    for name, path in expected.items():
-        spec = deps.get(name)
-        if not isinstance(spec, dict) or spec.get("path") != path or "git" in spec:
-            die(f"{label}: expected path {path} for {name}, got {spec!r}")
-
-
 def scan_tree(project: Path) -> None:
     for path in project.rglob("*"):
         if not path.is_file() or ".git" in path.parts:
@@ -109,7 +94,7 @@ def scan_tree(project: Path) -> None:
             die(f"unresolved template directive in {path}:\n{text}")
 
 
-def generate(destination: Path, defines: list[tuple[str, str]]) -> Path:
+def generate(destination: Path) -> Path:
     destination.mkdir(parents=True, exist_ok=True)
     cmd = cargo_generate() + [
         "--path",
@@ -120,8 +105,6 @@ def generate(destination: Path, defines: list[tuple[str, str]]) -> Path:
         str(destination),
         "--silent",
     ]
-    for key, value in defines:
-        cmd.extend(["--define", f"{key}={value}"])
     run(cmd)
     project = destination / PROJECT
     if not project.is_dir():
@@ -129,23 +112,19 @@ def generate(destination: Path, defines: list[tuple[str, str]]) -> Path:
     return project
 
 
-def check_project(project: Path, kind: str, checkout: Path | None) -> None:
+def check_project(project: Path, label: str) -> None:
     scan_tree(project)
     for leftover in ("Cargo.local.toml", "cargo-generate.toml", "hooks"):
         if (project / leftover).exists():
-            die(f"{kind} project still contains generator file {leftover}")
+            die(f"{label} project still contains generator file {leftover}")
     manifest_path = project / "Cargo.toml"
-    doc = load_manifest(manifest_path.read_text(), f"{kind} Cargo.toml")
+    doc = load_manifest(manifest_path.read_text(), f"{label} Cargo.toml")
     if doc["package"]["name"] != f"{CRATE}-runner":
-        die(f"{kind} package name is {doc['package']['name']!r}")
+        die(f"{label} package name is {doc['package']['name']!r}")
     members = doc["workspace"]["members"]
     if f"contracts/{CRATE}" not in members:
-        die(f"{kind} workspace members missing contracts/{CRATE}: {members}")
-    if kind == "git":
-        assert_git(doc, kind)
-    else:
-        assert checkout is not None
-        assert_paths(doc, kind, checkout)
+        die(f"{label} workspace members missing contracts/{CRATE}: {members}")
+    assert_git(doc, label)
     run(
         [
             "cargo",
@@ -161,25 +140,18 @@ def check_project(project: Path, kind: str, checkout: Path | None) -> None:
 
 
 def static_template() -> None:
+    if (TEMPLATE / "Cargo.local.toml").exists() or (TEMPLATE / "hooks").exists():
+        die("path-dependency template files must not exist")
+    config = (TEMPLATE / "cargo-generate.toml").read_text()
+    if "use_local_cinnabar" in config or "cinnabar_path" in config or "{%" in config:
+        die("cargo-generate.toml still configures a local path dependency")
     manifest = (TEMPLATE / "Cargo.toml").read_text()
-    if "{%" in manifest or "{{cinnabar_path}}" in manifest:
-        die("templates/contract/Cargo.toml contains Liquid tags or cinnabar_path")
+    if "{%" in manifest or "cinnabar_path" in manifest or "use_local_cinnabar" in manifest:
+        die("templates/contract/Cargo.toml contains Liquid tags or a path option")
+    if "path =" in manifest:
+        die("templates/contract/Cargo.toml must not use path dependencies")
     rendered = manifest.replace("{{crate_name}}", CRATE)
     assert_git(load_manifest(rendered, "template Cargo.toml"), "template")
-
-    local = (TEMPLATE / "Cargo.local.toml").read_text()
-    if "{%" in local or "git =" in local:
-        die("Cargo.local.toml must be path dependencies without Liquid tags")
-    local_rendered = local.replace("{{crate_name}}", CRATE).replace(
-        "{{cinnabar_path}}", "/tmp/cinnabar-checkout"
-    )
-    doc = load_manifest(local_rendered, "Cargo.local.toml")
-    spec = doc["workspace"]["dependencies"]["ckb-cinnabar"]
-    if spec.get("path") != "/tmp/cinnabar-checkout":
-        die(f"Cargo.local.toml path was {spec!r}")
-    hook = (TEMPLATE / "hooks" / "select-deps.rhai").read_text()
-    if "Cargo.local.toml" not in hook or "use_local_cinnabar" not in hook:
-        die("hooks/select-deps.rhai does not select the local manifest")
 
 
 def simulate_hand_copy(tmp: Path) -> None:
@@ -192,10 +164,8 @@ def simulate_hand_copy(tmp: Path) -> None:
     if not crate_dir.is_dir():
         die("hand copy is missing contracts/{{crate_name}}")
     crate_dir.rename(dest / "contracts" / CRATE)
-    for extra in ("cargo-generate.toml", "Cargo.local.toml"):
-        (dest / extra).unlink()
-    shutil.rmtree(dest / "hooks")
-    check_project(dest, "git", None)
+    (dest / "cargo-generate.toml").unlink()
+    check_project(dest, "hand copy")
     print("hand copy: git manifest ok")
 
 
@@ -204,7 +174,7 @@ def main() -> None:
     parser.add_argument(
         "--build",
         action="store_true",
-        help="run make build && make test on the path-dependency project",
+        help="run make build && make test on the generated project",
     )
     args = parser.parse_args()
 
@@ -215,65 +185,26 @@ def main() -> None:
         tmp = Path(raw)
         simulate_hand_copy(tmp)
 
-        git_project = generate(tmp / "git", [("use_local_cinnabar", "false")])
-        check_project(git_project, "git", None)
-        run(["cargo", "generate-lockfile", "--manifest-path", str(git_project / "Cargo.toml")])
-        print("cargo generate: git dependencies ok")
-
-        default_project = generate(tmp / "default", [])
-        check_project(default_project, "git", None)
-        print("cargo generate: default is git dependencies")
-
-        local_project = generate(
-            tmp / "local",
-            [("use_local_cinnabar", "true"), ("cinnabar_path", str(ROOT.resolve()))],
-        )
-        check_project(local_project, "path", ROOT)
-        print("cargo generate: path dependencies ok")
-
-        relative = generate_expect_fail(
-            tmp / "relative",
-            [("use_local_cinnabar", "true"), ("cinnabar_path", "../ckb-cinnabar")],
-        )
-        if "absolute" not in relative.lower():
-            die(f"relative cinnabar_path failed without an absolute-path error:\n{relative}")
-        print("cargo generate: relative cinnabar_path rejected")
+        project = generate(tmp / "default")
+        check_project(project, "cargo generate")
+        run(["cargo", "generate-lockfile", "--manifest-path", str(project / "Cargo.toml")])
+        print("cargo generate: default git dependencies ok")
 
         if args.build:
-            run(["cargo", "generate-lockfile", "--manifest-path", str(local_project / "Cargo.toml")])
             env = os.environ.copy()
             env.setdefault("CARGO_TERM_COLOR", "always")
             env.setdefault("TARGET_CC", "clang")
-            print("+ make -C", local_project, "build test CARGO_ARGS=--locked", flush=True)
+            print("+ make -C", project, "build test CARGO_ARGS=--locked", flush=True)
             result = subprocess.run(
                 ["make", "build", "test", "CARGO_ARGS=--locked"],
-                cwd=local_project,
+                cwd=project,
                 env=env,
             )
             if result.returncode != 0:
                 die(f"make build test failed ({result.returncode})")
-            print("path project: make build && make test ok")
+            print("generated project: make build && make test ok")
 
     print("contract template checks passed")
-
-
-def generate_expect_fail(destination: Path, defines: list[tuple[str, str]]) -> str:
-    destination.mkdir(parents=True, exist_ok=True)
-    cmd = cargo_generate() + [
-        "--path",
-        str(TEMPLATE),
-        "--name",
-        PROJECT,
-        "--destination",
-        str(destination),
-        "--silent",
-    ]
-    for key, value in defines:
-        cmd.extend(["--define", f"{key}={value}"])
-    result = run(cmd, check=False)
-    if result.returncode == 0:
-        die("relative cinnabar_path was accepted")
-    return (result.stderr or "") + (result.stdout or "")
 
 
 if __name__ == "__main__":

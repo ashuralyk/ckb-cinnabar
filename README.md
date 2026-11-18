@@ -128,8 +128,7 @@ Scaffold with cargo-generate:
 
 ```bash
 # inside a checkout of this repository
-cargo generate --path templates/contract --name my-lock \
-  --define use_local_cinnabar=true --define cinnabar_path="$PWD"
+cargo generate --path templates/contract --name my-lock
 cd my-lock
 make prepare   # rustup target add riscv64imac-unknown-none-elf
 make build     # writes build/release/<crate>
@@ -151,19 +150,15 @@ The template Makefile comes from ckb-script-templates. Agents should not hand-wr
 
 The separate repository `ckb-cinnabar-scripts-template` is deprecated and not
 the scaffold (its README was left as a TODO). Treat that repository as
-archived. Generate from `templates/contract` in this repository. The template
-default is a git dependency. For a path dependency pass both
-`--define use_local_cinnabar=true` and
-`--define cinnabar_path="$PWD"` (absolute path to this checkout).
-`cargo generate` writes that choice. `templates/contract/Cargo.toml` already
-lists the git dependencies and has no Liquid tags, so a hand copy compiles
-once `{{crate_name}}` is replaced (including `contracts/{{crate_name}}`) and
-`cargo-generate.toml`, `hooks/`, and `Cargo.local.toml` are deleted. A copied
-project stays on git dependencies until those three `workspace.dependencies`
-lines are changed to absolute `path` entries (`<checkout>`,
-`<checkout>/calculate`, `<checkout>/verify`). If a manifest still contains
-`{% if use_local_cinnabar %}`, delete the tags and keep only one of those
-blocks.
+archived. Generate from `templates/contract` in this repository. Workspace
+dependencies are git dependencies on this repository.
+`templates/contract/Cargo.toml` lists those three git lines and has no Liquid
+tags, so a hand copy compiles once `{{crate_name}}` is replaced (including
+`contracts/{{crate_name}}`) and `cargo-generate.toml` is deleted. Leave no
+`{{` or `{%` in the project. If a manifest still contains
+`{% if use_local_cinnabar %}`, delete the Liquid tags and any `path` lines,
+and keep the three `git = "https://github.com/ashuralyk/ckb-cinnabar"`
+dependencies.
 
 Rewrite the template comments for this contract. The calculator crate, the
 verifier crate, and each identity module use `//!`. Each recipe, custom
