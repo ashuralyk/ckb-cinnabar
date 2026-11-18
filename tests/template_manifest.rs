@@ -37,6 +37,17 @@ fn contract_template_manifest_is_git_only() {
     );
     assert!(!rendered.contains("{%"));
     assert_eq!(rendered.matches(GIT_URL).count(), 3, "{rendered}");
+    for name in [
+        "ckb-cinnabar",
+        "ckb-cinnabar-calculator",
+        "ckb-cinnabar-verifier",
+    ] {
+        let line = format!("{name} = {{ git = \"{GIT_URL}\" }}");
+        assert!(
+            rendered.contains(&line),
+            "missing unpinned git dependency `{line}` in {rendered}"
+        );
+    }
     assert!(rendered.contains("name = \"common_intention_dispatcher-runner\""));
     assert!(rendered.contains("\"contracts/common_intention_dispatcher\""));
 }

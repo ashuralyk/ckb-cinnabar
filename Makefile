@@ -6,6 +6,7 @@ llms-full:
 	python3 scripts/gen-llms-full.py
 
 # Render the contract template with its default git dependencies, and simulate
-# a hand copy. `--build` also runs make build && make test on the generated project.
+# a hand copy. `--build` also runs make build && make test. Those dependencies
+# have no rev, so that build uses the default branch at fetch time.
 check-template:
 	python3 scripts/check-contract-template.py
