@@ -45,17 +45,21 @@ make test
 ```
 
 Workspace dependencies are git dependencies on this repository.
-`templates/contract/Cargo.toml` lists those three git lines and has no
-Liquid `{% %}` tags.
+Manifests ship as `Cargo.toml.liquid` (not `Cargo.toml`) so a git checkout
+of this repository does not emit Cargo package-name errors while resolving
+dependencies. Each liquid file lists the three git dependency lines and has
+no Liquid `{% %}` control tags. `cargo generate` strips the `.liquid`
+suffix and renders `{{crate_name}}`.
 
 Hard accept: after generate and after every later change, `make build` and
 `make test` (full suite) must both exit 0 before the work is done.
 
-A hand copy of `templates/contract` is valid after every `{{crate_name}}`
-is replaced, including the `contracts/{{crate_name}}` directory name, and
-after `cargo-generate.toml` is removed. Leave no `{{` or `{%` in the
-project. If a manifest still contains `{% if use_local_cinnabar %}`, delete
-the Liquid tags and any `path` lines, and keep the three
+A hand copy of `templates/contract` is valid after every
+`Cargo.toml.liquid` is renamed to `Cargo.toml`, every `{{crate_name}}` is
+replaced (including the `contracts/{{crate_name}}` directory name), and
+`cargo-generate.toml` is removed. Leave no `{{` or `{%` in the project. If
+a manifest still contains `{% if use_local_cinnabar %}`, delete the Liquid
+tags and any `path` lines, and keep the three
 `git = "https://github.com/ashuralyk/ckb-cinnabar"` dependencies.
 
 | Path | Role |

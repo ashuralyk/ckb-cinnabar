@@ -152,9 +152,12 @@ The separate repository `ckb-cinnabar-scripts-template` is deprecated and not
 the scaffold (its README was left as a TODO). Treat that repository as
 archived. Generate from `templates/contract` in this repository. Workspace
 dependencies are git dependencies on this repository.
-`templates/contract/Cargo.toml` lists those three git lines and has no Liquid
-tags, so a hand copy compiles once `{{crate_name}}` is replaced (including
-`contracts/{{crate_name}}`) and `cargo-generate.toml` is deleted. Leave no
+Manifests are `Cargo.toml.liquid` (so git dependency checkouts are not
+scanned as invalid Cargo packages). Each lists those three git lines and has
+no Liquid `{% %}` control tags. `cargo generate` renders them to
+`Cargo.toml`. A hand copy renames every `Cargo.toml.liquid` to
+`Cargo.toml`, replaces `{{crate_name}}` (including
+`contracts/{{crate_name}}`), and deletes `cargo-generate.toml`. Leave no
 `{{` or `{%` in the project. If a manifest still contains
 `{% if use_local_cinnabar %}`, delete the Liquid tags and any `path` lines,
 and keep the three `git = "https://github.com/ashuralyk/ckb-cinnabar"`

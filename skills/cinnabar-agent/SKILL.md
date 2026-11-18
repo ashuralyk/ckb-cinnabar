@@ -170,9 +170,11 @@ If `cargo-generate` is missing: `cargo install cargo-generate`, or clone
 `https://github.com/ashuralyk/ckb-cinnabar` and run
 `cargo generate --path <clone>/templates/contract --name <project>`.
 
-Workspace dependencies are git dependencies on this repository. A copied
-tree is valid only when every `{{crate_name}}` is replaced (including
-`contracts/{{crate_name}}`) and `cargo-generate.toml` is removed. Leave no
+Workspace dependencies are git dependencies on this repository. Template
+manifests are `Cargo.toml.liquid` so git checkouts do not confuse Cargo.
+A copied tree is valid only when every `Cargo.toml.liquid` is renamed to
+`Cargo.toml`, every `{{crate_name}}` is replaced (including
+`contracts/{{crate_name}}`), and `cargo-generate.toml` is removed. Leave no
 `{% %}` tags and no `{{placeholders}}`. If a manifest still contains
 `{% if use_local_cinnabar %}`, delete the Liquid tags and any `path` lines,
 and keep the three git dependencies.
