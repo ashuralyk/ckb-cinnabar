@@ -33,6 +33,13 @@ generator and fails when `llms-full.txt` differs:
 make llms-full
 ```
 
+`templates/contract/Cargo.toml` lists git dependencies and must not contain
+Liquid `{% %}` tags. A hand copy only replaces `{{crate_name}}`; it cannot
+evaluate control tags. There is no path-dependency mode. Check the default
+`cargo generate` result and a hand copy with
+`python3 scripts/check-contract-template.py`. CI runs that script with
+`--build`.
+
 ## Style
 
 - Collapse sibling `use` items that share a prefix into one braced import.

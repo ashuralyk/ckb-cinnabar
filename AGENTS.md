@@ -36,24 +36,27 @@ Scaffold from `templates/contract` in this repository. The old
 treat it as archived.
 
 ```bash
-# inside a checkout of this repository (absolute path to the checkout)
-cargo generate --path templates/contract --name my-lock \
-  --define use_local_cinnabar=true --define cinnabar_path="$PWD"
+# inside a checkout of this repository
+cargo generate --path templates/contract --name my-lock
 cd my-lock
 make prepare   # rustup target add riscv64imac-unknown-none-elf
 make build     # writes build/release/<crate>
 make test
 ```
 
-The template default is git dependencies (`use_local_cinnabar=false`).
-Pass both defines above to depend on a local checkout. `cinnabar_path`
-must be absolute: Cargo resolves it from the generated project, and the
-old relative default `../cinnabar` does not point at this repository.
+Workspace dependencies are git dependencies on this repository.
+`templates/contract/Cargo.toml` lists those three git lines and has no
+Liquid `{% %}` tags.
 
 Hard accept: after generate and after every later change, `make build` and
 `make test` (full suite) must both exit 0 before the work is done.
 
-Or copy `templates/contract` and replace `{{placeholders}}`.
+A hand copy of `templates/contract` is valid after every `{{crate_name}}`
+is replaced, including the `contracts/{{crate_name}}` directory name, and
+after `cargo-generate.toml` is removed. Leave no `{{` or `{%` in the
+project. If a manifest still contains `{% if use_local_cinnabar %}`, delete
+the Liquid tags and any `path` lines, and keep the three
+`git = "https://github.com/ashuralyk/ckb-cinnabar"` dependencies.
 
 | Path | Role |
 | --- | --- |

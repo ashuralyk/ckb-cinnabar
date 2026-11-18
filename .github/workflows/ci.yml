@@ -61,15 +61,11 @@ jobs:
           CARGO_TERM_COLOR: always
           TARGET_CC: clang
       - name: Install cargo-generate
-        run: cargo install cargo-generate --version 0.20.0
+        # 0.20.0 locks time 0.3.34, which does not compile on current stable
+        # (E0282 in format_description). 0.26.0 locks time 0.3.55.
+        run: cargo install cargo-generate --version 0.26.0 --locked
       - name: Generated contract end-to-end
-        run: |
-          cargo generate \
-            --path templates/contract \
-            --name agent-smoke \
-            --destination /tmp \
-            --define use_local_cinnabar=true \
-            --define cinnabar_path="$GITHUB_WORKSPACE" \
-            --silent
-          cargo generate-lockfile --manifest-path /tmp/agent-smoke/Cargo.toml
-          make -C /tmp/agent-smoke build test CARGO_ARGS=--locked
+        run: python3 scripts/check-contract-template.py --build
+        env:
+          CARGO_TERM_COLOR: always
+          TARGET_CC: clang

@@ -11,18 +11,17 @@ cargo install --git https://github.com/ashuralyk/ckb-cinnabar
 npx skills add ashuralyk/ckb-cinnabar -g -a cursor -s cinnabar-agent -y
 ```
 
-Scaffold from a local checkout:
+Scaffold:
 
 ```bash
-cargo generate --path templates/contract --name my-lock \
-  --define use_local_cinnabar=true --define cinnabar_path=$PWD
+cargo generate --path templates/contract --name my-lock
 cd my-lock && make prepare && make build && make test
 ckb-cinnabar --json --dry-run --privkey-env CINNABAR_PRIVKEY \
   deploy --contract-name my-lock --tag v0.1.0 \
   --payer-address ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsq28phxutezqvjgfv5q38gn5kwek4m9km3cmajeqs
 ```
 
-Without `use_local_cinnabar`, the template depends on this repository over git. The old `ckb-cinnabar-scripts-template` repository is deprecated and not the scaffold; treat it as archived and use `templates/contract`.
+Generated projects depend on this repository over git. The old `ckb-cinnabar-scripts-template` repository is deprecated and not the scaffold; treat it as archived and use `templates/contract`. A hand copy keeps the git dependencies in `templates/contract/Cargo.toml`: replace `{{crate_name}}` (including `contracts/{{crate_name}}`), delete `cargo-generate.toml`, and leave no `{{` or `{%`. If a manifest still contains `{% if use_local_cinnabar %}`, delete the Liquid tags and any `path` lines, and keep the three git dependencies.
 
 Toolchain: Rust, `clang` 16+ (the Dockerfile installs clang 18; Debian bookworm's `clang` metapackage is older than 16), target `riscv64imac-unknown-none-elf`, `cargo-generate`. `Dockerfile` and `.devcontainer/devcontainer.json` preinstall them, plus `ckb-cli`.
 

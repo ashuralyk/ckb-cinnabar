@@ -16,7 +16,7 @@ This file inlines the repository docs an agent needs to scaffold, verify, calcul
 
 ## Core API
 
-Install the CLI with `cargo install --git https://github.com/ashuralyk/ckb-cinnabar`. Contract projects depend on the same git repository, or on a local path when `use_local_cinnabar` is true and `cinnabar_path` is the absolute checkout root.
+Install the CLI with `cargo install --git https://github.com/ashuralyk/ckb-cinnabar`. Contract projects depend on the same git repository.
 
 - `ckb_cinnabar_core::intent` — shared hop names (`CREATE`, `TRANSFER`, `BURN`, `MINT`, `DEPOSIT`, `WITHDRAW`). Use them only when the hop is exactly that morphology.
 - `cinnabar_main!(Context, (TREE_ROOT, Root), ...)` — registers the on-chain tree. Optional trailing `SSRI { "Wire.name" => expr }` needs verifier feature `ssri` (on by default).

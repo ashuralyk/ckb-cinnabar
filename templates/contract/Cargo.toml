@@ -9,15 +9,9 @@ members = [
 ]
 
 [workspace.dependencies]
-{% if use_local_cinnabar %}
-ckb-cinnabar = { path = "{{cinnabar_path}}" }
-ckb-cinnabar-calculator = { path = "{{cinnabar_path}}/calculate" }
-ckb-cinnabar-verifier = { path = "{{cinnabar_path}}/verify" }
-{% else %}
 ckb-cinnabar = { git = "https://github.com/ashuralyk/ckb-cinnabar" }
 ckb-cinnabar-calculator = { git = "https://github.com/ashuralyk/ckb-cinnabar" }
 ckb-cinnabar-verifier = { git = "https://github.com/ashuralyk/ckb-cinnabar" }
-{% endif %}
 
 [package]
 edition = "2021"

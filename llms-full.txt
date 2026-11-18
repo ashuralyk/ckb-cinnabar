@@ -4,7 +4,7 @@ This file inlines the repository docs an agent needs to scaffold, verify, calcul
 
 ## Core API
 
-Install the CLI with `cargo install --git https://github.com/ashuralyk/ckb-cinnabar`. Contract projects depend on the same git repository, or on a local path when `use_local_cinnabar` is true and `cinnabar_path` is the absolute checkout root.
+Install the CLI with `cargo install --git https://github.com/ashuralyk/ckb-cinnabar`. Contract projects depend on the same git repository.
 
 - `ckb_cinnabar_core::intent` — shared hop names (`CREATE`, `TRANSFER`, `BURN`, `MINT`, `DEPOSIT`, `WITHDRAW`). Use them only when the hop is exactly that morphology.
 - `cinnabar_main!(Context, (TREE_ROOT, Root), ...)` — registers the on-chain tree. Optional trailing `SSRI { "Wire.name" => expr }` needs verifier feature `ssri` (on by default).
@@ -144,12 +144,11 @@ matches those reads. The generated contract template stays hop-only.
 
 ### Contract project template
 
-Scaffold with cargo-generate (or copy `templates/contract` and replace placeholders):
+Scaffold with cargo-generate:
 
 ```bash
 # inside a checkout of this repository
-cargo generate --path templates/contract --name my-lock \
-  --define use_local_cinnabar=true --define cinnabar_path="$PWD"
+cargo generate --path templates/contract --name my-lock
 cd my-lock
 make prepare   # rustup target add riscv64imac-unknown-none-elf
 make build     # writes build/release/<crate>
@@ -171,10 +170,15 @@ The template Makefile comes from ckb-script-templates. Agents should not hand-wr
 
 The separate repository `ckb-cinnabar-scripts-template` is deprecated and not
 the scaffold (its README was left as a TODO). Treat that repository as
-archived. Generate from `templates/contract` in this repository. The template
-default is a git dependency. For a path dependency pass both
-`--define use_local_cinnabar=true` and
-`--define cinnabar_path="$PWD"` (absolute path to this checkout).
+archived. Generate from `templates/contract` in this repository. Workspace
+dependencies are git dependencies on this repository.
+`templates/contract/Cargo.toml` lists those three git lines and has no Liquid
+tags, so a hand copy compiles once `{{crate_name}}` is replaced (including
+`contracts/{{crate_name}}`) and `cargo-generate.toml` is deleted. Leave no
+`{{` or `{%` in the project. If a manifest still contains
+`{% if use_local_cinnabar %}`, delete the Liquid tags and any `path` lines,
+and keep the three `git = "https://github.com/ashuralyk/ckb-cinnabar"`
+dependencies.
 
 Rewrite the template comments for this contract. The calculator crate, the
 verifier crate, and each identity module use `//!`. Each recipe, custom
@@ -569,24 +573,27 @@ Scaffold from `templates/contract` in this repository. The old
 treat it as archived.
 
 ```bash
-# inside a checkout of this repository (absolute path to the checkout)
-cargo generate --path templates/contract --name my-lock \
-  --define use_local_cinnabar=true --define cinnabar_path="$PWD"
+# inside a checkout of this repository
+cargo generate --path templates/contract --name my-lock
 cd my-lock
 make prepare   # rustup target add riscv64imac-unknown-none-elf
 make build     # writes build/release/<crate>
 make test
 ```
 
-The template default is git dependencies (`use_local_cinnabar=false`).
-Pass both defines above to depend on a local checkout. `cinnabar_path`
-must be absolute: Cargo resolves it from the generated project, and the
-old relative default `../cinnabar` does not point at this repository.
+Workspace dependencies are git dependencies on this repository.
+`templates/contract/Cargo.toml` lists those three git lines and has no
+Liquid `{% %}` tags.
 
 Hard accept: after generate and after every later change, `make build` and
 `make test` (full suite) must both exit 0 before the work is done.
 
-Or copy `templates/contract` and replace `{{placeholders}}`.
+A hand copy of `templates/contract` is valid after every `{{crate_name}}`
+is replaced, including the `contracts/{{crate_name}}` directory name, and
+after `cargo-generate.toml` is removed. Leave no `{{` or `{%` in the
+project. If a manifest still contains `{% if use_local_cinnabar %}`, delete
+the Liquid tags and any `path` lines, and keep the three
+`git = "https://github.com/ashuralyk/ckb-cinnabar"` dependencies.
 
 | Path | Role |
 | --- | --- |
@@ -890,6 +897,13 @@ generator and fails when `llms-full.txt` differs:
 ```bash
 make llms-full
 ```
+
+`templates/contract/Cargo.toml` lists git dependencies and must not contain
+Liquid `{% %}` tags. A hand copy only replaces `{{crate_name}}`; it cannot
+evaluate control tags. There is no path-dependency mode. Check the default
+`cargo generate` result and a hand copy with
+`python3 scripts/check-contract-template.py`. CI runs that script with
+`--build`.
 
 ## Style
 
